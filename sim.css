@@ -1,0 +1,85 @@
+/* Night City Deck — simulatore: plancia orizzontale a tutto schermo */
+
+#board{--bh:400px;--cw:clamp(38px,calc(var(--bh) * .1),64px);position:fixed;inset:0;z-index:40;background:var(--bg);color:var(--ink);display:flex;flex-direction:column;overflow:hidden;
+  font-size:12px;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  background-image:radial-gradient(900px 300px at 50% -10%, color-mix(in srgb,var(--acc2Fill) 10%,transparent), transparent 70%),
+                   radial-gradient(900px 300px at 50% 110%, color-mix(in srgb,var(--accFill) 10%,transparent), transparent 70%)}
+/* in verticale su telefono: ruotiamo la plancia (e lente/scheda/avvisi mentre è aperta), così resta orizzontale */
+@media (orientation: portrait) and (max-width: 760px){
+  #board, body:has(#board:not([hidden])) #lens, body:has(#board:not([hidden])) #sheet{width:100dvh;height:100dvw;transform:rotate(90deg) translateY(-100%);transform-origin:top left;inset:auto;top:0;left:0}
+  body:has(#board:not([hidden])) #sheet #sheetBox{max-height:100dvw}
+}
+.bz{display:flex;align-items:center;gap:6px;padding:4px 8px;min-height:0}
+.bz.rival{flex:1 1 0;flex-direction:column;align-items:stretch;justify-content:flex-start;border-bottom:1px dashed var(--line2)}
+.bz.mine{flex:1.25 1 0;flex-direction:column;align-items:stretch;justify-content:flex-end}
+.brow{display:flex;align-items:center;gap:6px;min-height:0;flex:1}
+.brow.field{flex:1.3;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch}
+.brow.hand{overflow-x:auto;overflow-y:hidden;flex:1.4;padding-bottom:2px}
+.brow .lbl{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--mute);writing-mode:vertical-rl;transform:rotate(180deg);flex:0 0 auto;text-align:center}
+.bstrip{display:flex;align-items:center;gap:8px;padding:3px 8px;background:color-mix(in srgb,var(--surf) 85%,transparent);border-top:1px solid var(--line);border-bottom:1px solid var(--line);flex:0 0 auto;min-height:34px}
+.bstrip .st{font-weight:700;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}
+.bstrip .lg{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink2)}
+.bstrip .btn{padding:4px 9px;font-size:12px}
+.bstrip .btn.acc{box-shadow:var(--glow)}
+
+/* carte sulla plancia */
+.bc{position:relative;flex:0 0 auto;width:var(--cw);aspect-ratio:733/1024;border-radius:5px;overflow:hidden;background:var(--surf3);box-shadow:0 1px 3px rgba(0,0,0,.35);cursor:pointer;transition:transform .15s,box-shadow .15s;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+.bc img{width:100%;height:100%;object-fit:cover;display:block;pointer-events:none}
+.bc.big{width:calc(var(--cw) * 1.2)}
+.bc.spent{transform:rotate(14deg);filter:saturate(.5) brightness(.8)}
+.bc.lag::after{content:"LAG";position:absolute;left:0;right:0;top:40%;text-align:center;background:rgba(0,0,0,.65);color:#ffd21f;font-weight:800;font-size:10px;letter-spacing:.1em;padding:2px 0}
+.bc.sel{outline:3px solid var(--accFill);box-shadow:var(--glow);transform:translateY(-4px)}
+.bc.target{outline:3px solid var(--acc2Fill);animation:pulse 1s ease-in-out infinite}
+.bc.ok{outline:2px solid var(--good)}
+.bc .pw{position:absolute;right:2px;bottom:2px;background:rgba(0,0,0,.78);color:#fff;font-weight:800;font-size:11px;padding:1px 5px;border-radius:5px;line-height:1.2}
+.bc .pw.mod{color:#ffd21f}
+.bc .co{position:absolute;left:2px;top:2px;background:rgba(0,0,0,.78);color:#fff;font-weight:800;font-size:11px;padding:1px 4px;border-radius:5px}
+.bc .co.no{color:#ff5a67}
+.bc .g{position:absolute;left:0;right:0;bottom:0;display:flex;gap:1px;padding:1px}
+.bc .g img{width:14px;height:20px;border-radius:2px;object-fit:cover;border:1px solid #fff}
+.bc.back{background:repeating-linear-gradient(45deg,#1a1a22 0 6px,#23232d 6px 12px);display:flex;align-items:center;justify-content:center;color:#fcee0a;font-weight:800;font-size:16px;letter-spacing:.1em}
+.bc.back.up{background:var(--surf2)}
+.bc .n{position:absolute;inset:auto 0 0 0;background:rgba(0,0,0,.6);color:#fff;font-size:9px;padding:1px 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stack{position:relative;width:var(--cw);aspect-ratio:733/1024;flex:0 0 auto;border-radius:5px;display:flex;align-items:center;justify-content:center;flex-direction:column;background:var(--surf2);border:1px solid var(--line2);font-weight:700;cursor:pointer}
+.stack b{font-size:16px} .stack small{font-size:9px;color:var(--mute);letter-spacing:.08em;text-transform:uppercase}
+.stack.ed{background:linear-gradient(135deg,#2a2a30,#121214);color:#fcee0a;border-color:#3a3a44}
+.stack.ed.lo{opacity:.75}
+
+/* dadi */
+.dice{display:flex;gap:4px;flex-wrap:wrap;align-items:center;min-height:26px}
+.die{display:inline-flex;align-items:center;gap:3px;padding:2px 6px;border-radius:7px;font-weight:800;font-size:12px;background:var(--surf2);border:1px solid var(--line2);cursor:pointer;line-height:1.2}
+.die small{font-weight:600;color:var(--mute);font-size:10px}
+.die.d4{border-color:#2b78d6}.die.d6{border-color:#2f9e4f}.die.d8{border-color:#e6c200}.die.d10{border-color:#f28c28}.die.d12{border-color:#d8323c}.die.d20{border-color:#9c1d8f}
+.die.fx{opacity:.55;border-style:dashed;cursor:default}
+.cred{font-weight:800;font-size:13px;margin-left:4px;white-space:nowrap}
+
+/* menù azione e richieste */
+.pop{position:absolute;z-index:45;background:var(--surf);border:1px solid var(--line2);border-radius:10px;box-shadow:var(--shadow);padding:6px;display:flex;flex-direction:column;gap:4px;min-width:150px;max-width:260px}
+.pop button{text-align:left;background:var(--surf2);border:1px solid var(--line);border-radius:7px;padding:6px 9px;cursor:pointer;font-weight:600;font-size:12.5px}
+.pop button:disabled{opacity:.45;cursor:default}
+.pop button.acc{background:var(--accFill);color:var(--accInk)}
+.pop button.danger{color:var(--bad)}
+.pop .ttl{font-size:12px;font-weight:700;color:var(--ink2);padding:2px 4px;max-width:240px}
+#simAsk{position:absolute;inset:0;z-index:46;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:12px}
+#simAsk .box{background:var(--surf);border:1px solid var(--line2);border-radius:12px;padding:12px;max-width:520px;width:100%;max-height:90%;overflow:auto;box-shadow:var(--shadow)}
+#simAsk h3{margin-bottom:8px}
+#simAsk .opts{display:flex;flex-wrap:wrap;gap:6px}
+#simAsk .opts button{font-size:13px}
+#simAsk .opts button.card-opt{display:flex;align-items:center;gap:6px;padding:4px 8px 4px 4px}
+#simAsk .opts button.card-opt img{width:32px;border-radius:3px}
+.handoff{position:absolute;inset:0;z-index:47;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center;padding:20px}
+.handoff h2{font-size:26px}
+.winbox{position:absolute;inset:0;z-index:47;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:16px}
+.winbox .box{background:var(--surf);border:2px solid var(--accFill);border-radius:14px;padding:18px;max-width:420px;text-align:center;box-shadow:var(--glow)}
+.winbox h2{font-size:28px;color:var(--acc)}
+#simLog{position:absolute;right:0;top:0;bottom:0;width:min(360px,70%);z-index:44;background:var(--surf);border-left:1px solid var(--line2);overflow:auto;padding:10px;font-size:12.5px;box-shadow:var(--shadow)}
+#simLog .e{padding:3px 0;border-bottom:1px solid var(--line)} #simLog .e.turn{font-weight:800;color:var(--acc);margin-top:6px} #simLog .e.manual{color:var(--warn)} #simLog .e.end{color:var(--acc2);font-weight:800}
+.rotatehint{display:none}
+
+/* setup (nella pagina normale) */
+.simdecks{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media(max-width:600px){.simdecks{grid-template-columns:1fr}}
+.simdecks select{width:100%}
+
+/* ---------- deckbuilder: due colonne su schermo largo ---------- */
+@media(min-width:1000px){ #deckEdit{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start} #deckEdit>.card+.card{margin-top:0} #deckBrowser{position:sticky;top:64px;max-height:calc(100dvh - 80px);overflow:auto} }

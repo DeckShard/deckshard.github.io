@@ -1,0 +1,17 @@
+{
+  "_nota": "idExpansion di Cardmarket → codice set Netdeck. Le espansioni 6714-6722 sono state aggiunte il 28/8/2026 (era beta), le 6761-6765 il 30/10/2026 (settimana del retail). La 6722 raccoglie le esclusive Kickstarter: '*' significa 'cerca la stampa per nome in qualunque set'.",
+  "6714": "welcometonightcitybeta",
+  "6715": "theheistbetastarterdeck",
+  "6716": "embracingpowerbetastarterdeck",
+  "6717": "boxtoppersbeta",
+  "6718": "prereleasebeta",
+  "6719": "PRM01",
+  "6720": "mercdemodeck",
+  "6721": "arasakademodeck",
+  "6722": "*",
+  "6761": "welcometonightcityretail",
+  "6762": "theheistretailstarterdeck",
+  "6763": "embracingpowerretailstarterdeck",
+  "6764": "boxtoppersretail",
+  "6765": "prereleaseretail"
+}

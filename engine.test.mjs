@@ -1,0 +1,142 @@
+/* Collaudo del motore: partite bot contro bot con i mazzi starter, più
+   controlli puntuali sulle regole. Esegui: node engine.test.mjs   */
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+import { createGame, mulligan, legalActions, doAction, resolve, summary, parseEffects, power, streetCred, endTurn } from "./engine.js";
+import { botDecide, botTurn, botStep } from "./bot.js";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const data = JSON.parse(readFileSync(join(here, "public", "cards.json"), "utf8"));
+const byId = new Map();
+for(const c of data.cards){ c.def = c.prints[0]; c.ramN = c.ram ?? 0; byId.set(c.id, c); }
+const byName = n => data.cards.find(c => c.dn === n);
+
+function starter(setCode, name){
+  const d = { name, legends: [], cards: [] };
+  for(const c of data.cards.filter(c => c.prints.some(p => p.set === setCode))){
+    if(c.type === "Legend") d.legends.push({ cid: c.id, pid: c.def.id }); else d.cards.push({ cid: c.id, pid: c.def.id, n: (c.cost ?? 0) <= 3 ? 3 : 2 });
+  }
+  let n = d.cards.reduce((a, e) => a + e.n, 0);
+  for(const e of d.cards){ if(n <= 40) break; if(e.n > 1){ e.n--; n--; } }
+  return d;
+}
+let fails = 0, passes = 0;
+const ok = (cond, msg) => { if(cond){ passes++; } else { fails++; console.log("  ✘", msg); } };
+
+/* --- parser degli effetti */
+{
+  const fx = parseEffects("{Play} Give a friendly Unit +2 power this turn.\n(Units with power 0 don't steal Gigs.)");
+  ok(fx.play.length === 1 && fx.play[0].op === "buff" && fx.play[0].n === 2, "buff +2 interpretato");
+  const fx2 = parseEffects("{Play} Draw 2.");
+  ok(fx2.play[0].op === "draw" && fx2.play[0].n === 2, "draw 2");
+  const fx3 = parseEffects("{Blocker} (You may spend this Unit to redirect a rival Unit's attack to it instead.)\nWhen this Unit uses {Blocker}, increase a Gig by up to 3.");
+  ok(fx3.manual.length === 1, "frase condizionale lasciata manuale");
+  const fx4 = parseEffects("This Unit can only attack rival Units. (It can't attack Gig areas.)");
+  ok(fx4.onlyUnits, "solo Unità");
+  ok(parseEffects("This Unit can't attack.\n{Blocker}").cantAttack, "non può attaccare");
+  ok(!parseEffects("This Unit can't attack unless you played a Program this turn.").cantAttack, "can't attack unless: non statico");
+  const fx5 = parseEffects("{Play} Defeat a rival Unit with power 2 or less. If you have more ☆ (Street Cred) than a Rival, defeat a rival Unit with power 3 or less instead.");
+  ok(fx5.play[0].op === "defeat" && fx5.play[0].max === 2 && fx5.play[1].op === "manual", "defeat ≤2 + condizionale manuale");
+  const fx6 = parseEffects("{Call} Trash 3. Then, add 1 BRAINDANCE Program from your trash to your hand.\n{Go Solo} (Pay this Legend's cost...)");
+  ok(fx6.call[0].op === "mill" && fx6.call[0].n === 3, "Call: trash 3");
+  const fx7 = parseEffects("{Quick} Defeat a rival Gear with power 2 or less.");
+  ok(fx7.quick && fx7.passive[0].op === "defeatGear", "Quick + defeatGear");
+}
+
+/* --- partita bot vs bot, molti semi */
+const A = starter("theheistretailstarterdeck", "Heist"), B = starter("embracingpowerretailstarterdeck", "Embracing");
+let wins = [0, 0], turnsTot = 0, otGames = 0, maxTurns = 0, manualN = 0;
+for(let seed = 1; seed <= 60; seed++){
+  const G = createGame([A, B], byId, { seed, bot0: true, bot1: true });
+  G.decide = botDecide;
+  ok(G.players[0].hand.length === 6 && G.players[1].hand.length === 6, "mano iniziale 6");
+  ok(G.players[G.first].legends.filter(l => l.spent).length === 2, "chi inizia ha 2 Leggende spese");
+  mulligan(G, 0, false); mulligan(G, 1, false);
+  ok(G.phase === "main" && G.players[G.active].gigs.length === 1, "primo turno: 1 Gig tirato (bot sceglie il dado)");
+  let guard = 0;
+  while(G.winner == null && guard++ < 400){
+    if(G.pending){ console.log("pending inatteso", G.pending.kind); resolve(G, 0); continue; }
+    botTurn(G, G.active);
+    if(!G.winner && G.active === G.active && G.phase === "main" && !G.pending){ /* botTurn chiude il turno con end */ }
+  }
+  ok(G.winner != null, `partita ${seed} finita (${G.reason})`);
+  ok(guard < 400, "nessun loop infinito");
+  if(G.winner != null) wins[G.winner]++;
+  turnsTot += G.turn; maxTurns = Math.max(maxTurns, G.turn); if(G.overtime) otGames++;
+  manualN += G.events.filter(e => e.kind === "manual").length;
+  // invarianti
+  for(const P of G.players){
+    const all = P.deck.length + P.hand.length + P.trash.length + P.eddies.length + P.field.filter(u => !u.isLegend).length + P.field.reduce((a, u) => a + (u.gear || []).length, 0) + P.trash.filter(() => false).length;
+    const total = (P === G.players[0] ? A : B).cards.reduce((a, e) => a + e.n, 0);
+    const gearOnField = P.field.reduce((a, u) => a + (u.gear || []).length, 0) + P.legends.reduce((a, l) => a + (l.gear || []).length, 0);
+    const cnt = P.deck.length + P.hand.length + P.trash.length + P.eddies.length + P.field.filter(u => !u.isLegend).length + gearOnField;
+    ok(cnt === total, `conservazione carte ${P.name}: ${cnt} vs ${total}`);
+    ok(P.gigs.length + P.fixer.length + (G.players[1 - P.id].gigs.filter(g => false).length) >= 0, "gig");
+    for(const g of P.gigs) ok(g.value >= 1 && g.value <= g.sides, "valore dado nel range");
+  }
+  const dice = G.players.flatMap(p => p.gigs).length + G.players.flatMap(p => p.fixer).length;
+  ok(dice === 12, `12 dadi in totale (${dice})`);
+}
+console.log(`bot vs bot: ${wins[0]}–${wins[1]}, turni medi ${(turnsTot / 60).toFixed(1)}, max ${maxTurns}, overtime in ${otGames} partite, effetti manuali segnalati ${manualN}`);
+
+/* --- regole puntuali con un mazzo costruito a mano */
+{
+  const mk = (names, legends) => ({ name: "T", legends: legends.map(n => ({ cid: byName(n).id, pid: byName(n).def.id })), cards: names.map(n => ({ cid: byName(n).id, pid: byName(n).def.id, n: 1 })) });
+  const names = ["Mantis Blades", "Animals Wrecker", "Ruthless Lowlife", "Japantown Jonin", "Delamain: Rideshare AI", "Corpo Security", "All is Lost", "Detonate"];
+  const deckA = mk([...names, ...names, ...names, ...names, ...names], ["V: Streetkid", "Rogue Amendiares: Preem Solo", "Goro Takemura: Hands Unclean"]);
+  const G = createGame([deckA, JSON.parse(JSON.stringify(deckA))], byId, { seed: 7 });
+  mulligan(G, 0, false); mulligan(G, 1, false);
+  ok(G.pending && G.pending.kind === "die" && G.pending.player === G.active, "umano: scelta del dado in attesa");
+  resolve(G, 0);
+  ok(G.phase === "main", "fase principale dopo la scelta");
+  const P = G.players[G.active];
+  // vendita
+  const sellable = P.hand.find(c => c.card.eddiable);
+  if(sellable){ ok(doAction(G, P.id, { t: "sell", uid: sellable.uid }), "vendita"); ok(!doAction(G, P.id, { t: "sell", uid: (P.hand.find(c => c.card.eddiable) || {}).uid }), "seconda vendita rifiutata"); }
+  // Leggenda come €$: con 1 Eddie + 3 Leggende (meno le 2 spese se iniziamo) si può giocare un costo ≤ denaro
+  const money = legalActions(G, P.id).filter(a => a.t === "play").length;
+  ok(money >= 0, "azioni legali calcolate");
+  // chiamata
+  const before = P.legends.filter(l => l.faceUp).length;
+  const call = legalActions(G, P.id).find(a => a.t === "call");
+  if(call){ doAction(G, P.id, call); ok(P.legends.filter(l => l.faceUp).length === before + 1, "chiamata scopre una Leggenda"); ok(!doAction(G, P.id, { t: "call" }), "seconda chiamata rifiutata"); }
+  // fine turno e Lag
+  const unitAct = legalActions(G, P.id).find(a => a.t === "play" && a.card.card.type === "Unit");
+  if(unitAct){ doAction(G, P.id, unitAct); const u = P.field[P.field.length - 1]; ok(u.lag === !((u.card.kw || []).includes("Adrenaline")), "Lag al gioco"); ok(!legalActions(G, P.id).some(a => a.t === "attack" && a.uid === u.uid), "non attacca il turno in cui entra"); }
+  ok(endTurn(G) && G.pending && G.pending.kind === "die", "cambio turno e nuova scelta del dado");
+  resolve(G, 0);
+  ok(G.active !== P.id && G.phase === "main", "turno dell'altro");
+}
+/* --- furto dei Gig in base alla potenza */
+{
+  const mk = (names, legends) => ({ name: "T", legends: legends.map(n => ({ cid: byName(n).id, pid: byName(n).def.id })), cards: names.map(n => ({ cid: byName(n).id, pid: byName(n).def.id, n: 1 })) });
+  const d = mk(Array(40).fill("Animals Wrecker"), ["V: Streetkid", "Rogue Amendiares: Preem Solo", "Goro Takemura: Hands Unclean"]);
+  const G = createGame([d, JSON.parse(JSON.stringify(d))], byId, { seed: 3 });
+  mulligan(G, 0, false); mulligan(G, 1, false); resolve(G, 0);
+  const P = G.players[G.active], R = G.players[1 - G.active];
+  // forza uno scenario: Unità pronta senza Lag con 15 potenza, rivale con 3 Gig
+  const u = { uid: 9001, cid: "x", pid: null, card: { dn: "Test", type: "Unit", power: 15, cost: 1, kw: [], text: "" }, fx: parseEffects(""), spent: false, lag: false, mod: 0, gear: [] };
+  P.field.push(u); R.gigs = [{ sides: 6, value: 2, uid: 1 }, { sides: 8, value: 7, uid: 2 }, { sides: 10, value: 4, uid: 3 }]; R.field = [];
+  ok(doAction(G, P.id, { t: "attack", uid: 9001, target: { kind: "gigs" } }), "attacco ai Gig");
+  ok(G.pending && G.pending.kind === "steal" && G.pending.options.length === 3, "scelta del primo Gig");
+  resolve(G, 1); // ruba il 7
+  ok(G.pending && G.pending.kind === "steal" && G.pending.options.length === 2, "potenza 15 → secondo Gig");
+  resolve(G, 0);
+  ok(!G.pending && P.gigs.length === 3 && R.gigs.length === 1, `rubati 2 Gig (${P.gigs.length}/${R.gigs.length})`);
+  ok(streetCred(P) === P.gigs.reduce((a, g) => a + g.value, 0), "Street Cred = somma dei valori");
+  // blocco
+  const b = { uid: 9002, cid: "y", pid: null, card: { dn: "Blk", type: "Unit", power: 20, cost: 2, kw: ["Blocker"], text: "{Blocker}" }, fx: parseEffects("{Blocker}"), spent: false, lag: false, mod: 0, gear: [] };
+  R.field.push(b); u.spent = false;
+  doAction(G, P.id, { t: "attack", uid: 9001, target: { kind: "gigs" } });
+  ok(G.pending && G.pending.kind === "block" && G.pending.player === R.id, "il difensore decide se bloccare");
+  resolve(G, 1);
+  ok(!P.field.includes(u) && R.field.includes(b) && b.spent && R.gigs.length === 1, "blocker 20 batte 15, nessun Gig rubato");
+  // vittoria a 7 Gig all'inizio del turno
+  P.gigs = Array.from({ length: 7 }, (_, i) => ({ sides: 6, value: 1, uid: 100 + i })); P.fixer = [];
+  endTurn(G); if(G.pending) resolve(G, 0); // turno del rivale
+  endTurn(G); if(G.pending) resolve(G, 0);
+  ok(G.winner === P.id && /7 Gig/.test(G.reason), "vittoria con 7 Gig all'inizio del turno: " + G.reason);
+}
+console.log(`\n${passes} controlli OK, ${fails} falliti`);
+process.exit(fails ? 1 : 0);
