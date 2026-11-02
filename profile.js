@@ -2,7 +2,7 @@
    come avatar, tema e accento, collegamenti a Melee/Holophone, record,
    backup dei dati.                                                       */
 
-import { DATA, imgUrl, thumbUrl } from "./data.js";
+import { DATA, imgUrl, thumbUrl, RARITY_IT, TYPE_IT } from "./data.js";
 import { S, DEFAULT_PROFILE, exportAll, importAll, wipe, storageOk } from "./store.js";
 import { $, $$, esc, toast } from "./ui.js";
 import { applyTheme } from "./app.js";
@@ -38,7 +38,19 @@ export function avatarHTML(p, cls = "avatar"){
 export function renderProfile(){
   const root = $("#p-profile"), p = S.profile;
   if(!wired){ wire(root); wired = true; }
-  const legends = DATA.cards.filter(c => c.type === "Legend").sort((a, b) => a.dn.localeCompare(b.dn));
+  // personaggi: le Leggende e le Unità che ritraggono una Leggenda, con tutte le
+  // illustrazioni alternative (Secret, Iconic, Nova Rare), in ordine alfabetico
+  const legendNames = new Set(DATA.cards.filter(c => c.type === "Legend").map(c => c.name));
+  const ALT = new Set(["Secret", "Iconic Other", "Iconic Legend", "Iconic Secret", "Nova Rare"]);
+  const chars = [];
+  for(const c of DATA.cards.filter(c => c.type === "Legend" || legendNames.has(c.name))){
+    const seen = new Set();
+    const prints = [c.def, ...c.prints.filter(p => p.img && ALT.has(p.rarity))];
+    for(const p of prints){ const k = (p.artist || "") + "|" + (ALT.has(p.rarity) ? p.rarity : ""); if(seen.has(k)) continue; seen.add(k);
+      chars.push({ key: c.dn + (p === c.def ? "" : " · " + (RARITY_IT[p.rarity] || p.rarity)), dn: c.dn, name: c.name, pid: p.id, tag: p === c.def ? (c.type === "Legend" ? "" : TYPE_IT[c.type]) : (RARITY_IT[p.rarity] || p.rarity) }); }
+  }
+  for(const n of EXTRA_CHARS) chars.push({ key: n, dn: n, name: n, pid: null, tag: "" });
+  chars.sort((a, b) => a.dn.localeCompare(b.dn, "it") || a.key.localeCompare(b.key, "it"));
   const games = S.record.games || [], w = S.record.wins || 0, l = S.record.losses || 0;
   root.innerHTML = `
     <div class="card">
@@ -57,10 +69,9 @@ export function renderProfile(){
         <span class="seg" id="pfLife">${LIFEPATHS.map(x => `<button data-v="${x}" aria-pressed="${p.lifepath === x}">${x}</button>`).join("")}</span></div>
       <div class="field"><label>Fazione Holophone<small>${esc(FACTIONS.find(f => f.id === p.faction)?.d || "La fazione scelta nel gioco organizzato ufficiale")}</small></label>
         <span class="seg" id="pfFaction">${FACTIONS.map(f => `<button data-v="${f.id}" aria-pressed="${p.faction === f.id}">${f.id}</button>`).join("")}</span></div>
-      <div class="field" style="grid-template-columns:1fr"><label>Personaggio preferito<small>Le Leggende usano l'illustrazione della carta come avatar; gli altri personaggi le iniziali.</small></label>
+      <div class="field" style="grid-template-columns:1fr"><label>Personaggio preferito<small>Tutte le illustrazioni di Leggende e Unità dei personaggi (anche Secret, Iconic e Nova Rare), in ordine alfabetico; i personaggi senza carta usano le iniziali.</small></label>
         <input class="inp" id="pfCharQ" type="search" placeholder="Cerca personaggio…" autocomplete="off" style="margin-top:6px">
-        <div class="chars" id="pfChars">${legends.map(c => `<button data-fav="${esc(c.dn)}" data-img="${imgUrl(c.def.id)}" class="${p.fav === c.dn ? "sel" : ""}" title="${esc(c.dn)}"><div class="art" style="background-image:url('${thumbUrl(c.def.id)}')"></div><span>${esc(c.name)}</span></button>`).join("")}
-          ${EXTRA_CHARS.map(n => `<button data-fav="${esc(n)}" data-img="" class="${p.fav === n ? "sel" : ""}" title="${esc(n)}"><div class="ph">${esc(initials(n))}</div><span>${esc(n)}</span></button>`).join("")}</div>
+        <div class="chars" id="pfChars">${chars.map(x => `<button data-fav="${esc(x.key)}" data-img="${x.pid ? imgUrl(x.pid) : ""}" class="${p.fav === x.key ? "sel" : ""}" title="${esc(x.key)}">${x.pid ? `<div class="art" style="background-image:url('${thumbUrl(x.pid)}')"></div>` : `<div class="ph">${esc(initials(x.name))}</div>`}<span>${esc(x.name)}${x.tag ? ` <i>${esc(x.tag)}</i>` : ""}</span></button>`).join("")}</div>
       </div>
     </div>
 

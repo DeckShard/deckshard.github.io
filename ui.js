@@ -27,7 +27,7 @@ export function tileHTML(c, pid, opts = {}){
   const pr = opts.price !== false ? (priceOf(p.id) || cardPrice(c)) : null;
   return `<div class="gc${opts.dim && !q ? " dim" : ""}" data-cid="${c.id}" data-pid="${p.id}">
     ${p.img ? `<img src="${thumbUrl(p.id)}" alt="${esc(c.dn)}" loading="lazy" decoding="async">` : `<div class="ph">${esc(c.dn)}</div>`}
-    ${opts.qty !== false ? `<span class="qty${q ? "" : " zero"}">${q ? "×" + q : "0"}</span><button class="qadd" data-add="${p.id}" aria-label="Aggiungi una copia">+</button>` : ""}
+    ${opts.qty !== false ? `<span class="qty${q ? "" : " zero"}">${q ? "×" + q : "0"}</span>` : ""}
     ${p.rarity && p.rarity !== "Common" && opts.rarity !== false ? `<span class="tr">${esc(RARITY_IT[p.rarity] || p.rarity)}</span>` : ""}
     <div class="cap"><b>${pr ? eur(pr.trend) + (pr.approx ? " ~" : "") : "—"}</b>${esc(c.dn)}</div>
   </div>`;

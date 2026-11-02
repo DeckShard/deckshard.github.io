@@ -61,8 +61,6 @@ function wire(root){
   $("#collSort").addEventListener("change", e => { S.settings.sort = e.target.value; S.save("settings"); renderCollection(); });
   $$("#collView button").forEach(b => b.addEventListener("click", () => { S.settings.view = b.dataset.v; S.save("settings"); renderCollection(); }));
   $("#collRows").addEventListener("click", e => {
-    const add = e.target.closest("[data-add]");
-    if(add){ e.stopPropagation(); const pid = add.dataset.add; setQty(pid, qtyOf(pid) + 1); navigator.vibrate?.(10); toast(`+1 ${DATA.byPrint.get(pid).card.dn} (${qtyOf(pid)})`); renderCollection(); return; }
     const t = e.target.closest("[data-cid]"); if(!t) return;
     openCard(t.dataset.cid, t.dataset.pid);
   });
@@ -71,7 +69,7 @@ function wire(root){
   // pressione lunga su una tessera: +1 copia della stampa predefinita, senza aprire la scheda
   let timer = null, fired = false;
   $("#collRows").addEventListener("pointerdown", e => {
-    const t = e.target.closest(".gc"); if(!t || e.target.closest("[data-add]")) return;
+    const t = e.target.closest(".gc"); if(!t) return;
     fired = false;
     timer = setTimeout(() => { fired = true; const c = DATA.byId.get(t.dataset.cid); setQty(c.def.id, qtyOf(c.def.id) + 1); navigator.vibrate?.(12); toast(`+1 ${c.dn}`); renderCollection(); }, 480);
   });

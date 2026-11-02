@@ -317,9 +317,11 @@ export function callLegend(G, pi, idx, done){
 export function goSolo(G, pi, idx){
   const P = G.players[pi]; if(G.active !== pi || G.phase !== "main" || G.pending) return false;
   const l = P.legends[idx]; if(!l || l.removed || l.onField) return err(G, "Leggenda non disponibile");
+  if(!l.faceUp) return err(G, "Go Solo solo con una Leggenda scoperta");
+  if(l.spent) return err(G, "Questa Leggenda è già spesa: non può fare Go Solo");
   if(!(l.card.kw || []).includes("Go Solo") || l.card.cost == null) return err(G, `${l.card.dn} non ha Go Solo`);
   const extra = rival(G, P).field.some(u => (u.gear || []).some(g => /pay \+2 €\$ to use \{Go Solo\}/i.test(g.card.text))) ? 2 : 0;
-  if(!canPay(P, l.card.cost + extra)) return err(G, `Servono ${l.card.cost + extra} €$`);
+  if(ready(P) - 1 < l.card.cost + extra) return err(G, `Servono ${l.card.cost + extra} €$ oltre alla Leggenda stessa`);
   l.onField = true;   // non può pagare se stessa
   payAsk(G, P, l.card.cost + extra, () => {
     l.faceUp = true; l.spent = false;
@@ -588,7 +590,7 @@ export function legalActions(G, pi){
     else acts.push({ t: "play", uid: c.uid, card: c });
   }
   if(!P.called && canPay(P, 1) && P.legends.some(l => !l.faceUp && !l.removed)) acts.push({ t: "call" });
-  P.legends.forEach((l, i) => { if(!l.removed && !l.onField && (l.card.kw || []).includes("Go Solo") && l.card.cost != null && canPay(P, l.card.cost)) acts.push({ t: "gosolo", idx: i, legend: l }); });
+  P.legends.forEach((l, i) => { if(!l.removed && !l.onField && l.faceUp && !l.spent && (l.card.kw || []).includes("Go Solo") && l.card.cost != null && ready(P) - 1 >= l.card.cost) acts.push({ t: "gosolo", idx: i, legend: l }); });
   for(const x of [...P.field, ...P.legends.filter(l => l.faceUp && !l.removed && !l.onField)]) if(x.fx.spend.length && !x.spent && !x.lag) acts.push({ t: "spend", uid: x.uid, obj: x });
   for(const u of P.field){
     if(!canAttack(G, P, u)) continue;

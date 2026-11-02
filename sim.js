@@ -274,7 +274,7 @@ function legendCard(el, owner){
   const items = [], idx = P.legends.indexOf(l);
   if(mine && myTurn && !l.removed && !l.onField){
     if(!l.faceUp) items.push({ label: "Chiama questa Leggenda (1 €$)", cls: "acc", disabled: P.called || !canPay(P, 1), fn: () => after(doAction(G, M.id, { t: "call", idx })) });
-    if((l.card.kw || []).includes("Go Solo") && l.card.cost != null) items.push({ label: `Go Solo (${l.card.cost} €$): entra come Unità pronta`, disabled: !canPay(P, l.card.cost), fn: () => after(doAction(G, M.id, { t: "gosolo", idx })) });
+    if(l.faceUp && (l.card.kw || []).includes("Go Solo") && l.card.cost != null) items.push({ label: `Go Solo (${l.card.cost} €$): entra come Unità pronta`, disabled: l.spent || ready(P) - 1 < l.card.cost, fn: () => after(doAction(G, M.id, { t: "gosolo", idx })) });
     if(l.faceUp && l.fx.spend.length) items.push({ label: "Abilità {Spend}", disabled: l.spent, fn: () => after(doAction(G, M.id, { t: "spend", uid: l.uid })) });
     if(MANUAL) items.push({ label: l.spent ? "Prepara (manuale)" : "Spendi come 1 €$ (manuale)", fn: () => { manual.toggleSpent(G, owner, l.uid); after(); } });
     if(MANUAL && !l.faceUp) items.push({ label: "Scopri senza chiamare (manuale)", fn: () => { manual.flip(G, owner, idx); after(); } });
@@ -320,8 +320,15 @@ function wire(){
   board.addEventListener("pointerdown", e => {
     const el = e.target.closest(".bc"); if(!el) return; lpFired = false;
     const pid = pidOf(el); if(!pid) return;
-    lp = setTimeout(() => { lpFired = true; openLens(imgUrl(pid)); }, 420);
+    lp = setTimeout(() => { lpFired = true; if(drag && drag.active) return; peek(pid); }, 420);
   });
+  // anteprima: la carta grande ma non a tutto schermo, resta visibile la plancia; sparisce al rilascio
+  function peek(pid){
+    let el = $("#peek"); if(!el){ el = document.createElement("div"); el.id = "peek"; board.appendChild(el); }
+    el.innerHTML = `<img src="${imgUrl(pid)}" alt=""><div class="hint">Rilascia per chiudere · «Ingrandisci» nel menù per lo zoom</div>`; el.hidden = false;
+  }
+  const unpeek = () => { const el = $("#peek"); if(el) el.hidden = true; };
+  board.addEventListener("pointerup", unpeek); board.addEventListener("pointercancel", unpeek);
   board.addEventListener("contextmenu", e => e.preventDefault());
   const lpCancel = () => clearTimeout(lp);
   // trascinamento dalla mano: sulla plancia per giocare, su un'Unità/Leggenda per equipaggiare un Gear
@@ -332,7 +339,7 @@ function wire(){
     const M = G.players[me()], el = document.elementFromPoint(x, y); if(!el) return null;
     const bc = el.closest(".bc");
     if(bc && bc.closest(`[data-field="${M.id}"]`)) return { kind: "unit", el: bc, uid: +bc.dataset.uid };
-    if(bc && bc.dataset.legend && bc.closest(".bz.mine")){ const l = M.legends.find(l => l.uid === +bc.dataset.uid); if(l && l.faceUp && !l.onField && !l.removed) return { kind: "legend", el: bc, uid: l.uid }; }
+    if(bc && bc.dataset.legend && bc.closest(".bz.mine")){ const l = M.legends.find(l => l.uid === +bc.dataset.uid); if(l && l.faceUp && !l.onField && !l.removed) return { kind: "legend", el: bc, uid: l.uid }; if(l && !l.faceUp) return { kind: "facedown", el: null }; }
     const zone = el.closest(".bz.mine"); if(zone && !el.closest("[data-handrow]")) return { kind: "field", el: zone.querySelector(`[data-field="${M.id}"]`) };
     return null;
   };
@@ -357,7 +364,7 @@ function wire(){
     const M = G.players[me()], c = M.hand.find(x => x.uid === d.uid); if(!c) return;
     const t = e.type === "pointercancel" ? null : dropTarget(e.clientX, e.clientY);
     if(!t) return;
-    if(c.card.type === "Gear"){ if(t.kind === "unit" || t.kind === "legend") after(doAction(G, M.id, { t: "play", uid: c.uid, target: t.uid })); else note("Trascina il Gear su un'Unità o una Leggenda scoperta"); return; }
+    if(c.card.type === "Gear"){ if(t.kind === "unit" || t.kind === "legend") after(doAction(G, M.id, { t: "play", uid: c.uid, target: t.uid })); else note(t.kind === "facedown" ? "Un Gear si equipaggia solo a una Leggenda scoperta" : "Trascina il Gear su un'Unità o una Leggenda scoperta"); return; }
     if(t.kind === "field" || t.kind === "unit") after(doAction(G, M.id, { t: "play", uid: c.uid }));
   };
   board.addEventListener("pointerup", endDrag); board.addEventListener("pointercancel", endDrag);

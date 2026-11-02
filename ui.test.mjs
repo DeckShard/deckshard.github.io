@@ -42,11 +42,12 @@ ok(await page.locator("#collRows .row").count() === 1, "solo possedute: 1");
 await page.click('#collOwned [data-o="no"]');
 ok(await page.locator("#collRows .row").count() === 150, "mancanti: 150");
 await page.click('#collOwned [data-o=""]');
-// pulsante +1 sulla tessera
+// pressione lunga sulla tessera: +1 senza aprire la scheda
 await page.click('#collView [data-v="grid"]');
 await page.fill("#collQ", "detonate");
-await page.click("#collRows .gc .qadd");
-ok((await page.locator("#collRows .gc .qty").textContent()) === "×1", "+1 dalla tessera");
+await page.dispatchEvent("#collRows .gc", "pointerdown"); await page.waitForTimeout(600); await page.dispatchEvent("#collRows .gc", "pointerup");
+ok((await page.locator("#collRows .gc .qty").textContent()) === "×1", "+1 con la pressione lunga");
+ok(!(await page.locator("#sheet").getAttribute("class") || "").includes("on"), "la scheda non si apre");
 await page.fill("#collQ", "");
 
 /* persistenza */
@@ -131,6 +132,10 @@ ok((await page.locator("#deckList [data-deck]").count()) === nDecks - 1, "mazzo 
 await page.click('nav.tabs button[data-tab="profile"]');
 await page.fill("#pfNick", "Choom"); await page.dispatchEvent("#pfNick", "change");
 await page.click('#pfLife [data-v="Nomad"]');
+ok((await page.locator("#pfChars button").count()) > 60, "galleria avatar con illustrazioni alternative");
+const favs = await page.locator("#pfChars button").evaluateAll(els => els.map(e => e.dataset.fav));
+const favNames = favs.map(f => f.split(" · ")[0]);
+ok(favNames.every((f, i) => !i || favNames[i - 1].localeCompare(f, "it") <= 0), "galleria in ordine alfabetico");
 await page.click('#pfChars button[data-fav="V: Streetkid"]');
 ok((await page.locator(".phead h2").textContent()) === "Choom", "nick salvato");
 ok(await page.locator(".phead .avatar.art").count() === 1, "avatar dalla Leggenda");
@@ -172,7 +177,7 @@ const popTxt = await page.locator(".pop").textContent();
 ok(/Gioca|Equipaggia/.test(popTxt), "voce gioca/equipaggia");
 // vendi la prima carta vendibile
 let sold = false;
-for(let k = 0; k < 8 && !sold; k++){
+for(let k = 0; k < (await page.locator('[data-handrow] .bc').count()) && !sold; k++){
   if(k) await page.click(`[data-handrow] .bc >> nth=${k}`);
   const sellBtn = page.locator('.pop button:has-text("Vendi")');
   if(await sellBtn.count() && await sellBtn.isEnabled()){ await sellBtn.click(); sold = true; ok((await page.locator('.bz.mine [data-eddies] b').textContent()).startsWith("1/"), "venduta: 1 eddie"); }
@@ -180,7 +185,8 @@ for(let k = 0; k < 8 && !sold; k++){
 }
 // gioca una carta che posso permettermi: il pagamento manuale chiede con cosa pagare
 let played = false;
-for(let k = 0; k < 8 && !played; k++){
+const handN = await page.locator('[data-handrow] .bc').count();
+for(let k = 0; k < handN && !played; k++){
   await page.click(`[data-handrow] .bc >> nth=${k}`);
   const b = page.locator('.pop button.acc');
   if(await b.count() && await b.isEnabled() && /Gioca/.test(await b.textContent())){ await b.click(); played = true; }
@@ -211,8 +217,9 @@ if(played){
   }
   if(dragged){ ok(true, "trascinamento dalla mano avvia il gioco della carta"); if(await page.locator("#bPayCancel").count()) await page.click("#bPayCancel"); }
 }
-// fine turno → il bot gioca → torna a me
+// fine turno → il bot gioca → torna a me (prima si chiudono eventuali richieste della carta giocata)
 if(await page.locator("#bPayCancel").count()) await page.click("#bPayCancel");
+for(let i = 0; i < 10 && await page.locator("#simAsk [data-ask]").count(); i++){ await page.click("#simAsk [data-ask] >> nth=-1"); await page.waitForTimeout(100); }
 await page.click("#bEnd");
 for(let i = 0; i < 60; i++){
   if(await page.locator("#simAsk").count()){ await page.click("#simAsk [data-ask]"); }
@@ -226,8 +233,12 @@ await page.click("#bLog"); ok(await page.locator("#simLog .e").count() > 3, "reg
 await page.click("#bLogClose");
 // zoom con pressione lunga su una carta in mano
 await page.dispatchEvent('[data-handrow] .bc >> nth=0', "pointerdown"); await page.waitForTimeout(600);
-ok((await page.locator("#lens").getAttribute("class") || "").includes("on"), "lente aperta con pressione lunga");
-await page.keyboard.press("Escape"); await page.dispatchEvent('[data-handrow] .bc >> nth=0', "pointerup"); await page.click("#board .bstrip .st");
+ok(await page.locator("#peek:not([hidden]) img").count() === 1, "anteprima della carta con la pressione lunga");
+const peekH = await page.evaluate(() => { const i = document.querySelector("#peek img"), b = document.querySelector("#board"); return [i.getBoundingClientRect().height, b.clientHeight]; });
+ok(peekH[0] <= peekH[1] * 0.9, `anteprima dimensionata sulla plancia (${Math.round(peekH[0])}px su ${peekH[1]}px)`);
+await page.dispatchEvent('[data-handrow] .bc >> nth=0', "pointerup");
+ok(await page.locator("#peek:not([hidden])").count() === 0, "anteprima chiusa al rilascio");
+await page.click("#board .bstrip .st");
 // resa e uscita
 await page.click("#bMenu"); await page.click('.pop button:has-text("arrendo")');
 await page.waitForSelector(".winbox");
