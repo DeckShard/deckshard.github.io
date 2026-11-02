@@ -14,6 +14,10 @@ cardmarket-expansions.json abbinamento espansioni Cardmarket → set del gioco
 index.html, theme.css, sim.css, manifest.webmanifest, sw.js, icon*   la PWA
 app.js, data.js, store.js, ui.js, collection.js, deck.js, profile.js, sim.js   le sezioni
 i18n.js                    lingua dell'interfaccia: dizionario italiano → inglese applicato sul DOM
+cloud.js                   account e cloud (Supabase): accesso, sincronizzazione, amici, chat, presenza, feedback
+social.js                  interfaccia della scheda Social: account, amici, chat, feedback
+supabase.sql               schema del database con le regole di sicurezza (da eseguire nel SQL Editor di Supabase)
+cloud.test.mjs             collaudo dal vivo di account, sincronizzazione, amici e chat (richiede l'accesso anonimo attivo)
 engine.js                  motore di regole, puro (collaudabile con Node)
 bot.js                     avversario euristico
 scanner.js                 scanner della collezione (OCR con Tesseract.js, caricato dalla CDN quando serve)
@@ -54,6 +58,14 @@ Effetti delle carte: l'interprete (`parser.js`) legge il testo e lo trasforma in
 Pagamenti: di base il giocatore sceglie cosa spendere toccando sulla plancia gli Eddies o le Leggende (con la scorciatoia «Tutto con Eddies» e «Annulla»); nel profilo si può attivare il pagamento automatico, che chiede conferma solo quando dovrebbe spendere una Leggenda scoperta con un'abilità Spend ancora utilizzabile.
 
 Nota sul Gear: il motore somma la potenza del Gear a quella dell'Unità equipaggiata.
+
+## Account, sincronizzazione e social
+
+L'app funziona tutta in locale anche senza account. Dalla scheda **Social** si accede con un link via email (o con Google, quando è configurato) e da quel momento collezione, mazzi, profilo, impostazioni e record si sincronizzano tra tutti i dispositivi, anche in tempo reale. Al primo accesso su un dispositivo che ha già dati si sceglie se unirli all'account (per ogni stampa si tiene il numero più alto, i mazzi di entrambi), tenere quelli dell'account o quelli del dispositivo; poi vince la modifica più recente sezione per sezione.
+
+Il servizio è [Supabase](https://supabase.com) (piano gratuito, server a Francoforte): `supabase.sql` crea tabelle, funzioni e regole di sicurezza (Row Level Security) e si può rieseguire. La chiave nel codice è quella pubblica: ciò che un utente può fare lo decidono le regole del database (nessuno legge i dati altrui, si scrive solo agli amici, i blocchi valgono nei due sensi, il feedback non è leggibile dall'app). Il workflow notturno chiama `ping` per evitare che il progetto gratuito vada in pausa.
+
+Social: nick pubblico unico, ricerca dei giocatori, richieste di amicizia, lista amici con lo stato in linea, chat privata tra amici con i non letti, collezione visibile agli amici se lo si sceglie, blocca e segnala, eliminazione dell'account con tutti i dati. Dalle Impostazioni si invia un **feedback** (problema, idea, altro) che finisce in una tabella privata leggibile solo dal pannello di Supabase. Le email di accesso agli altri utenti richiedono un SMTP personalizzato (per esempio Brevo); il servizio di base di Supabase scrive solo ai membri del team.
 
 ## Lingua
 

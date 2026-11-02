@@ -29,8 +29,15 @@ export const S = {
   settings: Object.assign({ view: "grid", sort: "name", ownedOnly: false, collView: "card", collPick: "rarest", favPrints: {} }, get("settings", {})),
   record: Object.assign({ wins: 0, losses: 0, games: [] }, get("record", {})),
   recent: get("recent", []),
-  save(k){ set(k, this[k]); }
+  save(k){ set(k, this[k]); if(!QUIET) for(const f of HOOKS) f(k); }
 };
+/* chi vuole sapere quando una sezione cambia (la sincronizzazione con l'account) */
+const HOOKS = [];
+let QUIET = false;
+export const onSave = f => { HOOKS.push(f); };
+/* salvataggi che arrivano dal cloud: non devono ripartire verso il cloud */
+export function quietly(fn){ QUIET = true; try { fn(); } finally { QUIET = false; } }
+export const rawGet = get, rawSet = set;
 
 /* collezione */
 export const qtyOf = pid => S.coll[pid] || 0;
@@ -63,7 +70,7 @@ export function importAll(obj){
   if (obj.record) { S.record = obj.record; S.save("record"); }
 }
 export function wipe(){
-  for (const k of ["coll", "decks", "profile", "settings", "record", "recent"]) { try { localStorage.removeItem("ncd:" + k); } catch (e) {} delete MEM[k]; }
-  S.coll = {}; S.decks = []; S.profile = Object.assign({}, DEFAULT_PROFILE); S.settings = { view: "grid", sort: "name", ownedOnly: false };
+  for (const k of ["coll", "decks", "profile", "settings", "record", "recent", "stamps", "synced", "syncUser"]) { try { localStorage.removeItem("ncd:" + k); } catch (e) {} delete MEM[k]; }
+  S.coll = {}; S.decks = []; S.profile = Object.assign({}, DEFAULT_PROFILE); S.settings = { view: "grid", sort: "name", ownedOnly: false, collView: "card", collPick: "rarest", favPrints: {} };
   S.record = { wins: 0, losses: 0, games: [] }; S.recent = [];
 }

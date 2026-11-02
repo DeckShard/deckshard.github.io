@@ -6,6 +6,8 @@ import { DATA, imgUrl, thumbUrl, RARITY_IT, TYPE_IT } from "./data.js";
 import { S, DEFAULT_PROFILE, exportAll, importAll, wipe, storageOk } from "./store.js";
 import { $, $$, esc, toast } from "./ui.js";
 import { applyTheme, APP_VERSION } from "./app.js";
+import { accountHTML, friendsHTML, wireSocial, feedbackHTML, wireFeedback, safeWipe } from "./social.js";
+import { state as cloudState } from "./cloud.js";
 
 export const LIFEPATHS = ["Corpo", "Street Kid", "Nomad"];
 export const FACTIONS = [
@@ -45,7 +47,7 @@ export function avatarHTML(p, cls = "avatar"){
 
 export function renderProfile(){
   const root = $("#p-profile"), p = S.profile;
-  if(!wired.has(root)){ wire(root); wired.add(root); }
+  if(!wired.has(root)){ wire(root); wireSocial(root, () => { if(root.classList.contains("on")) renderProfile(); }); wired.add(root); }
   // personaggi: le Leggende e le Unità che ritraggono una Leggenda, con tutte le
   // illustrazioni alternative (Secret, Iconic, Nova Rare), in ordine alfabetico
   const legendNames = new Set(DATA.cards.filter(c => c.type === "Legend").map(c => c.name));
@@ -60,7 +62,11 @@ export function renderProfile(){
   for(const n of EXTRA_CHARS) chars.push({ key: n, dn: n, name: n, pid: null, tag: "" });
   chars.sort((a, b) => a.dn.localeCompare(b.dn, "it") || a.key.localeCompare(b.key, "it"));
   const games = S.record.games || [], w = S.record.wins || 0, l = S.record.losses || 0;
+  const keep = root.querySelector("#frQ, #acEmail, #acCode, #acNick");   // non perdere ciò che si sta scrivendo durante un aggiornamento in tempo reale
+  const typing = keep && document.activeElement === keep ? { id: keep.id, v: keep.value } : null;
   root.innerHTML = `
+    ${accountHTML()}
+    ${friendsHTML()}
     <div class="card">
       <div class="phead">${avatarHTML(p)}
         <div style="min-width:0"><h2>${esc(p.nick || "Senza nome")}</h2>
@@ -72,7 +78,8 @@ export function renderProfile(){
 
     <div class="card">
       <h3>Identità</h3>
-      <div class="field"><label for="pfNick">Nick</label><input class="inp" id="pfNick" value="${esc(p.nick)}" placeholder="Il tuo handle" maxlength="24" autocomplete="nickname"></div>
+      ${cloudState.user ? `<div class="field"><label>Nick<small>È il nick pubblico dell'account: si cambia nella scheda Account qui sopra</small></label><b>${esc(p.nick)}</b></div>`
+        : `<div class="field"><label for="pfNick">Nick</label><input class="inp" id="pfNick" value="${esc(p.nick)}" placeholder="Il tuo handle" maxlength="24" autocomplete="nickname"></div>`}
       <div class="field"><label>Percorso di vita<small>Da dove vieni a Night City</small></label>
         <span class="seg" id="pfLife">${LIFEPATHS.map(x => `<button data-v="${x}" aria-pressed="${p.lifepath === x}">${x}</button>`).join("")}</span></div>
       <div class="field"><label>Fazione Holophone<small>${esc(FACTIONS.find(f => f.id === p.faction)?.d || "La fazione scelta nel gioco organizzato ufficiale")}</small></label>
@@ -99,13 +106,14 @@ export function renderProfile(){
     </div>
 
     <p class="note" style="margin:0">Tema, colori, pagamento automatico nel simulatore, lingua, backup e versione sono nelle <a href="#settings">Impostazioni</a> (l'ingranaggio in alto).</p>`;
+  if(typing){ const el = root.querySelector("#" + typing.id); if(el){ el.value = typing.v; el.focus(); } }
 }
 
 /* ---------------- Impostazioni: aspetto, lingua, simulatore, prezzi, dati, info */
 export const LANGS = [["it", "Italiano"], ["en", "English"]];
 export function renderSettings(){
   const root = $("#p-settings"), p = S.profile;
-  if(!wired.has(root)){ wire(root); wired.add(root); }
+  if(!wired.has(root)){ wire(root); wireFeedback(root, APP_VERSION); wired.add(root); }
   const n = DATA.cards.length, np = DATA.cards.reduce((a, c) => a + c.prints.length, 0);
   const pricesAt = DATA.pricesAt ? new Date(DATA.pricesAt).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "non ancora scaricato";
   root.innerHTML = `
@@ -152,7 +160,7 @@ export function renderSettings(){
 
     <div class="card">
       <h3>Dati</h3>
-      <div class="sub">Catalogo: <b>${n} carte · ${np} stampe</b> (da cyberpunktcg.com). Collezione, mazzi, profilo e record restano sul dispositivo: esporta un backup per spostarti su un altro telefono o per sicurezza.</div>
+      <div class="sub">Catalogo: <b>${n} carte · ${np} stampe</b> (da cyberpunktcg.com). ${cloudState.user ? "Con l'account collezione, mazzi, profilo e record si sincronizzano su tutti i tuoi dispositivi; il backup resta utile come copia di sicurezza." : "Collezione, mazzi, profilo e record restano sul dispositivo: esporta un backup per spostarti su un altro telefono, oppure accedi con un account dalla scheda Social."}</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
         <button class="btn sm" id="pfExport">Esporta backup</button>
         <button class="btn sm" id="pfImport">Importa backup</button>
@@ -161,6 +169,8 @@ export function renderSettings(){
       </div>
     </div>
 
+    ${feedbackHTML()}
+
     <div class="card">
       <h3>Informazioni</h3>
       <div class="sub">Night City Deck <b>v${APP_VERSION}</b> · app gratuita e non ufficiale per il Cyberpunk TCG, senza pubblicità e senza account. <i>Cyberpunk</i>, <i>Cyberpunk 2077</i> e le immagini delle carte sono © CD PROJEKT S.A. / WeirdCo. Dati delle carte da cyberpunktcg.com, prezzi dal listino pubblico Cardmarket.</div>
@@ -168,6 +178,7 @@ export function renderSettings(){
         <a class="btn sm" href="https://github.com/alessioroncucci/cyberpunk-tcg" target="_blank" rel="noopener noreferrer">Codice su GitHub ↗</a>
         <a class="btn sm" href="https://cyberpunktcg.com" target="_blank" rel="noopener noreferrer">cyberpunktcg.com ↗</a>
       </div>
+      <details class="fold" style="margin-top:12px"><summary>Privacy</summary><div class="sub" style="margin-top:6px">Senza account tutto resta su questo dispositivo. Con l'account vengono salvati su Supabase (server nell'Unione Europea, Francoforte): email di accesso, nick e profilo pubblico (avatar, fazione, record), collezione, mazzi e impostazioni per la sincronizzazione, amicizie, blocchi e messaggi. L'email non è mai visibile agli altri giocatori; la collezione la vedono gli amici solo se lo scegli. «Elimina account» cancella tutto in modo definitivo. Il feedback arriva in una casella privata e contiene solo ciò che scrivi, la versione dell'app e il tipo di dispositivo.</div></details>
     </div>`;
 }
 
@@ -209,7 +220,7 @@ function wire(root){
       setTimeout(() => URL.revokeObjectURL(a.href), 2000); return;
     }
     if(e.target.closest("#pfImport")){ $("#pfFile").click(); return; }
-    if(e.target.closest("#pfWipe")){ if(confirm("Cancellare collezione, mazzi, profilo e record da questo dispositivo?")){ wipe(); applyTheme(); renderSettings(); toast("Dati azzerati"); document.dispatchEvent(new CustomEvent("ncd:collection")); } }
+    if(e.target.closest("#pfWipe")){ if(confirm(cloudState.user ? "Cancellare collezione, mazzi, profilo e record da questo dispositivo? Esci anche dall'account: i dati nel cloud restano." : "Cancellare collezione, mazzi, profilo e record da questo dispositivo?")){ safeWipe().then(() => { applyTheme(); renderSettings(); toast("Dati azzerati"); document.dispatchEvent(new CustomEvent("ncd:collection")); }); } }
   });
   root.addEventListener("change", async e => {
     if(e.target.id !== "pfFile" || !e.target.files[0]) return;

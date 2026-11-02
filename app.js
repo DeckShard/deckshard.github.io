@@ -9,8 +9,9 @@ import { renderProfile, renderSettings } from "./profile.js";
 import { renderSim } from "./sim.js";
 import { renderRules } from "./rules.js";
 import { initI18n } from "./i18n.js";
+import { bootCloud, state as cloudState } from "./cloud.js";
 
-export const APP_VERSION = "1.4.0";
+export const APP_VERSION = "1.5.0";
 
 const TABS = { collection: renderCollection, deck: renderDeck, profile: renderProfile, sim: renderSim, rules: renderRules, settings: renderSettings };
 
@@ -57,6 +58,13 @@ async function boot(){
   if(!storageOk()) toast("Memoria locale non disponibile: le modifiche non verranno salvate", 5000);
 
   showTab(location.hash.slice(1) || "collection", false);
+
+  // account: dati arrivati da un altro dispositivo → si ridisegna la scheda aperta; badge di messaggi e richieste
+  const current = () => ($(".panel.on") || {}).dataset?.tab || "collection";
+  document.addEventListener("ncd:synced", () => { applyTheme(); TABS[current()](); });
+  const badge = () => { const n = (cloudState.unread || 0) + (cloudState.requests || 0); const b = $('nav.tabs button[data-tab="profile"]'); let s = b.querySelector(".nbadge"); if(n){ if(!s){ s = document.createElement("span"); s.className = "nbadge"; b.appendChild(s); } s.textContent = n > 9 ? "9+" : n; } else if(s) s.remove(); };
+  for(const ev of ["ncd:cloud", "ncd:social", "ncd:presence"]) document.addEventListener(ev, () => { badge(); if(current() === "profile" && !document.querySelector("#chat:not([hidden])")) TABS.profile(); });
+  bootCloud();
 
   if("serviceWorker" in navigator && location.protocol.startsWith("http")){
     try{ await navigator.serviceWorker.register("./sw.js"); }catch(e){ /* senza SW funziona lo stesso */ }
