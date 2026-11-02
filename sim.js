@@ -31,7 +31,7 @@ export function renderSim(){
         <div><label style="font-size:12px;font-weight:700;color:var(--mute)">${mode === "bot" ? "Mazzo del bot" : "Mazzo del giocatore 2"}</label><select class="inp" id="simDeck1">${opts(S.settings.simDeck1 || "starter:embracingpowerretailstarterdeck")}</select></div>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;align-items:center">
-        <button class="btn acc" id="simStart">▶ Inizia la partita</button>
+        <button class="btn yel" id="simStart">▶ Inizia la partita</button>
         ${G && G.winner == null ? `<button class="btn" id="simResume">Riprendi la partita in corso</button>` : ""}
         <span class="chip">${S.record.wins || 0} vittorie · ${S.record.losses || 0} sconfitte</span>
       </div>
@@ -64,7 +64,7 @@ function askMulligan(){
   if(i == null){ render(); tick(); return; }
   const P = G.players[i];
   showAsk(`${P.name}: tieni questa mano?`, P.hand.map(c => ({ label: c.card.dn, pid: c.pid })), null, [
-    { label: "Tengo", cls: "acc", fn: () => { mulligan(G, i, false); askMulligan(); } },
+    { label: "Tengo", cls: "yel", fn: () => { mulligan(G, i, false); askMulligan(); } },
     { label: "Mulligan (ripesco 6)", fn: () => { mulligan(G, i, true); askMulligan(); } }
   ]);
 }
@@ -124,7 +124,7 @@ function render(){
   const canSell = acts.some(a => a.t === "sell"), canCall = acts.some(a => a.t === "call");
   const handHTML = M.hand.map(c => {
     const cost = c.card.cost ?? 0, afford = canPay(M, cost);
-    return `<div class="bc big${sel === c.uid ? " sel" : ""}" data-uid="${c.uid}" data-hand="1" title="${esc(c.card.dn)}"><img src="${thumbUrl(c.pid)}" alt=""><span class="co${afford ? "" : " no"}">${cost}</span>${c.card.eddiable ? "" : `<span class="pw" style="font-size:9px">no €$</span>`}</div>`;
+    return `<div class="bc big${sel === c.uid ? " sel" : ""}" data-uid="${c.uid}" data-hand="1" title="${esc(c.card.dn)}"><img src="${thumbUrl(c.pid)}" alt=""><span class="co${afford ? "" : " no"}">${cost}</span>${c.card.eddiable ? `<span class="ed" title="Vendibile per 1 €$">€$</span>` : ""}</div>`;
   }).join("");
   const pendingTxt = G.pending ? (human[G.pending.player] ? `${G.players[G.pending.player].name} deve scegliere…` : "il bot decide…") : "";
   const status = G.winner != null ? `Fine: ${esc(G.reason)}` : myTurn ? "Il tuo turno" : human[G.active] ? `Turno di ${esc(G.players[G.active].name)}` : "Turno del bot…";
@@ -148,7 +148,7 @@ function render(){
       <span class="st">T${G.turn} · ${status}</span>
       <span class="lg" id="lastLog" title="${esc(last ? last.text : "")}">${noteMsg ? `<b style="color:var(--acc2)">${esc(noteMsg)}</b> · ` : ""}${pendingTxt ? `<b>${esc(pendingTxt)}</b> · ` : ""}${esc(last ? last.text : "")}</span>
       ${myTurn && human[M.id] ? `<button class="btn sm" id="bCall" ${canCall ? "" : "disabled"} title="Chiama una Leggenda (1 €$)">Chiama</button>
-        <button class="btn sm acc" id="bEnd">Fine turno</button>` : ""}
+        <button class="btn sm yel" id="bEnd">Fine turno</button>` : ""}
       ${targeting ? `<button class="btn sm" id="bCancel">Annulla</button>` : ""}
       <button class="btn sm icon" id="bLog" title="Registro">≡</button>
       <button class="btn sm icon" id="bMenu" title="Menù">⋯</button>
@@ -168,8 +168,8 @@ function render(){
     </div>
     ${showLog ? `<div id="simLog"><div style="display:flex;justify-content:space-between;align-items:center"><b>Registro</b><button class="btn sm icon" id="bLogClose">✕</button></div>${G.log.slice(-80).map(e => `<div class="e ${e.kind}">${esc(e.text)}</div>`).join("")}</div>` : ""}
     ${G.pending && human[G.pending.player] ? askHTML() : ""}
-    ${G.winner != null ? `<div class="winbox"><div class="box"><h2>${G.winner === me() ? "VITTORIA" : mode === "hot" ? "VINCE " + esc(G.players[G.winner].name).toUpperCase() : "SCONFITTA"}</h2><p>${esc(G.reason)}</p><p style="color:var(--mute)">${G.turn} turni</p><div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><button class="btn acc" id="bAgain">Rivincita</button><button class="btn" id="bExit">Esci</button></div></div></div>` : ""}
-    ${handoff ? `<div class="handoff"><h2>Passa il dispositivo a ${esc(G.players[G.active].name)}</h2><p>Il tuo rivale non guarda, promesso.</p><button class="btn acc" id="bHand">Sono pronto</button></div>` : ""}`;
+    ${G.winner != null ? `<div class="winbox"><div class="box"><h2>${G.winner === me() ? "VITTORIA" : mode === "hot" ? "VINCE " + esc(G.players[G.winner].name).toUpperCase() : "SCONFITTA"}</h2><p>${esc(G.reason)}</p><p style="color:var(--mute)">${G.turn} turni</p><div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><button class="btn yel" id="bAgain">Rivincita</button><button class="btn" id="bExit">Esci</button></div></div></div>` : ""}
+    ${handoff ? `<div class="handoff"><h2>Passa il dispositivo a ${esc(G.players[G.active].name)}</h2><p>Il tuo rivale non guarda, promesso.</p><button class="btn yel" id="bHand">Sono pronto</button></div>` : ""}`;
   if(showLog){ const l = $("#simLog"); l.scrollTop = l.scrollHeight; }
 }
 
@@ -261,9 +261,9 @@ function legendCard(el, owner){
     items.push({ label: l.spent ? "Prepara (manuale)" : "Spendi come 1 €$ (manuale)", fn: () => { manual.toggleSpent(G, owner, l.uid); after(); } });
     if(!l.faceUp) items.push({ label: "Scopri senza chiamare (manuale)", fn: () => { manual.flip(G, owner, idx); after(); } });
   }
-  if(l.faceUp || mine) items.push({ label: "Ingrandisci", fn: () => openLens(imgUrl(l.pid)) }, { label: "Scheda carta", fn: () => openCard(l.cid, l.pid) });
-  if(!items.length) items.push({ label: "Leggenda coperta", disabled: true, fn: () => {} });
-  openPop(el, items, l.faceUp || mine ? l.card.dn : "Leggenda");
+  if(l.faceUp) items.push({ label: "Ingrandisci", fn: () => openLens(imgUrl(l.pid)) }, { label: "Scheda carta", fn: () => openCard(l.cid, l.pid) });
+  if(!items.length) items.push({ label: "Leggenda coperta: nessuno sa quale sia", disabled: true, fn: () => {} });
+  openPop(el, items, l.faceUp ? l.card.dn : "Leggenda coperta");
 }
 function gigChip(el, owner){
   const P = G.players[owner], g = P.gigs.find(x => x.uid === +el.dataset.gig); if(!g) return;
@@ -303,6 +303,7 @@ function wire(){
     const pid = pidOf(el); if(!pid) return;
     lp = setTimeout(() => { lpFired = true; openLens(imgUrl(pid)); }, 420);
   });
+  board.addEventListener("contextmenu", e => e.preventDefault());
   const lpCancel = () => clearTimeout(lp);
   board.addEventListener("pointerup", lpCancel); board.addEventListener("pointercancel", lpCancel); board.addEventListener("pointermove", e => { if(e.movementX || e.movementY) lpCancel(); });
   board.addEventListener("click", e => {
@@ -330,6 +331,6 @@ function wire(){
 }
 function pidOf(el){
   if(!G) return null; const uid = +el.dataset.uid;
-  for(const P of G.players){ const x = [...P.hand, ...P.field, ...P.legends].find(c => c.uid === uid); if(x){ if(P.legends.includes(x) && !x.faceUp && P.id !== me()) return null; return x.pid; } }
+  for(const P of G.players){ const x = [...P.hand, ...P.field, ...P.legends].find(c => c.uid === uid); if(x){ if(P.legends.includes(x) && !x.faceUp) return null; if(P.hand.includes(x) && P.id !== me()) return null; return x.pid; } }
   return null;
 }

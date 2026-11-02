@@ -17,7 +17,8 @@ export const FACTIONS = [
 export const EXTRA_CHARS = ["Lucy", "David Martinez", "Maine", "Dorio", "Kiwi", "Pilar", "Faraday", "Placide", "Brigitte",
   "Meredith Stout", "Mr. Hands", "Songbird", "Solomon Reed", "Rosalind Myers", "Misty Olszewski", "T-Bug", "Delamain", "Lizzy Wizzy", "Us Cracks", "Morgan Blackhand", "Adam Smasher (2013)"];
 export const ACCENTS = [
-  { id: "samurai", n: "Samurai", a: "#f7d500", b: "#e11a3c" },
+  { id: "holophone", n: "Holophone (rosso e cyan)", a: "#ff3b3b", b: "#00e5f2" },
+  { id: "samurai", n: "Samurai (giallo e rosso)", a: "#fcee0a", b: "#e11a3c" },
   { id: "netrunner", n: "Netrunner", a: "#00e5f2", b: "#ff3bd4" },
   { id: "arasaka", n: "Arasaka", a: "#d8323c", b: "#6a6a72" },
   { id: "nomad", n: "Nomad", a: "#f28c28", b: "#6fae52" },
@@ -27,8 +28,10 @@ export const ACCENTS = [
 let wired = false;
 const initials = s => s.split(/\s+/).map(w => w[0]).join("").slice(0, 2).toUpperCase();
 
+/* solo l'illustrazione della carta: la Leggenda ha il titolo in alto e il
+   testo in basso, l'arte sta circa tra il 17% e il 60% dell'altezza */
 export function avatarHTML(p, cls = "avatar"){
-  if(p.favImg) return `<img class="${cls}" src="${p.favImg}" alt="${esc(p.fav)}">`;
+  if(p.favImg) return `<div class="${cls} art" role="img" aria-label="${esc(p.fav)}" style="background-image:url('${p.favImg}')"></div>`;
   return `<div class="${cls}" style="display:flex;align-items:center;justify-content:center;font-weight:800;font-size:${cls === "avatar" ? 30 : 16}px;color:var(--acc)">${esc(initials(p.fav || p.nick || "NC"))}</div>`;
 }
 
@@ -42,7 +45,7 @@ export function renderProfile(){
       <div class="phead">${avatarHTML(p)}
         <div style="min-width:0"><h2>${esc(p.nick || "Senza nome")}</h2>
           <div class="sub">${[p.lifepath, p.faction, p.fav].filter(Boolean).map(esc).join(" · ") || "Completa il profilo qui sotto"}</div>
-          <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap"><span class="chip">${w}V – ${l}S nel simulatore</span>${games.length ? `<span class="chip">${games.length} partite</span>` : ""}</div>
+          <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap"><span class="chip">${w}V – ${l}S nel simulatore</span>${games.length ? `<span class="chip">${games.length} partite</span>` : ""}${p.melee ? `<span class="chip">melee: ${esc(p.melee)}</span>` : ""}</div>
         </div>
       </div>
     </div>
@@ -56,7 +59,7 @@ export function renderProfile(){
         <span class="seg" id="pfFaction">${FACTIONS.map(f => `<button data-v="${f.id}" aria-pressed="${p.faction === f.id}">${f.id}</button>`).join("")}</span></div>
       <div class="field" style="grid-template-columns:1fr"><label>Personaggio preferito<small>Le Leggende usano l'illustrazione della carta come avatar; gli altri personaggi le iniziali.</small></label>
         <input class="inp" id="pfCharQ" type="search" placeholder="Cerca personaggio…" autocomplete="off" style="margin-top:6px">
-        <div class="chars" id="pfChars">${legends.map(c => `<button data-fav="${esc(c.dn)}" data-img="${imgUrl(c.def.id)}" class="${p.fav === c.dn ? "sel" : ""}" title="${esc(c.dn)}"><img src="${thumbUrl(c.def.id)}" alt="" loading="lazy"><span>${esc(c.name)}</span></button>`).join("")}
+        <div class="chars" id="pfChars">${legends.map(c => `<button data-fav="${esc(c.dn)}" data-img="${imgUrl(c.def.id)}" class="${p.fav === c.dn ? "sel" : ""}" title="${esc(c.dn)}"><div class="art" style="background-image:url('${thumbUrl(c.def.id)}')"></div><span>${esc(c.name)}</span></button>`).join("")}
           ${EXTRA_CHARS.map(n => `<button data-fav="${esc(n)}" data-img="" class="${p.fav === n ? "sel" : ""}" title="${esc(n)}"><div class="ph">${esc(initials(n))}</div><span>${esc(n)}</span></button>`).join("")}</div>
       </div>
     </div>
@@ -65,21 +68,20 @@ export function renderProfile(){
       <h3>Aspetto</h3>
       <div class="field"><label>Tema<small>«Auto» segue il sistema</small></label>
         <span class="seg" id="pfTheme">${[["auto", "Auto"], ["light", "Chiaro"], ["dark", "Scuro"]].map(([v, t]) => `<button data-v="${v}" aria-pressed="${(p.theme || "auto") === v}">${t}</button>`).join("")}</span></div>
-      <div class="field"><label>Colori d'accento<small>${esc(ACCENTS.find(a => a.id === p.accent)?.n || "Samurai")}</small></label>
-        <span class="swatches" id="pfAccent">${ACCENTS.map(a => `<button class="sw${(p.accent || "samurai") === a.id ? " sel" : ""}" data-v="${a.id}" title="${a.n}" aria-label="${a.n}" style="--a:${a.a};--b:${a.b}"></button>`).join("")}</span></div>
+      <div class="field"><label>Colori d'accento<small>${esc(ACCENTS.find(a => a.id === p.accent)?.n || "Holophone")}</small></label>
+        <span class="swatches" id="pfAccent">${ACCENTS.map(a => `<button class="sw${(p.accent || "holophone") === a.id ? " sel" : ""}" data-v="${a.id}" title="${a.n}" aria-label="${a.n}" style="--a:${a.a};--b:${a.b}"></button>`).join("")}</span></div>
     </div>
 
     <div class="card">
       <h3>Gioco organizzato</h3>
-      <div class="field"><label for="pfMelee">Account Melee.gg<small>Serve per i tornei ufficiali; collegalo al tuo account cyberpunktcg.com</small></label><input class="inp" id="pfMelee" value="${esc(p.melee)}" placeholder="nome utente" autocomplete="off"></div>
-      <div class="field"><label for="pfCp">Account cyberpunktcg.com<small>Per Holophone: fazioni, missioni e risultati</small></label><input class="inp" id="pfCp" value="${esc(p.cptcg)}" placeholder="email o nome utente" autocomplete="off"></div>
+      <div class="field"><label for="pfMelee">Nome utente Melee.gg<small>Solo un promemoria: resta sul dispositivo e viene mostrato nel profilo</small></label><input class="inp" id="pfMelee" value="${esc(p.melee)}" placeholder="nome utente" autocomplete="off"></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
         <a class="btn sm" href="https://cyberpunktcg.com/holophone" target="_blank" rel="noopener noreferrer">Holophone ↗</a>
         <a class="btn sm" href="https://melee.gg" target="_blank" rel="noopener noreferrer">Melee.gg ↗</a>
         <a class="btn sm" href="https://cyberpunktcg.com/opfaq" target="_blank" rel="noopener noreferrer">FAQ account e tornei ↗</a>
         <a class="btn sm" href="https://cyberpunktcg.com/gameplay-guide" target="_blank" rel="noopener noreferrer">Guida alle regole ↗</a>
       </div>
-      <p class="note" style="margin:12px 0 0"><b>Perché solo collegamenti.</b> Melee.gg e Holophone non espongono un'API pubblica per leggere missioni e risultati: li apri da qui con il tuo account. Se in futuro WeirdCo la pubblicherà, questa sezione mostrerà i dati direttamente.</p>
+      <p class="note" style="margin:12px 0 0"><b>Perché solo collegamenti.</b> Melee.gg e Holophone non espongono un'API pubblica per leggere missioni, risultati o classifiche: si aprono da qui e si usano con il proprio account. Se in futuro WeirdCo la pubblicherà, questa sezione mostrerà i dati direttamente.</p>
     </div>
 
     <div class="card">

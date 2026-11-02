@@ -108,7 +108,7 @@ export function renderDeck(){
   list.innerHTML = `
     <div class="card">
       <div class="deckhead"><div><h2 style="margin:0">I tuoi mazzi</h2><div class="sub">${decks.length ? decks.length + " mazzi" : "Nessun mazzo ancora"}</div></div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn acc" id="deckNew">+ Nuovo</button><button class="btn sm" id="deckImport">Importa testo</button></div></div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn acc2" id="deckNew">+ Nuovo</button><button class="btn sm" id="deckImport">Importa testo</button></div></div>
       <div class="rows decks" style="margin-top:12px">${decks.map(d => deckRowHTML(d)).join("") || `<div class="empty">Crea un mazzo da zero, importalo da testo o parti da uno starter qui sotto.</div>`}</div>
     </div>
     <div class="card">
@@ -118,7 +118,14 @@ export function renderDeck(){
         <button class="btn sm" data-starter="theheistretailstarterdeck" data-name="Starter The Heist">Starter «The Heist»</button>
         <button class="btn sm" data-starter="embracingpowerretailstarterdeck" data-name="Starter Embracing Power">Starter «Embracing Power»</button>
       </div>
-      <p class="note" style="margin:12px 0 0"><b>Mazzi meta.</b> Al momento nessun sito espone liste di torneo in modo leggibile dalle app (Exburst, Ripperdeck e TCG Contender sono appena partiti e Melee.gg non ha un'API pubblica). Puoi comunque incollare qualsiasi lista con «Importa testo»: il formato è <code>3 Nome carta</code> per riga e <code>Legend: Nome</code> per le Leggende.</p>
+      <h3 style="margin-top:14px">Mazzi meta</h3>
+      <div class="sub">Nessun sito li espone ancora via API, ma si possono consultare e poi incollare qui con «Importa testo» (<code>3 Nome carta</code> per riga, <code>Legend: Nome</code> per le Leggende).</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+        <a class="btn sm" href="https://exburst.dev/cyberpunk/tournaments/meta" target="_blank" rel="noopener noreferrer">ExBurst · tier list ↗</a>
+        <a class="btn sm" href="https://exburst.dev/cyberpunk/tournaments" target="_blank" rel="noopener noreferrer">ExBurst · tornei ↗</a>
+        <a class="btn sm" href="https://ripperdeck.gg/meta" target="_blank" rel="noopener noreferrer">Ripperdeck · meta ↗</a>
+        <a class="btn sm" href="https://choom.gg/meta" target="_blank" rel="noopener noreferrer">Choom.gg · meta ↗</a>
+      </div>
     </div>`;
 }
 function deckRowHTML(d){
@@ -188,7 +195,7 @@ function renderEditor(){
     <div class="card flush" id="deckBrowser">
       <div class="hdr" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <span class="seg" id="deckBrowse"><button data-b="cards" aria-pressed="${browse === "cards"}">Carte</button><button data-b="legends" aria-pressed="${browse === "legends"}">Leggende</button></span>
-        <button class="btn sm" id="deckOwned" aria-pressed="${!!F.owned}">Solo possedute</button>
+        <span class="seg" id="deckOwned"><button data-o="" aria-pressed="${!F.owned}">Tutte</button><button data-o="yes" aria-pressed="${F.owned === "yes"}">Possedute</button><button data-o="no" aria-pressed="${F.owned === "no"}">Mancanti</button></span>
         <button class="btn sm" id="deckRamOnly" aria-pressed="${!!F.ramOnly}">Solo entro RAM</button>
         <span class="count" style="font-size:12.5px;color:var(--mute)" id="deckCount"></span>
       </div>
@@ -251,7 +258,7 @@ function wire(){
     }
     const dq = e.target.closest("[data-dq]"); if(dq){ addCard(dq.dataset.cid, +dq.dataset.dq); return; }
     const b = e.target.closest("#deckBrowse button"); if(b){ browse = b.dataset.b; renderEditor(); return; }
-    if(e.target.closest("#deckOwned")){ F.owned = !F.owned; renderEditor(); return; }
+    const ob = e.target.closest("#deckOwned button"); if(ob){ F.owned = ob.dataset.o; renderEditor(); return; }
     if(e.target.closest("#deckRamOnly")){ F.ramOnly = !F.ramOnly; renderEditor(); return; }
     if(e.target.closest("#deckFilt")){ $("#deckFilters").classList.toggle("on"); return; }
     if(e.target.closest("#deckFilters")){ return; } // gestito da bindFilters (delegato sotto)

@@ -3,6 +3,7 @@
 import { DATA, priceOf, cardPrice, eur, COLORS, COLOR_IT } from "./data.js";
 import { S, qtyOf, setQty, cardQty } from "./store.js";
 import { $, $$, esc, toast, tileHTML, rowHTML, makeFilters, filtersHTML, passes, bindFilters, sortCards, openCard } from "./ui.js";
+import { openScanner } from "./scanner.js";
 
 const F = makeFilters("coll");
 let wired = false;
@@ -12,7 +13,7 @@ export function renderCollection(){
   if(!wired){ wire(root); wired = true; }
   $("#collFilters").innerHTML = filtersHTML(F);
   $("#collSort").value = S.settings.sort || "name";
-  $("#collOwned").setAttribute("aria-pressed", String(!!F.owned));
+  $$("#collOwned button").forEach(b => b.setAttribute("aria-pressed", String((F.owned || "") === b.dataset.o)));
   $("#collView button").forEach?.call($$("#collView button"), b => b.setAttribute("aria-pressed", String(b.dataset.v === (S.settings.view || "grid"))));
 
   // tessere di riepilogo
@@ -54,18 +55,23 @@ export function renderCollection(){
 function wire(root){
   $("#collQ").addEventListener("input", e => { F.q = e.target.value.trim(); renderCollection(); });
   $("#collFilt").addEventListener("click", () => $("#collFilters").classList.toggle("on"));
+  $("#collScan").addEventListener("click", openScanner);
   bindFilters($("#collFilters"), F, renderCollection);
-  $("#collOwned").addEventListener("click", () => { F.owned = !F.owned; renderCollection(); });
+  $("#collOwned").addEventListener("click", e => { const b = e.target.closest("button"); if(!b) return; F.owned = b.dataset.o; renderCollection(); });
   $("#collSort").addEventListener("change", e => { S.settings.sort = e.target.value; S.save("settings"); renderCollection(); });
   $$("#collView button").forEach(b => b.addEventListener("click", () => { S.settings.view = b.dataset.v; S.save("settings"); renderCollection(); }));
   $("#collRows").addEventListener("click", e => {
+    const add = e.target.closest("[data-add]");
+    if(add){ e.stopPropagation(); const pid = add.dataset.add; setQty(pid, qtyOf(pid) + 1); navigator.vibrate?.(10); toast(`+1 ${DATA.byPrint.get(pid).card.dn} (${qtyOf(pid)})`); renderCollection(); return; }
     const t = e.target.closest("[data-cid]"); if(!t) return;
     openCard(t.dataset.cid, t.dataset.pid);
   });
+  // niente menù "salva immagine" del telefono sulle tessere
+  $("#collRows").addEventListener("contextmenu", e => { if(e.target.closest(".gc")) e.preventDefault(); });
   // pressione lunga su una tessera: +1 copia della stampa predefinita, senza aprire la scheda
   let timer = null, fired = false;
   $("#collRows").addEventListener("pointerdown", e => {
-    const t = e.target.closest(".gc"); if(!t) return;
+    const t = e.target.closest(".gc"); if(!t || e.target.closest("[data-add]")) return;
     fired = false;
     timer = setTimeout(() => { fired = true; const c = DATA.byId.get(t.dataset.cid); setQty(c.def.id, qtyOf(c.def.id) + 1); navigator.vibrate?.(12); toast(`+1 ${c.dn}`); renderCollection(); }, 480);
   });

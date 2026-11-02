@@ -27,7 +27,7 @@ export function tileHTML(c, pid, opts = {}){
   const pr = opts.price !== false ? (priceOf(p.id) || cardPrice(c)) : null;
   return `<div class="gc${opts.dim && !q ? " dim" : ""}" data-cid="${c.id}" data-pid="${p.id}">
     ${p.img ? `<img src="${thumbUrl(p.id)}" alt="${esc(c.dn)}" loading="lazy" decoding="async">` : `<div class="ph">${esc(c.dn)}</div>`}
-    ${opts.qty !== false ? `<span class="qty${q ? "" : " zero"}">${q ? "×" + q : "0"}</span>` : ""}
+    ${opts.qty !== false ? `<span class="qty${q ? "" : " zero"}">${q ? "×" + q : "0"}</span><button class="qadd" data-add="${p.id}" aria-label="Aggiungi una copia">+</button>` : ""}
     ${p.rarity && p.rarity !== "Common" && opts.rarity !== false ? `<span class="tr">${esc(RARITY_IT[p.rarity] || p.rarity)}</span>` : ""}
     <div class="cap"><b>${pr ? eur(pr.trend) + (pr.approx ? " ~" : "") : "—"}</b>${esc(c.dn)}</div>
   </div>`;
@@ -75,7 +75,8 @@ export function passes(c, f){
   if(f.rar.size && !c.prints.some(p => f.rar.has(p.rarity))) return false;
   if(f.cls.size && ![...f.cls].some(k => c.cls.includes(k))) return false;
   if(f.sets.size && !c.prints.some(p => f.sets.has(p.set))) return false;
-  if(f.owned && !cardQty(c)) return false;
+  if((f.owned === true || f.owned === "yes") && !cardQty(c)) return false;
+  if(f.owned === "no" && cardQty(c)) return false;
   return true;
 }
 export function bindFilters(container, f, onChange){
@@ -133,7 +134,7 @@ function renderSheet(opts){
       <button class="btn sm icon" id="closeSheet" aria-label="Chiudi">✕</button>
     </div>
 
-    ${opts.pick ? `<div class="acts"><button class="btn acc" id="pickBtn">Usa questa stampa</button></div>` : `
+    ${opts.pick ? `<div class="acts"><button class="btn yel" id="pickBtn">Usa questa stampa</button></div>` : `
     <div class="acts">
       <span class="qtyctl" title="Copie possedute di questa stampa">
         <button data-q="-1" aria-label="meno">−</button><b id="sheetQty">${q}</b><button data-q="1" aria-label="più">+</button>

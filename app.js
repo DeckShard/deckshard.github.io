@@ -17,7 +17,7 @@ export function applyTheme(){
   const p = S.profile;
   const dark = p.theme === "dark" || (p.theme !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
   document.documentElement.dataset.theme = dark ? "dark" : "light";
-  if(p.accent && p.accent !== "samurai") document.documentElement.dataset.accent = p.accent; else delete document.documentElement.dataset.accent;
+  if(p.accent && p.accent !== "holophone") document.documentElement.dataset.accent = p.accent; else delete document.documentElement.dataset.accent;
   const m = $("#themeBtn"); if(m) m.title = "Tema: " + (p.theme === "auto" ? "automatico" : dark ? "scuro" : "chiaro") + " (tocca per cambiare)";
 }
 matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", applyTheme);

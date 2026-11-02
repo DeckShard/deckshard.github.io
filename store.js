@@ -11,7 +11,7 @@ const set = (k, v) => { const s = JSON.stringify(v); try { if (OK) localStorage.
 export const storageOk = () => OK;
 
 export const DEFAULT_PROFILE = {
-  nick: "", lifepath: "", faction: "", fav: "", favImg: "", theme: "auto", accent: "samurai",
+  nick: "", lifepath: "", faction: "", fav: "", favImg: "", theme: "auto", accent: "holophone",
   melee: "", cptcg: "", bio: ""
 };
 

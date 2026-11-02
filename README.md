@@ -15,6 +15,7 @@ index.html, theme.css, sim.css, manifest.webmanifest, sw.js, icon*   la PWA
 app.js, data.js, store.js, ui.js, collection.js, deck.js, profile.js, sim.js   le sezioni
 engine.js                  motore di regole, puro (collaudabile con Node)
 bot.js                     avversario euristico
+scanner.js                 scanner della collezione (OCR con Tesseract.js, caricato dalla CDN quando serve)
 engine.test.mjs            collaudo del motore (bot contro bot + regole puntuali)
 ui.test.mjs                collaudo dell'interfaccia con Playwright
 .github/workflows/collect.yml   raccolta notturna + pubblicazione su GitHub Pages
@@ -49,9 +50,13 @@ Effetti delle carte interpretati dal testo: pesca, trash, +potenza, Gig ±N, sco
 
 Nota sul Gear: il motore somma la potenza del Gear a quella dell'Unità equipaggiata.
 
+## Scanner della collezione
+
+Dalla Collection, «Scanner» apre la fotocamera (o accetta una foto). L'app legge il testo della carta con Tesseract.js, che viene scaricato dalla CDN la prima volta (≈4 MB) e poi resta in memoria, e abbina nome e testo di regole alle 151 carte del catalogo: propone fino a 5 candidati con una percentuale, un tocco aggiunge una copia della stampa predefinita, un tocco sull'immagine apre la scheda per scegliere set e variante. Il codice set e il numero stampati sulla carta sono in verticale e in diagonale, poco adatti all'OCR: per le varianti si passa dalla scheda.
+
 ## Prossimi passi possibili
 
-- Scanner delle carte con la fotocamera (riconoscimento del codice set + numero, come Neon/ManaBox).
+- Scanner: riconoscimento della variante (set + numero) e inquadratura continua senza premere «Scatta».
 - Account e sincronizzazione (Supabase) per avere collezione e mazzi su più dispositivi.
 - Mazzi meta: appena un sito esporrà le liste dei tornei in formato leggibile.
 - Immagini dall'API ufficiale Netdeck quando l'accesso sarà aperto (lista d'attesa).
