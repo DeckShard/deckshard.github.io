@@ -11,7 +11,7 @@ import { renderRules } from "./rules.js";
 import { initI18n } from "./i18n.js";
 import { bootCloud, state as cloudState } from "./cloud.js";
 
-export const APP_VERSION = "1.5.0";
+export const APP_VERSION = "1.5.1";
 
 const TABS = { collection: renderCollection, deck: renderDeck, profile: renderProfile, sim: renderSim, rules: renderRules, settings: renderSettings };
 

@@ -173,9 +173,9 @@ export function renderSettings(){
 
     <div class="card">
       <h3>Informazioni</h3>
-      <div class="sub">Night City Deck <b>v${APP_VERSION}</b> · app gratuita e non ufficiale per il Cyberpunk TCG, senza pubblicità e senza account. <i>Cyberpunk</i>, <i>Cyberpunk 2077</i> e le immagini delle carte sono © CD PROJEKT S.A. / WeirdCo. Dati delle carte da cyberpunktcg.com, prezzi dal listino pubblico Cardmarket.</div>
+      <div class="sub">DeckShard <b>v${APP_VERSION}</b> · app gratuita e non ufficiale per il Cyberpunk TCG, senza pubblicità e senza account. <i>Cyberpunk</i>, <i>Cyberpunk 2077</i> e le immagini delle carte sono © CD PROJEKT S.A. / WeirdCo. Dati delle carte da cyberpunktcg.com, prezzi dal listino pubblico Cardmarket.</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
-        <a class="btn sm" href="https://github.com/alessioroncucci/cyberpunk-tcg" target="_blank" rel="noopener noreferrer">Codice su GitHub ↗</a>
+        <a class="btn sm" href="https://github.com/DeckShard/deckshard.github.io" target="_blank" rel="noopener noreferrer">Codice su GitHub ↗</a>
         <a class="btn sm" href="https://cyberpunktcg.com" target="_blank" rel="noopener noreferrer">cyberpunktcg.com ↗</a>
       </div>
       <details class="fold" style="margin-top:12px"><summary>Privacy</summary><div class="sub" style="margin-top:6px">Senza account tutto resta su questo dispositivo. Con l'account vengono salvati su Supabase (server nell'Unione Europea, Francoforte): email di accesso, nick e profilo pubblico (avatar, fazione, record), collezione, mazzi e impostazioni per la sincronizzazione, amicizie, blocchi e messaggi. L'email non è mai visibile agli altri giocatori; la collezione la vedono gli amici solo se lo scegli. «Elimina account» cancella tutto in modo definitivo. Il feedback arriva in una casella privata e contiene solo ciò che scrivi, la versione dell'app e il tipo di dispositivo.</div></details>

@@ -1,6 +1,6 @@
 {
-  "name": "Night City Deck — Cyberpunk TCG",
-  "short_name": "Night City Deck",
+  "name": "DeckShard — Cyberpunk TCG",
+  "short_name": "DeckShard",
   "description": "Collezione, prezzi, deckbuilder e simulatore per il Cyberpunk TCG. App gratuita e non ufficiale.",
   "start_url": "./",
   "scope": "./",

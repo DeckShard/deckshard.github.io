@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Collector di Night City Deck — catalogo carte, immagini e prezzi del Cyberpunk TCG.
+Collector di DeckShard — catalogo carte, immagini e prezzi del Cyberpunk TCG.
 
 Cosa fa, in ordine:
   1. scarica il catalogo completo da api.netdeck.gg (lo stesso che alimenta il
@@ -429,7 +429,7 @@ def fetch_rules():
 
 
 def main():
-    print("Night City Deck · collector")
+    print("DeckShard · collector")
     items = fetch_catalogue()
     if not items:
         print("Catalogo vuoto: esco senza scrivere.", file=sys.stderr)

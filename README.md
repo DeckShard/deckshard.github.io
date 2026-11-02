@@ -1,4 +1,4 @@
-# Night City Deck
+# DeckShard
 
 App web gratuita (PWA) per il **Cyberpunk TCG**: collezione con prezzi Cardmarket, deckbuilder con le regole di costruzione, profilo, simulatore con motore di regole e bot, regole, prerelease e tutorial. Le impostazioni (tema e 14 palette di colori, lingua italiano/inglese, pagamento automatico nel simulatore, origine dei prezzi, backup dei dati, versione) stanno dietro l'ingranaggio in alto a destra. Funziona su telefono e desktop, si installa dalla pagina come un'app e lavora anche offline.
 
@@ -34,7 +34,7 @@ public/, data/img/         creati dal collector (il workflow li scrive nel repos
 1. Crea un repository **pubblico** (GitHub Pages è gratuito solo sui repository pubblici) e carica tutti i file nella radice (*Add file → Upload files*).
 2. Il workflow deve stare in `.github/workflows/collect.yml`: apri `collect.yml` nel repository, premi la matita (*Edit*), nel campo del nome scrivi `.github/workflows/collect.yml` e salva (*Commit changes*). Le barre creano le cartelle.
 3. In **Settings → Pages** imposta *Source: GitHub Actions*.
-4. In **Actions** lancia «Raccolta dati e pubblicazione» con *Run workflow*. La prima volta scarica le 860 immagini (qualche minuto), poi pubblica il sito. L'indirizzo è `https://<utente>.github.io/<repo>/`.
+4. In **Actions** lancia «Raccolta dati e pubblicazione» con *Run workflow*. La prima volta scarica le 860 immagini (qualche minuto), poi pubblica il sito. L'indirizzo è `https://<utente>.github.io/<repo>/`; per la radice di un'organizzazione il repository si chiama `<organizzazione>.github.io` (qui: `https://deckshard.github.io/`, repository `DeckShard/deckshard.github.io`).
 5. Da quel momento la raccolta gira ogni notte alle 04:40 UTC e ripubblica il sito; parte anche da sola ogni volta che carichi una modifica dell'app.
 
 Sul telefono: apri l'indirizzo in Chrome → menu → *Aggiungi a schermata Home*. L'app si aggiorna da sola alla prima apertura online dopo una pubblicazione.

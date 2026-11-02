@@ -1,4 +1,4 @@
-/* Night City Deck — service worker.
+/* DeckShard — service worker.
    Rete prima, cache come ripiego: l'app si aggiorna da sola a ogni apertura
    online e continua a funzionare offline con l'ultima versione vista.
    Le immagini delle carte sono messe in cache man mano che le vedi.     */

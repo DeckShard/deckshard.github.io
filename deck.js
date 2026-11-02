@@ -131,9 +131,9 @@ export function collectionRows(coll){
 }
 export function collectionText(coll, fmt = "txt"){
   const rows = collectionRows(coll);
-  if(fmt === "json") return JSON.stringify({ app: "Night City Deck", game: "Cyberpunk TCG", exported: new Date().toISOString(), cards: rows }, null, 2);
+  if(fmt === "json") return JSON.stringify({ app: "DeckShard", game: "Cyberpunk TCG", exported: new Date().toISOString(), cards: rows }, null, 2);
   if(fmt === "csv"){ const q = s => `"${String(s ?? "").replace(/"/g, '""')}"`; return ["quantity,name,code,set,number,rarity,language,printing_id", ...rows.map(r => [r.qty, q(r.name), r.code, r.set, r.number, r.rarity, r.lang, r.id].join(","))].join("\n"); }
-  return `# Night City Deck — collezione (${rows.length} voci)\n` + rows.map(r => r.code ? `${r.qty} ${r.code} ${r.name}` : `${r.qty} ${r.name}  # ${r.set} #${r.number}`).join("\n");
+  return `# DeckShard — collezione (${rows.length} voci)\n` + rows.map(r => r.code ? `${r.qty} ${r.code} ${r.name}` : `${r.qty} ${r.name}  # ${r.set} #${r.number}`).join("\n");
 }
 /* JSON di altre app o di questa: diventa righe "N nome/codice" (o stampe dirette quando c'è l'id) */
 export function jsonToLines(obj){
