@@ -167,12 +167,16 @@ ok(favNames.every((f, i) => !i || favNames[i - 1].localeCompare(f, "it") <= 0), 
 await page.click('#pfChars button[data-fav="V: Streetkid"]');
 ok((await page.locator(".phead h2").textContent()) === "Choom", "nick salvato");
 ok(await page.locator(".phead .avatar.art").count() === 1, "avatar dalla Leggenda");
+await page.screenshot({ path: "/tmp/ncd-shot-profile.png", fullPage: true });
+/* impostazioni (ingranaggio in alto): aspetto, lingua, prezzi, dati */
+await page.click("#btnSettings");
+ok(await page.locator("#p-settings.on").count() === 1 && (await page.locator("#p-settings h3").allTextContents()).join(",").includes("Prezzi"), "ingranaggio → Impostazioni con le sezioni");
 await page.click('#pfAccent .sw[data-v="netrunner"]');
 ok((await page.evaluate(() => document.documentElement.dataset.accent)) === "netrunner", "accento applicato");
 await page.click('#pfTheme [data-v="dark"]');
 ok((await page.evaluate(() => document.documentElement.dataset.theme)) === "dark", "tema scuro");
-await page.screenshot({ path: "/tmp/ncd-shot-profile.png", fullPage: true });
 await page.click('#pfTheme [data-v="light"]');
+ok(/v\d+\.\d+/.test(await page.locator("#p-settings").textContent()) && (await page.locator("#metaLine").isVisible()), "versione nelle impostazioni e catalogo visibile nell'intestazione anche sul telefono");
 
 /* simulatore contro il bot */
 await page.click('nav.tabs button[data-tab="sim"]');

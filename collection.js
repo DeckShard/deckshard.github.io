@@ -29,12 +29,12 @@ export function renderCollection(){
     }
     if(any) distinct++;
   }
-  $("#tOwned").textContent = owned; $("#tOwnedN").textContent = `${distinct} di ${DATA.cards.length} carte diverse`;
+  $("#tOwned").textContent = owned; $("#tOwnedN").textContent = `${distinct} di ${DATA.cards.length} totali`;
   $("#tValue").textContent = eur(value); $("#tValueN").textContent = priced < owned ? `${owned - priced} copie senza prezzo` : "trend Cardmarket";
   const pct = Math.round(distinct / DATA.cards.length * 100);
   $("#tSet").textContent = pct + "%"; $("#tSetN").textContent = "del catalogo";
-  $("#tPrices").textContent = DATA.pricesAt ? new Date(DATA.pricesAt).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit" }) : "—";
-  $("#tPricesN").textContent = "listino Cardmarket";
+  $("#tPrices").textContent = "Cardmarket";
+  $("#tPricesN").textContent = DATA.pricesAt ? `aggiornati il ${new Date(DATA.pricesAt).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric" })}` : "listino non ancora scaricato";
 
   let list = DATA.cards.filter(c => passes(c, F));
   list = sortCards(list, S.settings.sort);

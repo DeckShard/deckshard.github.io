@@ -5,13 +5,13 @@ import { S, storageOk } from "./store.js";
 import { $, $$, toast } from "./ui.js";
 import { renderCollection } from "./collection.js";
 import { renderDeck } from "./deck.js";
-import { renderProfile } from "./profile.js";
+import { renderProfile, renderSettings } from "./profile.js";
 import { renderSim } from "./sim.js";
 import { renderRules } from "./rules.js";
 
-export const APP_VERSION = "1.0.0";
+export const APP_VERSION = "1.1.0";
 
-const TABS = { collection: renderCollection, deck: renderDeck, profile: renderProfile, sim: renderSim, rules: renderRules };
+const TABS = { collection: renderCollection, deck: renderDeck, profile: renderProfile, sim: renderSim, rules: renderRules, settings: renderSettings };
 
 /* tema (auto/chiaro/scuro) + accento, letti dal profilo */
 export function applyTheme(){
@@ -26,6 +26,7 @@ export function showTab(name, push = true){
   if(!TABS[name]) name = "collection";
   $$("nav.tabs button").forEach(b => b.setAttribute("aria-selected", String(b.dataset.tab === name)));
   $$(".panel").forEach(p => p.classList.toggle("on", p.dataset.tab === name));
+  $("#btnSettings").classList.toggle("on", name === "settings");
   if(push && location.hash !== "#" + name) history.replaceState(null, "", "#" + name);
   TABS[name]();
   window.scrollTo({ top: 0 });
@@ -35,6 +36,7 @@ async function boot(){
   applyTheme();
   $$("nav.tabs button").forEach(b => b.addEventListener("click", () => showTab(b.dataset.tab)));
   window.addEventListener("hashchange", () => showTab(location.hash.slice(1), false));
+  $("#btnSettings").addEventListener("click", e => { e.preventDefault(); showTab("settings"); });
 
   try{
     await loadData("./");

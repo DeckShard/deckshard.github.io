@@ -31,6 +31,7 @@
   <div class="bar">
     <div class="brand"><span class="mark"></span><div><b>NIGHT CITY DECK</b><small>CYBERPUNK TCG · NON UFFICIALE</small></div></div>
     <span class="meta" id="metaLine">…</span>
+    <a class="gear" href="#settings" id="btnSettings" title="Impostazioni" aria-label="Impostazioni"><svg viewBox="0 0 24 24"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7z"/><path d="M19.4 13.5a7.6 7.6 0 0 0 0-3l2-1.5-2-3.5-2.4.9a7.7 7.7 0 0 0-2.6-1.5L14 2.5h-4l-.4 2.4a7.7 7.7 0 0 0-2.6 1.5l-2.4-.9-2 3.5 2 1.5a7.6 7.6 0 0 0 0 3l-2 1.5 2 3.5 2.4-.9a7.7 7.7 0 0 0 2.6 1.5l.4 2.4h4l.4-2.4a7.7 7.7 0 0 0 2.6-1.5l2.4.9 2-3.5z"/></svg></a>
   </div>
 </header>
 
@@ -38,10 +39,10 @@
   <!-- ============================================================ COLLECTION -->
   <section class="panel on" id="p-collection" data-tab="collection">
     <div class="tiles">
-      <div class="tile"><div class="k">Copie</div><div class="v num" id="tOwned">0</div><div class="n" id="tOwnedN"></div></div>
+      <div class="tile"><div class="k">Carte</div><div class="v num" id="tOwned">0</div><div class="n" id="tOwnedN"></div></div>
       <div class="tile"><div class="k">Valore</div><div class="v num" id="tValue">—</div><div class="n" id="tValueN"></div></div>
       <div class="tile"><div class="k">Completamento</div><div class="v num" id="tSet">0%</div><div class="n" id="tSetN"></div></div>
-      <div class="tile"><div class="k">Prezzi</div><div class="v num" id="tPrices">—</div><div class="n" id="tPricesN"></div></div>
+      <div class="tile"><div class="k">Origine prezzi</div><div class="v" id="tPrices" style="font-size:18px">—</div><div class="n" id="tPricesN"></div></div>
     </div>
     <div class="card flush">
       <div class="search"><input class="inp" id="collQ" type="search" placeholder="Cerca per nome, testo o tratto…" autocomplete="off"><button class="btn sm" id="collFilt">Filtri</button><button class="btn sm acc2" id="collScan" title="Riconosci le carte con la fotocamera">Scanner</button></div>
@@ -73,6 +74,9 @@
 
   <!-- ============================================================ REGOLE -->
   <section class="panel" id="p-rules" data-tab="rules"></section>
+
+  <!-- ============================================================ IMPOSTAZIONI (ingranaggio in alto) -->
+  <section class="panel" id="p-settings" data-tab="settings"></section>
 
   <!-- ============================================================ SIMULATOR -->
   <section class="panel" id="p-sim" data-tab="sim">

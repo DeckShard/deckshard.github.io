@@ -1,6 +1,6 @@
 # Night City Deck
 
-App web gratuita (PWA) per il **Cyberpunk TCG**: collezione con prezzi Cardmarket, deckbuilder con le regole di costruzione, profilo e simulatore con motore di regole e bot. Funziona su telefono e desktop, si installa dalla pagina come un'app e lavora anche offline.
+App web gratuita (PWA) per il **Cyberpunk TCG**: collezione con prezzi Cardmarket, deckbuilder con le regole di costruzione, profilo, simulatore con motore di regole e bot, regole, prerelease e tutorial. Le impostazioni (tema e colori, lingua, pagamento automatico nel simulatore, origine dei prezzi, backup dei dati, versione) stanno dietro l'ingranaggio in alto a destra. Funziona su telefono e desktop, si installa dalla pagina come un'app e lavora anche offline.
 
 Progetto amatoriale, non affiliato a WeirdCo né a CD PROJEKT RED. *Cyberpunk*, *Cyberpunk 2077* e le immagini delle carte sono © CD PROJEKT S.A. / WeirdCo e vengono usate secondo le linee guida per i contenuti dei fan di WeirdCo: l'app deve restare **gratuita e senza pubblicità**. I dati delle carte arrivano dal database ufficiale (cyberpunktcg.com / Netdeck), i prezzi dal listino pubblico giornaliero di Cardmarket.
 

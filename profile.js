@@ -5,7 +5,7 @@
 import { DATA, imgUrl, thumbUrl, RARITY_IT, TYPE_IT } from "./data.js";
 import { S, DEFAULT_PROFILE, exportAll, importAll, wipe, storageOk } from "./store.js";
 import { $, $$, esc, toast } from "./ui.js";
-import { applyTheme } from "./app.js";
+import { applyTheme, APP_VERSION } from "./app.js";
 
 export const LIFEPATHS = ["Corpo", "Street Kid", "Nomad"];
 export const FACTIONS = [
@@ -26,7 +26,7 @@ export const ACCENTS = [
   { id: "maelstrom", n: "Maelstrom", a: "#e11a3c", b: "#fcee0a" }
 ];
 
-let wired = false;
+const wired = new Set();
 const initials = s => s.split(/\s+/).map(w => w[0]).join("").slice(0, 2).toUpperCase();
 
 /* solo l'illustrazione della carta: la Leggenda ha il titolo in alto e il
@@ -38,7 +38,7 @@ export function avatarHTML(p, cls = "avatar"){
 
 export function renderProfile(){
   const root = $("#p-profile"), p = S.profile;
-  if(!wired){ wire(root); wired = true; }
+  if(!wired.has(root)){ wire(root); wired.add(root); }
   // personaggi: le Leggende e le Unità che ritraggono una Leggenda, con tutte le
   // illustrazioni alternative (Secret, Iconic, Nova Rare), in ordine alfabetico
   const legendNames = new Set(DATA.cards.filter(c => c.type === "Legend").map(c => c.name));
@@ -80,8 +80,42 @@ export function renderProfile(){
     </div>
 
     <div class="card">
+      <h3>Gioco organizzato</h3>
+      <div class="field"><label for="pfMelee">Nome utente Melee.gg<small>Solo un promemoria: resta sul dispositivo e viene mostrato nel profilo</small></label><input class="inp" id="pfMelee" value="${esc(p.melee)}" placeholder="nome utente" autocomplete="off"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+        <a class="btn sm" href="https://cyberpunktcg.com/holophone" target="_blank" rel="noopener noreferrer">Holophone ↗</a>
+        <a class="btn sm" href="https://melee.gg" target="_blank" rel="noopener noreferrer">Melee.gg ↗</a>
+        <a class="btn sm" href="https://cyberpunktcg.com/opfaq" target="_blank" rel="noopener noreferrer">FAQ account e tornei ↗</a>
+        <a class="btn sm" href="https://cyberpunktcg.com/gameplay-guide" target="_blank" rel="noopener noreferrer">Guida alle regole ↗</a>
+      </div>
+      <p class="note" style="margin:12px 0 0"><b>Perché solo collegamenti.</b> Melee.gg e Holophone non espongono un'API pubblica per leggere missioni, risultati o classifiche: si aprono da qui e si usano con il proprio account. Se in futuro WeirdCo la pubblicherà, questa sezione mostrerà i dati direttamente.</p>
+    </div>
+
+    <p class="note" style="margin:0">Tema, colori, pagamento automatico nel simulatore, lingua, backup e versione sono nelle <a href="#settings">Impostazioni</a> (l'ingranaggio in alto).</p>`;
+}
+
+/* ---------------- Impostazioni: aspetto, lingua, simulatore, prezzi, dati, info */
+export const LANGS = [["it", "Italiano"], ["en", "English"]];
+export function renderSettings(){
+  const root = $("#p-settings"), p = S.profile;
+  if(!wired.has(root)){ wire(root); wired.add(root); }
+  const n = DATA.cards.length, np = DATA.cards.reduce((a, c) => a + c.prints.length, 0);
+  const pricesAt = DATA.pricesAt ? new Date(DATA.pricesAt).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "non ancora scaricato";
+  root.innerHTML = `
+    <div class="card">
+      <h2>Impostazioni</h2>
+      <div class="sub">Tutto resta su questo dispositivo${storageOk() ? "" : " (memoria non disponibile: nulla verrà salvato)"}.</div>
+    </div>
+
+    <div class="card">
+      <h3>Lingua</h3>
+      <div class="field"><label>Lingua dell'app<small>Le carte restano nella lingua stampata (inglese).</small></label>
+        <span class="seg" id="pfLang">${LANGS.map(([v, t]) => `<button data-v="${v}" aria-pressed="${(p.lang || "it") === v}" ${v === "en" && !window.NCD_I18N ? 'disabled title="In arrivo nel prossimo aggiornamento"' : ""}>${t}${v === "en" && !window.NCD_I18N ? " (in arrivo)" : ""}</button>`).join("")}</span></div>
+    </div>
+
+    <div class="card">
       <h3>Aspetto</h3>
-      <div class="field"><label>Tema<small>«Auto» segue il sistema</small></label>
+      <div class="field"><label>Tema<small>«Come il sistema» segue l'impostazione del dispositivo</small></label>
         <span class="seg" id="pfTheme">${[["dark", "Scuro"], ["light", "Chiaro"], ["auto", "Come il sistema"]].map(([v, t]) => `<button data-v="${v}" aria-pressed="${(p.theme || "dark") === v}">${t}</button>`).join("")}</span></div>
       <div class="field"><label>Colori d'accento<small>${esc(ACCENTS.find(a => a.id === p.accent)?.n || "Holophone")}</small></label>
         <span class="swatches" id="pfAccent">${ACCENTS.map(a => `<button class="sw${(p.accent || "holophone") === a.id ? " sel" : ""}" data-v="${a.id}" title="${a.n}" aria-label="${a.n}" style="--a:${a.a};--b:${a.b}"></button>`).join("")}</span></div>
@@ -94,25 +128,29 @@ export function renderProfile(){
     </div>
 
     <div class="card">
-      <h3>Gioco organizzato</h3>
-      <div class="field"><label for="pfMelee">Nome utente Melee.gg<small>Solo un promemoria: resta sul dispositivo e viene mostrato nel profilo</small></label><input class="inp" id="pfMelee" value="${esc(p.melee)}" placeholder="nome utente" autocomplete="off"></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
-        <a class="btn sm" href="https://cyberpunktcg.com/holophone" target="_blank" rel="noopener noreferrer">Holophone ↗</a>
-        <a class="btn sm" href="https://melee.gg" target="_blank" rel="noopener noreferrer">Melee.gg ↗</a>
-        <a class="btn sm" href="https://cyberpunktcg.com/opfaq" target="_blank" rel="noopener noreferrer">FAQ account e tornei ↗</a>
-        <a class="btn sm" href="https://cyberpunktcg.com/gameplay-guide" target="_blank" rel="noopener noreferrer">Guida alle regole ↗</a>
-      </div>
-      <p class="note" style="margin:12px 0 0"><b>Perché solo collegamenti.</b> Melee.gg e Holophone non espongono un'API pubblica per leggere missioni, risultati o classifiche: si aprono da qui e si usano con il proprio account. Se in futuro WeirdCo la pubblicherà, questa sezione mostrerà i dati direttamente.</p>
+      <h3>Prezzi</h3>
+      <div class="field"><label>Origine dei prezzi<small>Per ora l'unico listino pubblico leggibile è quello di Cardmarket (trend giornaliero, in euro). TCGplayer e gli altri non pubblicano un listino aperto: se arriverà, comparirà qui.</small></label>
+        <span class="seg" id="pfPrices"><button data-v="cardmarket" aria-pressed="true">Cardmarket</button><button data-v="tcgplayer" disabled title="Non disponibile: nessun listino pubblico">TCGplayer</button></span></div>
+      <div class="sub" style="margin-top:6px">Ultimo aggiornamento del listino: <b>${esc(pricesAt)}</b> · si rinnova ogni notte con la pubblicazione del sito.</div>
     </div>
 
     <div class="card">
       <h3>Dati</h3>
-      <div class="sub">Tutto resta sul dispositivo${storageOk() ? "" : " (memoria non disponibile: nulla verrà salvato)"}. Esporta un backup per spostarti su un altro telefono.</div>
+      <div class="sub">Catalogo: <b>${n} carte · ${np} stampe</b> (da cyberpunktcg.com). Collezione, mazzi, profilo e record restano sul dispositivo: esporta un backup per spostarti su un altro telefono o per sicurezza.</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
         <button class="btn sm" id="pfExport">Esporta backup</button>
         <button class="btn sm" id="pfImport">Importa backup</button>
         <input type="file" id="pfFile" accept="application/json,.json" hidden>
         <button class="btn sm" id="pfWipe" style="color:var(--bad)">Azzera tutto</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Informazioni</h3>
+      <div class="sub">Night City Deck <b>v${APP_VERSION}</b> · app gratuita e non ufficiale per il Cyberpunk TCG, senza pubblicità e senza account. <i>Cyberpunk</i>, <i>Cyberpunk 2077</i> e le immagini delle carte sono © CD PROJEKT S.A. / WeirdCo. Dati delle carte da cyberpunktcg.com, prezzi dal listino pubblico Cardmarket.</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+        <a class="btn sm" href="https://github.com/alessioroncucci/cyberpunk-tcg" target="_blank" rel="noopener noreferrer">Codice su GitHub ↗</a>
+        <a class="btn sm" href="https://cyberpunktcg.com" target="_blank" rel="noopener noreferrer">cyberpunktcg.com ↗</a>
       </div>
     </div>`;
 }
@@ -130,15 +168,17 @@ function wire(root){
   });
   root.addEventListener("change", e => { if(e.target.id === "pfNick") renderProfile(); });
   root.addEventListener("click", e => {
-    const seg = e.target.closest("#pfLife button, #pfFaction button, #pfTheme button");
+    const rerender = () => root.id === "p-settings" ? renderSettings() : renderProfile();
+    const seg = e.target.closest("#pfLife button, #pfFaction button, #pfTheme button, #pfLang button");
     if(seg){
-      const k = seg.parentElement.id === "pfLife" ? "lifepath" : seg.parentElement.id === "pfFaction" ? "faction" : "theme";
-      setP(k, S.profile[k] === seg.dataset.v && k !== "theme" ? "" : seg.dataset.v);
+      const k = { pfLife: "lifepath", pfFaction: "faction", pfTheme: "theme", pfLang: "lang" }[seg.parentElement.id];
+      setP(k, S.profile[k] === seg.dataset.v && (k === "lifepath" || k === "faction") ? "" : seg.dataset.v);
       if(k === "theme") applyTheme();
-      renderProfile(); return;
+      if(k === "lang" && window.NCD_I18N){ window.NCD_I18N.apply(seg.dataset.v); return; }
+      rerender(); return;
     }
-    const pb = e.target.closest("#pfPay button"); if(pb){ setP("autoPay", pb.dataset.v === "1"); renderProfile(); return; }
-    const sw = e.target.closest("#pfAccent .sw"); if(sw){ setP("accent", sw.dataset.v); applyTheme(); renderProfile(); return; }
+    const pb = e.target.closest("#pfPay button"); if(pb){ setP("autoPay", pb.dataset.v === "1"); rerender(); return; }
+    const sw = e.target.closest("#pfAccent .sw"); if(sw){ setP("accent", sw.dataset.v); applyTheme(); rerender(); return; }
     const ch = e.target.closest("#pfChars button"); if(ch){
       const same = S.profile.fav === ch.dataset.fav;
       S.profile.fav = same ? "" : ch.dataset.fav; S.profile.favImg = same ? "" : ch.dataset.img; S.profile.favPos = 34; S.profile.favZoom = 150; S.save("profile");
@@ -150,11 +190,11 @@ function wire(root){
       setTimeout(() => URL.revokeObjectURL(a.href), 2000); return;
     }
     if(e.target.closest("#pfImport")){ $("#pfFile").click(); return; }
-    if(e.target.closest("#pfWipe")){ if(confirm("Cancellare collezione, mazzi, profilo e record da questo dispositivo?")){ wipe(); applyTheme(); renderProfile(); toast("Dati azzerati"); document.dispatchEvent(new CustomEvent("ncd:collection")); } }
+    if(e.target.closest("#pfWipe")){ if(confirm("Cancellare collezione, mazzi, profilo e record da questo dispositivo?")){ wipe(); applyTheme(); renderSettings(); toast("Dati azzerati"); document.dispatchEvent(new CustomEvent("ncd:collection")); } }
   });
   root.addEventListener("change", async e => {
     if(e.target.id !== "pfFile" || !e.target.files[0]) return;
-    try{ importAll(JSON.parse(await e.target.files[0].text())); applyTheme(); renderProfile(); document.dispatchEvent(new CustomEvent("ncd:collection")); toast("Backup importato"); }
+    try{ importAll(JSON.parse(await e.target.files[0].text())); applyTheme(); renderSettings(); document.dispatchEvent(new CustomEvent("ncd:collection")); toast("Backup importato"); }
     catch(err){ toast("Backup non valido: " + err.message, 4000); }
     e.target.value = "";
   });

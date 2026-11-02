@@ -12,7 +12,7 @@ export const storageOk = () => OK;
 
 export const DEFAULT_PROFILE = {
   nick: "", lifepath: "", faction: "", fav: "", favImg: "", theme: "dark", accent: "holophone",
-  melee: "", cptcg: "", bio: "", v: 3, autoPay: false
+  melee: "", cptcg: "", bio: "", v: 3, autoPay: false, lang: "it"
 };
 
 /* profili salvati prima della v1.1 avevano "samurai" come accento predefinito:
