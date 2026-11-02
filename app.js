@@ -6,12 +6,14 @@ import { $, $$, toast } from "./ui.js";
 import { renderCollection } from "./collection.js";
 import { renderDeck } from "./deck.js";
 import { renderProfile, renderSettings } from "./profile.js";
-import { renderSim } from "./sim.js";
+import { renderSim, setChallenge } from "./sim.js";
+import { setOnlineVersion, invitesForMe, activeTables, T as onlineT } from "./online.js";
 import { renderRules } from "./rules.js";
 import { initI18n } from "./i18n.js";
 import { bootCloud, state as cloudState } from "./cloud.js";
 
-export const APP_VERSION = "1.5.1";
+export const APP_VERSION = "1.6.0";
+setOnlineVersion(APP_VERSION);
 
 const TABS = { collection: renderCollection, deck: renderDeck, profile: renderProfile, sim: renderSim, rules: renderRules, settings: renderSettings };
 
@@ -63,7 +65,13 @@ async function boot(){
   const current = () => ($(".panel.on") || {}).dataset?.tab || "collection";
   document.addEventListener("ncd:synced", () => { applyTheme(); TABS[current()](); });
   const badge = () => { const n = (cloudState.unread || 0) + (cloudState.requests || 0); const b = $('nav.tabs button[data-tab="profile"]'); let s = b.querySelector(".nbadge"); if(n){ if(!s){ s = document.createElement("span"); s.className = "nbadge"; b.appendChild(s); } s.textContent = n > 9 ? "9+" : n; } else if(s) s.remove(); };
-  for(const ev of ["ncd:cloud", "ncd:social", "ncd:presence"]) document.addEventListener(ev, () => { badge(); if(current() === "profile" && !document.querySelector("#chat:not([hidden])")) TABS.profile(); });
+  for(const ev of ["ncd:cloud", "ncd:social", "ncd:presence"]) document.addEventListener(ev, () => { badge(); if(current() === "profile" && !document.querySelector("#chat:not([hidden])") && document.activeElement?.type !== "range") TABS.profile(); });
+  // tavoli online: badge sulle sfide ricevute, avviso all'arrivo di una sfida o di una partita lasciata aperta
+  const simBadge = () => { const n = invitesForMe().length; const b = $('nav.tabs button[data-tab="sim"]'); if(!b) return; let s = b.querySelector(".nbadge"); if(n){ if(!s){ s = document.createElement("span"); s.className = "nbadge"; b.appendChild(s); } s.textContent = n; } else if(s) s.remove(); };
+  let warnedActive = false;
+  document.addEventListener("ncd:tables", () => { simBadge(); if(!warnedActive && !onlineT.row && activeTables().length){ warnedActive = true; toast("Hai una partita online in corso: riprendila dal Simulator entro un minuto", 5000); } });
+  document.addEventListener("ncd:invite", e => { const t = e.detail || {}; toast(`${t.host_nick || "Un amico"} ti sfida: apri il Simulator → Online`, 5000); });
+  document.addEventListener("ncd:challenge", e => { setChallenge(e.detail); if(current() === "sim") renderSim(); else showTab("sim"); });
   bootCloud();
 
   if("serviceWorker" in navigator && location.protocol.startsWith("http")){

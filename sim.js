@@ -4,10 +4,12 @@
 import { DATA, imgUrl, thumbUrl } from "./data.js";
 import { S, saveDeck } from "./store.js";
 import { $, $$, esc, toast, openLens, openCard } from "./ui.js";
-import { createGame, mulligan, resolve, legalActions, doAction, power, ready, readyEddies, streetCred, canAttack, canPay, manual, rival, hasKw, hasSpend } from "./engine.js";
+import { createGame, mulligan, resolve, legalActions, doAction, applyMove, moveOf, power, ready, readyEddies, streetCred, canAttack, canPay, manual, rival, hasKw, hasSpend } from "./engine.js";
 import { botDecide, botStep } from "./bot.js";
 import { starterDeck, isLegal, deckSize, openDeck } from "./deck.js";
 import { prereleaseSetupHTML, wirePrerelease } from "./prerelease.js";
+import * as ON from "./online.js";
+import { state as cloudState, friends as cloudFriends } from "./cloud.js";
 import { startTutorial, tutorialStep, tutorialBarHTML, tutorialActive, stopTutorial, tutorialAllows, ensureHand, TUTORIAL_SEED } from "./tutorial.js";
 
 /* Strumenti manuali (spendi/prepara, ±potenza, sconfiggi, ±1 sui Gig, pesca…):
@@ -15,7 +17,7 @@ import { startTutorial, tutorialStep, tutorialBarHTML, tutorialActive, stopTutor
    ma escono dalle regole. Spenti per ora; da riattivare per una modalità
    "tavolo libero" se servirà. */
 const MANUAL = false;
-let G = null, mode = "bot", human = [true, false], sel = null, targeting = null, pop = null, showLog = false, botTimer = null, handoff = false, wired = false;
+let G = null, mode = "bot", gmode = "bot", gOnline = false, gSeat = 0, showChat = false, challenge = null, human = [true, false], sel = null, targeting = null, pop = null, showLog = false, botTimer = null, handoff = false, wired = false;
 let lastSeen = { turn: 0, seen: 0 }, noteMsg = "", noteT = null, reactCover = null;
 let drag = null;   // trascinamento in corso dalla mano
 const clearDrop = () => $$("#board .drop").forEach(x => x.classList.remove("drop"));
@@ -32,7 +34,13 @@ function markDropZones(c){
 }
 /* avviso dentro la plancia (il toast globale non segue la rotazione) */
 function note(msg){ noteMsg = msg; clearTimeout(noteT); noteT = setTimeout(() => { noteMsg = ""; const n = $("#noteMsg"); if(n) n.remove(); }, 2600); render(); }
-const names = () => [S.profile.nick || "Tu", mode === "bot" ? "Bot" : "Giocatore 2"];
+const names = () => [S.profile.nick || "Tu", gmode === "bot" ? "Bot" : "Giocatore 2"];
+
+/* tutte le mosse passano da qui: in una partita online vengono anche inviate all'avversario */
+const online = () => gOnline && ON.T.row;
+function act(pi, a){ const m = moveOf(a); const r = doAction(G, pi, m); if(online()) ON.send({ k: "a", p: pi, a: m }); return r; }
+function res(i){ const r = resolve(G, i); if(online()) ON.send({ k: "r", i: i == null ? -1 : i }); return r; }
+function doMull(pi, d){ if(G.players[pi].mulliganed) return; mulligan(G, pi, d); if(online()) ON.send({ k: "m", p: pi, d: d ? 1 : 0 }); }
 
 /* ------------------------------------------------------------ setup (pagina) */
 export function renderSim(){
@@ -44,25 +52,25 @@ export function renderSim(){
   const opts = (sel0, sealedToo = true) => `<option value="starter:theheistretailstarterdeck">Starter «The Heist»</option><option value="starter:embracingpowerretailstarterdeck">Starter «Embracing Power»</option>` +
     decks.filter(d => sealedToo || d.format !== "sealed").map(d => `<option value="${d.id}"${d.id === sel0 ? " selected" : ""}>${d.format === "sealed" ? "🎲 " : ""}${esc(d.name)} (${deckSize(d)} carte)</option>`).join("");
   const sel0 = decks.find(d => d.id === S.settings.simDeck0), sealed0 = !!(sel0 && sel0.format === "sealed");
-  if(sealed0) mode = "bot";
+  if(sealed0 && mode === "hot") mode = "bot";
   root.innerHTML = `
     <div class="card">
       <h2>Simulator</h2>
       <div class="sub">Partita completa con le regole di base applicate dal motore: fasi, Eddies, Leggende, attacchi, Blocker, furto dei Gig, Street Cred, overtime. Gli effetti di tutte le carte sono applicati dal motore; il registro mostra ogni innesco con la carta che lo produce.</div>
-      <div class="field"><label>Modalità</label><span class="seg" id="simMode"><button data-v="bot" aria-pressed="${mode === "bot"}">Contro il bot</button><button data-v="hot" aria-pressed="${mode === "hot"}" ${sealed0 ? "disabled" : ""}>In due, stesso dispositivo</button></span></div>
+      <div class="field"><label>Modalità</label><span class="seg" id="simMode"><button data-v="bot" aria-pressed="${mode === "bot"}">Contro il bot</button><button data-v="hot" aria-pressed="${mode === "hot"}" ${sealed0 ? "disabled" : ""}>In due, stesso dispositivo</button><button data-v="online" aria-pressed="${mode === "online"}">Online</button></span></div>
       <div class="simdecks" style="margin-top:10px">
         <div><label style="font-size:12px;font-weight:700;color:var(--mute)">Il tuo mazzo</label><select class="inp" id="simDeck0">${opts(S.settings.simDeck0)}</select></div>
-        <div><label style="font-size:12px;font-weight:700;color:var(--mute)">${mode === "bot" ? "Mazzo del bot" : "Mazzo del giocatore 2"}</label>
-          ${sealed0 ? `<div class="inp" style="opacity:.85">🎲 Bot del Prerelease: gioca con il kit che ha aperto lui</div><select id="simDeck1" hidden><option value="${S.settings.simDeck0}"></option></select>` : `<select class="inp" id="simDeck1">${opts(S.settings.simDeck1 || "starter:embracingpowerretailstarterdeck", false)}</select>`}</div>
+        ${mode === "online" ? "" : `<div><label style="font-size:12px;font-weight:700;color:var(--mute)">${mode === "bot" ? "Mazzo del bot" : "Mazzo del giocatore 2"}</label>
+          ${sealed0 ? `<div class="inp" style="opacity:.85">🎲 Bot del Prerelease: gioca con il kit che ha aperto lui</div><select id="simDeck1" hidden><option value="${S.settings.simDeck0}"></option></select>` : `<select class="inp" id="simDeck1">${opts(S.settings.simDeck1 || "starter:embracingpowerretailstarterdeck", false)}</select>`}</div>`}
       </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;align-items:center">
+      ${mode === "online" ? onlineLobbyHTML() : `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;align-items:center">
         <button class="btn acc2" id="simStart">▶ Inizia la partita</button>
-        ${G && G.winner == null ? `<button class="btn" id="simResume">Riprendi la partita in corso</button>` : ""}
+        ${G && G.winner == null && mode !== "online" && !gOnline ? `<button class="btn" id="simResume">Riprendi la partita in corso</button>` : ""}
         <span class="chip">${S.record.wins || 0} vittorie · ${S.record.losses || 0} sconfitte</span>
-      </div>
+      </div>`}
       <div class="field" style="margin-top:8px"><label>Pagamento degli Eddies<small>Manuale: scegli ogni volta cosa spendere. Automatico: paga da solo e chiede solo se deve spendere una Leggenda con un'abilità Spend ancora utilizzabile.</small></label>
         <span class="seg" id="simPay"><button data-v="0" aria-pressed="${!S.profile.autoPay}">Manuale</button><button data-v="1" aria-pressed="${!!S.profile.autoPay}">Automatico</button></span></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><button class="btn sm" id="simTutorial">Tutorial: partita guidata</button></div>
+      ${mode === "online" ? "" : `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><button class="btn sm" id="simTutorial">Tutorial: partita guidata</button></div>`}
       <p class="note" style="margin:12px 0 0"><b>Sul telefono</b> la plancia è orizzontale: ruota il dispositivo (o lascia che l'app la ruoti da sola). Tocca una carta per le azioni, <b>tieni premuto</b> per ingrandirla con lo zoom. Si gioca solo con i mazzi completi (3 Leggende, 40–50 carte entro i limiti RAM, o le regole del sealed)${drafts ? `: ${drafts} ${drafts === 1 ? "bozza resta" : "bozze restano"} nel deckbuilder finché non ${drafts === 1 ? "è" : "sono"} in regola` : ""}.</p>
     </div>
     ${prereleaseSetupHTML()}`;
@@ -75,11 +83,15 @@ function deckFrom(v){
 /* ------------------------------------------------------------ partita */
 function start(opts = {}){
   let d0 = opts.deck0 || deckFrom($("#simDeck0").value), d1 = opts.deck1 || deckFrom($("#simDeck1").value);
+  if(gOnline && G && G.winner == null){ toast("Hai una partita online in corso: finiscila o abbandonala prima", 3500); return; }
+  if(mode === "online") mode = "bot";
   if(d0 && d0.format === "sealed" && d0.botDeck && !opts.deck1){ d1 = d0.botDeck; mode = "bot"; }
   else if(d1 && d1.format === "sealed" && d1.botDeck && !opts.deck1){ /* mazzo sealed scelto come avversario: va bene, lo gioca il bot o il secondo giocatore */ }
   if(!d0 || !d1){ toast("Scegli due mazzi"); return; }
   for(const d of [d0, d1]) if(d.legends.filter(Boolean).length < 3 || deckSize(d) < 10){ toast(`«${d.name}»: servono 3 Leggende e un mazzo con carte`); return; }
   S.settings.simDeck0 = $("#simDeck0").value; S.settings.simDeck1 = $("#simDeck1").value; S.save("settings");
+  if(gOnline) ON.detach();
+  gmode = mode; gOnline = false; showChat = false;
   human = mode === "bot" ? [true, false] : [true, true];
   const nm = names();
   const tut = tutorialActive();
@@ -106,7 +118,8 @@ function openBoard(){
   try{ document.documentElement.requestFullscreen?.().then(() => screen.orientation?.lock?.("landscape").catch(() => {})).catch(() => {}); }catch(e){}
 }
 function closeBoard(){
-  stopTutorial();
+  stopTutorial(); showChat = false;
+  if(gOnline && G && G.winner != null){ ON.detach(); }   // partita online finita: si lascia il tavolo
   $("#board").hidden = true; document.body.style.overflow = "";
   try{ screen.orientation?.unlock?.(); if(document.fullscreenElement) document.exitFullscreen?.(); }catch(e){}
   clearTimeout(botTimer); renderSim();
@@ -118,6 +131,7 @@ function tick(){
   if(!G) return;
   if(mulliganPending() != null){ render(); return; }
   if(G.winner != null){ finish(); render(); return; }
+  if(gmode === "online"){ render(); return; }   // l'avversario gioca dal suo telefono
   if(G.pending){ if(human[G.pending.player]) { render(); return; } // decisione umana in attesa
     // decisione del bot (fuori dal suo turno, es. blocco): già risolta da ask()
   }
@@ -130,13 +144,127 @@ function tick(){
 }
 function finish(){
   if(!G || G.winner == null || G.recorded) return; G.recorded = true;
-  if(mode === "bot"){ if(G.winner === 0) S.record.wins = (S.record.wins || 0) + 1; else S.record.losses = (S.record.losses || 0) + 1; }
+  if(gmode === "online"){ finishOnline(); return; }
+  if(gmode === "bot"){ if(G.winner === 0) S.record.wins = (S.record.wins || 0) + 1; else S.record.losses = (S.record.losses || 0) + 1; }
   S.record.games = [{ when: Date.now(), mode, winner: G.players[G.winner].name, reason: G.reason, turns: G.turn }, ...(S.record.games || [])].slice(0, 50);
   S.save("record"); render();
 }
 
+/* ------------------------------------------------------------ partita online */
+const fmtCode = c => esc(c || "");
+const nickOf = (t, who) => esc(t[who + "_nick"] || "?");
+export function setChallenge(f){ challenge = f; mode = "online"; }
+function onlineLobbyHTML(){
+  if(!cloudState.user) return `<div class="online-box"><p class="note" style="margin:0">Per giocare online serve un account: accedi dalla scheda <b>Social</b> con Google o con l'email. Il nick pubblico è il nome che vede l'avversario.</p><div style="margin-top:10px"><button class="btn acc2" id="onlLogin">Vai al Social</button></div></div>`;
+  const T = ON.T, me = cloudState.user.id;
+  const waiting = T.row && T.row.status === "waiting" && T.seat === 0 && !T.ended ? T.row : null;
+  const inv = ON.invitesForMe(), act = ON.activeTables(), done = ON.tables.filter(t => t.status === "finished").slice(0, 5);
+  const friends = cloudFriends.filter(f => f.status === "accepted");
+  const rec = S.record.online || { w: 0, l: 0, d: 0 };
+  const resultTxt = t => { const mine = t.host === me ? "host" : "guest"; const res = t.result === "draw" ? "Patta" : t.result === mine ? "Vittoria" : "Sconfitta"; const why = { resign: "abbandono", timeout: "disconnessione", agreement: "accordo" }[t.reason] || ""; return res + (why ? ` (${why})` : ""); };
+  const opp = t => t.host === me ? (t.guest_nick || t.invited_nick) : t.host_nick;
+  return `<div class="online-box">
+    ${waiting ? `<div class="tcode"><small>Codice del tavolo</small><b>${fmtCode(waiting.code)}</b>
+        <span>${waiting.invited ? `Sfida inviata a <b>${esc(ON.T.inviteNick || (ON.tables.find(x => x.id === waiting.id) || {}).invited_nick || "un amico")}</b>: appena accetta, la partita parte da sola.` : "Dai il codice all'avversario: appena entra, la partita parte da sola."}</span>
+        <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:8px"><button class="btn sm" id="onlShare">Condividi il codice</button><button class="btn sm" id="onlCancel">Annulla il tavolo</button></div></div>`
+    : `<div class="onl-grid">
+        <div><h4>Crea un tavolo</h4><p class="sub">Ricevi un codice di 4 caratteri da dare all'avversario.</p><button class="btn acc2" id="onlCreate">Crea un tavolo</button></div>
+        <div><h4>Entra con un codice</h4><div style="display:flex;gap:6px"><input class="inp code" id="onlCode" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD"><button class="btn yel" id="onlJoin">Entra</button></div></div>
+        <div><h4>Sfida un amico</h4>${friends.length ? `<div style="display:flex;gap:6px"><select class="inp" id="onlFriend">${friends.map(f => `<option value="${f.id}"${challenge && challenge.id === f.id ? " selected" : ""}>${esc(f.nick)}${cloudState.online.has(f.id) ? " ●" : ""}</option>`).join("")}</select><button class="btn acc2" id="onlChallenge">Sfida</button></div>` : `<p class="sub">Aggiungi amici dalla scheda Social per sfidarli direttamente.</p>`}</div>
+      </div>`}
+    ${inv.length ? `<h4 class="frh">Sfide ricevute</h4><div class="frlist">${inv.map(t => `<div class="frow2"><div class="nm"><b>${nickOf(t, "host")}</b><span>ti sfida · tavolo ${fmtCode(t.code)}</span></div><button class="btn sm yel" data-onlaccept="${esc(t.code)}">Accetta</button><button class="btn sm" data-onlrefuse="${t.id}">Rifiuta</button></div>`).join("")}</div>` : ""}
+    ${act.length ? `<h4 class="frh">Partite in corso</h4><div class="frlist">${act.map(t => `<div class="frow2"><div class="nm"><b>${esc(opp(t) || "?")}</b><span>tavolo ${fmtCode(t.code)} · ${t.moves} mosse</span></div><button class="btn sm acc2" data-onlresume="${t.id}">${ON.T.row && ON.T.row.id === t.id && G && gOnline ? "Torna alla plancia" : "Riprendi"}</button></div>`).join("")}</div>` : ""}
+    ${done.length ? `<h4 class="frh">Ultime partite</h4><div class="frlist">${done.map(t => `<div class="frow2"><div class="nm"><b>${esc(opp(t) || "?")}</b><span>${resultTxt(t)}</span></div></div>`).join("")}</div>` : ""}
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;align-items:center"><span class="chip">Online: ${rec.w || 0} vittorie · ${rec.l || 0} sconfitte · ${rec.d || 0} patte</span></div>
+    <p class="note" style="margin:10px 0 0">Si gioca con le regole del motore, come contro il bot. <b>Se chiudi l'app o resti senza rete per più di un minuto, la partita va all'avversario.</b> Dal menù ⋯ della plancia puoi proporre la patta, abbandonare o scrivere nella chat del tavolo.</p>
+  </div>`;
+}
+function onlineBadgeHTML(){
+  if(!ON.T.row || G.winner != null) return "";
+  const idle = ON.otherIdle(), R = G.players[1 - me()];
+  if(ON.T.error && /fetch|network|Failed/i.test(ON.T.error)) return `<b class="onl warn">⚠ connessione assente</b>`;
+  if(idle >= 25) return `<b class="onl warn">⚠ ${esc(R.name)} non risponde: vinci tra ${Math.max(0, 60 - idle)}s</b>`;
+  return `<span class="onl ok" title="${esc(R.name)} è collegato">● ${esc(R.name)}</span>`;
+}
+function drawOfferHTML(){
+  if(!ON.T.row || G.winner != null || !ON.T.drawOffer) return "";
+  if(ON.T.drawOffer === cloudState.user?.id) return "";
+  return `<div id="simAsk" class="drawask"><div class="box"><h3>${esc(G.players[1 - me()].name)} propone la patta</h3><p>Se accetti, la partita finisce senza vincitori.</p><div class="opts"><button class="btn yel" data-draw="1">Accetto la patta</button><button class="btn" data-draw="0">Continuiamo</button></div></div></div>`;
+}
+function chatHTML(){
+  ON.T.chatUnread = 0;
+  return `<div id="tchat"><div style="display:flex;justify-content:space-between;align-items:center"><b>Chat del tavolo</b><button class="btn sm icon" id="bChatClose">✕</button></div>
+    <div id="tchatList">${ON.T.chat.map(m => `<div class="m${m.mine ? " me" : ""}"><b>${esc(m.who)}</b> ${esc(m.text)}</div>`).join("") || `<div class="sub">Nessun messaggio. Sii gentile: la chat del tavolo non viene salvata.</div>`}</div>
+    <form id="tchatForm" style="display:flex;gap:6px"><input class="inp" id="tchatIn" maxlength="300" autocomplete="off" placeholder="Scrivi…"><button class="btn sm yel">Invia</button></form></div>`;
+}
+/* la partita si ricostruisce sempre da seme + mazzi + mosse */
+function buildOnline(moves){
+  const { decks, opts } = ON.setupOf(ON.T.row);
+  G = createGame(decks, DATA.byId, opts);
+  G.mulliganAsked = [false, false];
+  for(const m of moves){ try{ applyMove(G, m); }catch(e){ console.warn("mossa non applicabile", m, e); break; } }
+  if(ON.T.ended) applyEnd(ON.T.ended);
+}
+function applyEnd(e){
+  if(!G || !e || !e.result) return;
+  const w = e.result === "draw" ? -1 : e.result === "host" ? 0 : 1;
+  if(G.winner === w && !["resign", "timeout", "agreement"].includes(e.reason)) return;   // il motore l'aveva già decisa
+  const loser = w >= 0 ? G.players[1 - w].name : "";
+  G.winner = w; G.pending = null;
+  G.reason = e.reason === "agreement" ? "Patta concordata" : e.reason === "resign" ? `${loser} abbandona la partita` : e.reason === "timeout" ? `${loser} si è disconnesso per più di un minuto` : (G.reason || e.reason || "");
+}
+function finishOnline(){
+  // la partita si ricostruisce più volte dal registro: si conta una volta sola per tavolo
+  const tid = ON.T.row && ON.T.row.id, seen = S.record.onlineIds = S.record.onlineIds || [];
+  if(G.winner >= 0 && G.winner !== gSeat && !ON.T.ended) ON.reportResult(G.winner, G.reason);
+  if(!tid || seen.includes(tid)){ render(); return; }
+  S.record.onlineIds = [tid, ...seen].slice(0, 30);
+  const r = S.record.online = S.record.online || { w: 0, l: 0, d: 0 };
+  if(G.winner === -1) r.d = (r.d || 0) + 1; else if(G.winner === gSeat) r.w = (r.w || 0) + 1; else r.l = (r.l || 0) + 1;
+  S.record.games = [{ when: Date.now(), mode: "online", winner: G.winner === -1 ? "—" : G.players[G.winner].name, reason: G.reason, turns: G.turn, vs: G.players[1 - gSeat].name }, ...(S.record.games || [])].slice(0, 50);
+  S.save("record");
+  render();
+}
+ON.setOnlineHooks({
+  start(row, seat, nicks, moves){
+    clearTimeout(botTimer); stopTutorial();
+    gmode = "online"; mode = "online"; gOnline = true; gSeat = seat; human = [seat === 0, seat === 1];
+    sel = null; targeting = null; pop = null; handoff = false; showLog = false; showChat = false; lastSeen = { turn: 0, seen: 0 };
+    buildOnline(moves.map(m => m.move));
+    if(location.hash !== "#sim") location.hash = "#sim";
+    $("#board").innerHTML = ""; openBoard(); render(); tick();
+  },
+  move(m){ if(!G || !gOnline) return; applyMove(G, m); if(targeting && !G.players[me()].hand.some(c => c.uid === targeting.uid) && !G.players[me()].field.some(u => u.uid === targeting.uid)) targeting = null; render(); tick(); },
+  rebuild(moves){ if(!gOnline || !ON.T.row) return; window.__ncdRebuilds = (window.__ncdRebuilds || 0) + 1; buildOnline(moves); sel = null; targeting = null; render(); tick(); },
+  lost(m){ if(m.k === "m" && G && !G.players[m.p].mulliganed){ doMull(m.p, !!m.d); render(); tick(); } },
+  end(e){ if(G && gOnline){ applyEnd(e); render(); finish(); } }
+});
+setInterval(() => { if(gOnline && G && G.winner == null && !$("#board").hidden){ const b = $("#onlBadge"); if(b) b.innerHTML = onlineBadgeHTML(); } }, 1000);
+function onlineMenuItems(){
+  const mine = ON.T.drawOffer && ON.T.drawOffer === cloudState.user?.id;
+  return [
+    { label: `Chat del tavolo${ON.T.chatUnread ? ` (${ON.T.chatUnread})` : ""}`, fn: () => { showChat = true; render(); } },
+    { label: mine ? "Patta proposta: in attesa di risposta" : "Proponi la patta", disabled: G.winner != null || mine, fn: async () => { try{ await ON.offerDraw(); note("Patta proposta"); }catch(e){ note(e.message); } } },
+    { label: "Abbandona la partita", cls: "danger", disabled: G.winner != null, fn: () => showAsk("Abbandonare la partita?", null, "La vittoria va all'avversario.", [{ label: "Abbandono", cls: "danger", fn: async () => { try{ await ON.resign(); }catch(e){ note(e.message); } } }, { label: "Continuo", fn: () => {} }]) }
+  ];
+}
+async function lobbyClick(e){
+  const t = e.target, deck = () => { const d = deckFrom($("#simDeck0").value); if(!d || d.legends.filter(Boolean).length < 3){ toast("Scegli un mazzo completo"); return null; } S.settings.simDeck0 = $("#simDeck0").value; S.save("settings"); return d; };
+  const busy = async (btn, f) => { if(btn.disabled) return; btn.disabled = true; try{ await f(); }catch(err){ toast(err.message, 4000); } finally{ btn.disabled = false; renderSim(); } };
+  if(t.closest("#onlLogin")){ location.hash = "#profile"; return; }
+  let b;
+  if((b = t.closest("#onlCreate"))){ const d = deck(); if(d) busy(b, () => ON.createTable(d, S.profile.autoPay)); return; }
+  if((b = t.closest("#onlJoin"))){ const code = ($("#onlCode").value || "").trim().toUpperCase(); if(!/^[A-Z2-9]{4}$/.test(code)){ toast("Il codice è di 4 caratteri"); return; } const d = deck(); if(d) busy(b, () => ON.joinTable(code, d, S.profile.autoPay)); return; }
+  if((b = t.closest("#onlChallenge"))){ const id = $("#onlFriend").value, f = cloudFriends.find(x => x.id === id); const d = deck(); if(d) busy(b, async () => { await ON.createTable(d, S.profile.autoPay, id); ON.T.inviteNick = f && f.nick; challenge = null; }); return; }
+  if((b = t.closest("#onlCancel"))){ busy(b, () => ON.cancelTable(ON.T.row.id)); return; }
+  if(t.closest("#onlShare")){ const code = ON.T.row && ON.T.row.code; const text = `Giochiamo a Cyberpunk TCG su DeckShard: codice del tavolo ${code} — ${location.origin + location.pathname}#sim`; try{ if(navigator.share) await navigator.share({ text }); else { await navigator.clipboard.writeText(code); toast("Codice copiato"); } }catch(err){} return; }
+  if((b = t.closest("[data-onlaccept]"))){ const d = deck(); if(d){ const code = b.dataset.onlaccept; busy(b, () => ON.joinTable(code, d, S.profile.autoPay)); } return; }
+  if((b = t.closest("[data-onlrefuse]"))){ const id = b.dataset.onlrefuse; busy(b, () => ON.cancelTable(id)); return; }
+  if((b = t.closest("[data-onlresume]"))){ const id = b.dataset.onlresume; if(ON.T.row && ON.T.row.id === id && G && gOnline){ openBoard(); render(); return; } busy(b, () => ON.resumeTable(id)); return; }
+}
+
 /* ------------------------------------------------------------ resa grafica */
-const me = () => mode === "bot" ? 0 : G.active;   // in hot-seat la plancia è sempre dal punto di vista di chi gioca
+const me = () => gmode === "bot" ? 0 : gmode === "online" ? gSeat : G.active;   // in hot-seat la plancia è sempre dal punto di vista di chi gioca
 function cardHTML(x, cls = "", extra = ""){
   const pw = power(x), base = x.card.power ?? 0, c = cls + (x.spent ? " spent" : "") + (x.lag ? " lag" : "") + (sel === x.uid ? " sel" : "");
   return `<div class="bc ${c}" data-uid="${x.uid}" title="${esc(x.card.dn)}">${x.pid ? `<img src="${thumbUrl(x.pid)}" alt="">` : `<div class="n">${esc(x.card.dn)}</div>`}
@@ -167,14 +295,16 @@ function render(){
     const cost = c.card.cost ?? 0, afford = canPay(M, cost);
     return `<div class="bc big${sel === c.uid ? " sel" : ""}" data-uid="${c.uid}" data-hand="1" title="${esc(c.card.dn)}"><img src="${thumbUrl(c.pid)}" alt=""><span class="co${afford ? "" : " no"}">${cost}</span>${c.card.eddiable ? `<span class="ed" title="Vendibile per 1 €$">€$</span>` : ""}</div>`;
   }).join("");
-  const pendingTxt = pm ? "" : G.pending ? (human[G.pending.player] ? `${G.players[G.pending.player].name} deve scegliere…` : "il bot decide…") : "";
+  const pendingTxt = pm ? "" : G.pending ? (human[G.pending.player] ? `${G.players[G.pending.player].name} deve scegliere…` : gmode === "online" ? `${G.players[G.pending.player].name} sta decidendo…` : "il bot decide…") : "";
   const payTxt = pm ? `<b style="color:var(--acc2)">Paga ${pm.ctx.cost} €$ (${pm.ctx.paid}/${pm.ctx.cost}): tocca un Eddie o una Leggenda</b>` : "";
-  const status = G.winner != null ? `Fine: ${esc(G.reason)}` : myTurn ? "Il tuo turno" : human[G.active] ? `Turno di ${esc(G.players[G.active].name)}` : "Turno del bot…";
+  const waitMull = G.phase === "mulligan" && gmode === "online" && G.players[me()].mulliganed;
+  const status = G.winner != null ? `Fine: ${esc(G.reason)}` : waitMull ? `Mulligan: in attesa di ${esc(R.name)}` : myTurn ? "Il tuo turno" : human[G.active] || gmode === "online" ? `Turno di ${esc(G.players[G.active].name)}` : "Turno del bot…";
   const last = G.log.slice(-1)[0];
   // misura delle carte dall'altezza disponibile: 2 righe rivale + campo + pile + mano (1,15×) + barra e margini
   const H = board.clientHeight; board.style.setProperty("--bh", H + "px");
   if(drag){ drag = null; killGhosts(); }   // un ridisegno durante un trascinamento lo annulla, senza lasciare copie in giro
   board.style.setProperty("--cw", Math.max(32, Math.min(64, (H - 110) / (1.4 * 4.15 + 0.6))).toFixed(1) + "px");
+  const chatIn = $("#tchatIn"), draft = chatIn ? chatIn.value : "", chatFocus = chatIn && document.activeElement === chatIn;
   board.innerHTML = `
     <div class="bz rival">
       <div class="brow">
@@ -194,6 +324,7 @@ function render(){
       <span class="lg" id="lastLog" title="${esc(last ? last.text : "")}">${payTxt ? payTxt + " · " : ""}${noteMsg ? `<b id="noteMsg" style="color:var(--acc2)">${esc(noteMsg)} · </b>` : ""}${pendingTxt ? `<b>${esc(pendingTxt)}</b> · ` : ""}${esc(last ? last.text : "")}</span>
       ${myTurn && human[M.id] && tutorialAllows("end") ? `<button class="btn sm yel" id="bEnd">Fine turno</button>` : ""}
       ${pm ? `${payOpt(o => o.kind === "alleddies") >= 0 ? `<button class="btn sm acc2" id="bPayAll">Tutto con Eddies</button>` : ""}<button class="btn sm" id="bPayCancel">Annulla</button>` : targeting ? `<button class="btn sm" id="bCancel">Annulla</button>` : ""}
+      ${gmode === "online" ? `<span id="onlBadge">${onlineBadgeHTML()}</span><button class="btn sm icon" id="bChat" title="Chat del tavolo">💬${ON.T.chatUnread && !showChat ? `<span class="nbadge">${ON.T.chatUnread}</span>` : ""}</button>` : ""}
       <button class="btn sm icon" id="bLog" title="Registro">≡</button>
       <button class="btn sm icon" id="bMenu" title="Menù">⋯</button>
     </div>
@@ -213,9 +344,11 @@ function render(){
     ${tutorialActive() ? tutorialBarHTML(G, me()) : ""}
     ${showLog ? `<div id="simLog"><div style="display:flex;justify-content:space-between;align-items:center"><b>Registro</b><button class="btn sm icon" id="bLogClose">✕</button></div>${G.log.slice(-80).map(e => `<div class="e ${e.kind}">${esc(e.text)}</div>`).join("")}</div>` : ""}
     ${mulliganPending() != null ? mulliganHTML() : pm ? "" : G.pending && human[G.pending.player] ? askHTML() : ""}
-    ${G.winner != null ? `<div class="winbox"><div class="box"><h2>${G.winner === me() ? "VITTORIA" : mode === "hot" ? "VINCE " + esc(G.players[G.winner].name).toUpperCase() : "SCONFITTA"}</h2><p>${esc(G.reason)}</p><p style="color:var(--mute)">${G.turn} turni</p><div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><button class="btn yel" id="bAgain">Rivincita</button><button class="btn" id="bExit">Esci</button></div></div></div>` : ""}
+    ${G.winner != null ? `<div class="winbox"><div class="box"><h2>${G.winner === -1 ? "PATTA" : G.winner === me() ? "VITTORIA" : gmode === "hot" ? "VINCE " + esc(G.players[G.winner].name).toUpperCase() : "SCONFITTA"}</h2><p>${esc(G.reason)}</p><p style="color:var(--mute)">${G.turn} turni</p><div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">${gmode === "online" ? `${showChat ? "" : `<button class="btn" id="bChat2">💬 Chat</button>`}<button class="btn yel" id="bExit">Torna alla lobby</button>` : `<button class="btn yel" id="bAgain">Rivincita</button><button class="btn" id="bExit">Esci</button>`}</div></div></div>` : ""}
+    ${gmode === "online" ? drawOfferHTML() + (showChat ? chatHTML() : "") : ""}
     ${handoff ? `<div class="handoff"><h2>Passa il dispositivo a ${esc(G.players[G.active].name)}</h2><p>Il tuo rivale non guarda, promesso.</p><button class="btn yel" id="bHand">Sono pronto</button></div>` : ""}`;
   if(showLog){ const l = $("#simLog"); l.scrollTop = l.scrollHeight; }
+  if(showChat){ const l = $("#tchatList"); if(l) l.scrollTop = l.scrollHeight; const i = $("#tchatIn"); if(i){ i.value = draft; if(chatFocus) i.focus(); } }
   if(tutorialActive() && tutorialStep(G, me())) { /* passo completato: la barra si aggiorna al prossimo ridisegno */ setTimeout(() => { if(G) render(); }, 0); }
 }
 
@@ -225,7 +358,7 @@ function askHTML(){
   const titles = { die: "Quale dado tiri dal fixer?", block: `${esc(P.name)}: come reagisci?`, steal: "Quale Gig rubi?", target: "Scegli il bersaglio", discard: "Scegli la carta da scartare", gigpick: "Quale Gig?", gigvalue: "Nuovo valore", pickcard: "Scegli la carta", choice: "Scegli un effetto", yesno: "Vuoi farlo?", pay: p.ctx && p.ctx.confirm ? `Per pagare ${p.ctx.cost} €$ devi spendere una Leggenda con abilità` : `Come paghi? ${p.ctx ? `${p.ctx.paid}/${p.ctx.cost} €$ pagati` : ""}` };
   const ctx = p.kind === "block" && p.ctx.attacker ? `<p style="color:var(--ink2);margin:0 0 8px">${esc(p.ctx.attacker.card.dn)} (${power(p.ctx.attacker)}) attacca ${p.ctx.target ? esc(p.ctx.target.card.dn) + " (" + power(p.ctx.target) + ")" : "la tua area Gig"}. Puoi bloccare, chiamare una Leggenda o usare una carta Quick, anche più volte.</p>` : "";
   // in due sullo stesso dispositivo: la decisione del difensore si apre solo dopo un tocco, così l'attaccante non vede le sue carte
-  if(mode === "hot" && p.player !== G.active && reactCover !== p) return `<div id="simAsk"><div class="box"><h3>Reazione di ${esc(P.name)}</h3><p>${esc(G.players[G.active].name)}, passa il dispositivo: le opzioni del rivale compaiono solo dopo il suo tocco.</p><div class="opts"><button class="btn yel" data-react="1">Sono ${esc(P.name)}, mostra le opzioni</button></div></div></div>`;
+  if(gmode === "hot" && p.player !== G.active && reactCover !== p) return `<div id="simAsk"><div class="box"><h3>Reazione di ${esc(P.name)}</h3><p>${esc(G.players[G.active].name)}, passa il dispositivo: le opzioni del rivale compaiono solo dopo il suo tocco.</p><div class="opts"><button class="btn yel" data-react="1">Sono ${esc(P.name)}, mostra le opzioni</button></div></div></div>`;
   const srcLine = p.ctx && p.ctx.src && p.kind !== "die" && p.kind !== "block" && p.kind !== "steal" ? `<div class="sub" style="margin:-4px 0 8px"><b>${esc(p.ctx.src)}</b>${p.ctx.text ? ` — ${esc(p.ctx.text)}` : ""}</div>` : "";
   return `<div id="simAsk"><div class="box"><h3>${titles[p.kind] || "Scegli"}</h3>${srcLine}${ctx}<div class="opts">${p.options.map((o, i) => {
     const pid = o.unit?.pid || o.c?.pid || o.g?.pid; return `<button class="btn${pid ? " card-opt" : ""}" data-ask="${i}"${o.disabled ? " disabled" : ""}>${pid ? `<img src="${thumbUrl(pid)}" alt="">` : ""}${esc(o.label)}</button>`; }).join("")}</div></div></div>`;
@@ -265,8 +398,8 @@ function handCard(el, P){
   if(myTurn){
     const okPlay = tutorialAllows("play", c), okSell = tutorialAllows("sell", c);
     if(c.card.type === "Gear") items.push({ label: `Equipaggia (${cost} €$) → scegli l'Unità`, cls: "acc", disabled: !canPay(P, cost) || !okPlay, fn: () => { targeting = { kind: "gear", uid: c.uid }; sel = c.uid; render(); note("Tocca l'Unità o la Leggenda scoperta da equipaggiare"); } });
-    else items.push({ label: `Gioca (${cost} €$)`, cls: "acc", disabled: !canPay(P, cost) || !okPlay, fn: () => after(doAction(G, P.id, { t: "play", uid: c.uid })) });
-    if(c.card.eddiable) items.push({ label: P.sold ? "Vendi (già venduto in questo turno)" : "Vendi → 1 €$", disabled: P.sold || !okSell, fn: () => after(doAction(G, P.id, { t: "sell", uid: c.uid })) });
+    else items.push({ label: `Gioca (${cost} €$)`, cls: "acc", disabled: !canPay(P, cost) || !okPlay, fn: () => after(act(P.id, { t: "play", uid: c.uid })) });
+    if(c.card.eddiable) items.push({ label: P.sold ? "Vendi (già venduto in questo turno)" : "Vendi → 1 €$", disabled: P.sold || !okSell, fn: () => after(act(P.id, { t: "sell", uid: c.uid })) });
     if(MANUAL) items.push({ label: "Scarta (manuale)", cls: "danger", fn: () => { manual.discard(G, P.id, c.uid); after(); } });
   }
   items.push({ label: "Ingrandisci", fn: () => openLens(imgUrl(c.pid)) }, { label: "Scheda carta", fn: () => openCard(c.cid, c.pid) });
@@ -278,15 +411,15 @@ function fieldCard(el, owner){
   const myTurn = G.active === M.id && G.phase === "main" && !G.pending && G.winner == null && human[M.id];
   // in modalità bersaglio
   if(targeting && myTurn){
-    if(targeting.kind === "gear" && mine){ after(doAction(G, M.id, { t: "play", uid: targeting.uid, target: u.uid })); return; }
-    if(targeting.kind === "attack" && !mine){ after(doAction(G, M.id, { t: "attack", uid: targeting.uid, target: { kind: "unit", uid: u.uid } })); return; }
+    if(targeting.kind === "gear" && mine){ after(act(M.id, { t: "play", uid: targeting.uid, target: u.uid })); return; }
+    if(targeting.kind === "attack" && !mine){ after(act(M.id, { t: "attack", uid: targeting.uid, target: { kind: "unit", uid: u.uid } })); return; }
   }
   const items = [];
   if(mine && myTurn){
     const can = canAttack(G, M, u) && tutorialAllows("attack");
-    items.push({ label: power(u) < 1 ? "Attacca l'area Gig (potenza 0: non ruba, ma attiva gli effetti)" : `Attacca l'area Gig (${1 + Math.floor(power(u) / 10)} Gig)`, cls: "acc", disabled: !can || !rival(G, M).gigs.length || u.fx.onlyUnits, fn: () => after(doAction(G, M.id, { t: "attack", uid: u.uid, target: { kind: "gigs" } })) });
+    items.push({ label: power(u) < 1 ? "Attacca l'area Gig (potenza 0: non ruba, ma attiva gli effetti)" : `Attacca l'area Gig (${1 + Math.floor(power(u) / 10)} Gig)`, cls: "acc", disabled: !can || !rival(G, M).gigs.length || u.fx.onlyUnits, fn: () => after(act(M.id, { t: "attack", uid: u.uid, target: { kind: "gigs" } })) });
     items.push({ label: "Attacca un'Unità spesa →", disabled: !can || !rival(G, M).field.some(x => x.spent), fn: () => { targeting = { kind: "attack", uid: u.uid }; sel = u.uid; render(); note("Tocca l'Unità rivale spesa da attaccare"); } });
-    if(hasSpend(u)) items.push({ label: "Abilità {Spend}", disabled: u.spent || u.lag || !tutorialAllows("spend"), fn: () => after(doAction(G, M.id, { t: "spend", uid: u.uid })) });
+    if(hasSpend(u)) items.push({ label: "Abilità {Spend}", disabled: u.spent || u.lag || !tutorialAllows("spend"), fn: () => after(act(M.id, { t: "spend", uid: u.uid })) });
   }
   if(MANUAL && human[M.id] && G.winner == null){
     items.push({ label: "— strumenti manuali —", disabled: true, fn: () => {} },
@@ -303,12 +436,12 @@ function legendCard(el, owner){
   const P = G.players[owner], l = P.legends.find(x => x.uid === +el.dataset.uid); if(!l) return;
   const M = G.players[me()], mine = owner === M.id;
   const myTurn = G.active === M.id && G.phase === "main" && !G.pending && G.winner == null && human[M.id];
-  if(targeting && targeting.kind === "gear" && mine && l.faceUp && !l.onField && !l.removed && myTurn){ after(doAction(G, M.id, { t: "play", uid: targeting.uid, target: l.uid })); return; }
+  if(targeting && targeting.kind === "gear" && mine && l.faceUp && !l.onField && !l.removed && myTurn){ after(act(M.id, { t: "play", uid: targeting.uid, target: l.uid })); return; }
   const items = [], idx = P.legends.indexOf(l);
   if(mine && myTurn && !l.removed && !l.onField){
-    if(!l.faceUp) items.push({ label: "Chiama questa Leggenda (1 €$)", cls: "acc", disabled: P.called || !canPay(P, 1) || !tutorialAllows("call"), fn: () => after(doAction(G, M.id, { t: "call", idx })) });
-    if(l.faceUp && (l.card.kw || []).includes("Go Solo") && l.card.cost != null) items.push({ label: `Go Solo (${l.card.cost} €$): entra come Unità pronta${l.spent ? "" : ", può pagare 1 €$ da sé"}`, disabled: !canPay(P, l.card.cost) || !tutorialAllows("gosolo"), fn: () => after(doAction(G, M.id, { t: "gosolo", idx })) });
-    if(l.faceUp && l.fx.spend.length) items.push({ label: "Abilità {Spend}", disabled: l.spent || !tutorialAllows("spend"), fn: () => after(doAction(G, M.id, { t: "spend", uid: l.uid })) });
+    if(!l.faceUp) items.push({ label: "Chiama questa Leggenda (1 €$)", cls: "acc", disabled: P.called || !canPay(P, 1) || !tutorialAllows("call"), fn: () => after(act(M.id, { t: "call", idx })) });
+    if(l.faceUp && (l.card.kw || []).includes("Go Solo") && l.card.cost != null) items.push({ label: `Go Solo (${l.card.cost} €$): entra come Unità pronta${l.spent ? "" : ", può pagare 1 €$ da sé"}`, disabled: !canPay(P, l.card.cost) || !tutorialAllows("gosolo"), fn: () => after(act(M.id, { t: "gosolo", idx })) });
+    if(l.faceUp && l.fx.spend.length) items.push({ label: "Abilità {Spend}", disabled: l.spent || !tutorialAllows("spend"), fn: () => after(act(M.id, { t: "spend", uid: l.uid })) });
     if(MANUAL) items.push({ label: l.spent ? "Prepara (manuale)" : "Spendi come 1 €$ (manuale)", fn: () => { manual.toggleSpent(G, owner, l.uid); after(); } });
     if(MANUAL && !l.faceUp) items.push({ label: "Scopri senza chiamare (manuale)", fn: () => { manual.flip(G, owner, idx); after(); } });
   }
@@ -331,9 +464,9 @@ function menu(el){
   openPop(el, [
     ...(MANUAL ? [{ label: "Pesca 1 (manuale)", disabled: !human[M.id] || G.winner != null, fn: () => { manual.draw(G, M.id, 1); after(); } }] : []),
     { label: "Registro completo", fn: () => { showLog = true; render(); } },
-    ...(tutorialActive() ? [{ label: "Abbandona il tutorial", cls: "danger", fn: () => { G.recorded = true; G = null; closeBoard(); toast("Tutorial chiuso: nessuna sconfitta registrata"); } }]
+    ...(gmode === "online" ? onlineMenuItems() : tutorialActive() ? [{ label: "Abbandona il tutorial", cls: "danger", fn: () => { G.recorded = true; G = null; closeBoard(); toast("Tutorial chiuso: nessuna sconfitta registrata"); } }]
                         : [{ label: "Mi arrendo", cls: "danger", disabled: G.winner != null, fn: () => { manual.concede(G, M.id); after(); } }]),
-    { label: "Esci dalla plancia", fn: () => closeBoard() }
+    { label: gmode === "online" && G.winner == null ? "Esci dalla plancia (la partita resta aperta)" : "Esci dalla plancia", fn: () => closeBoard() }
   ], "Menù");
 }
 
@@ -344,8 +477,17 @@ function wire(){
     const m = e.target.closest("#simMode button"); if(m && !m.disabled){ mode = m.dataset.v; renderSim(); return; }
     const pb = e.target.closest("#simPay button"); if(pb){ S.profile.autoPay = pb.dataset.v === "1"; S.save("profile"); renderSim(); return; }
     if(e.target.closest("#simStart")){ start(); return; }
+    if(mode === "online"){ lobbyClick(e); }
     if(e.target.closest("#simResume")){ openBoard(); render(); tick(); }
   });
+  root.addEventListener("input", e => { if(e.target.id === "onlCode"){ const v = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4); e.target.value = v; } });
+  root.addEventListener("keydown", e => { if(e.target.id === "onlCode" && e.key === "Enter") $("#onlJoin")?.click(); });
+  for(const ev of ["ncd:tables", "ncd:table", "ncd:cloud", "ncd:social", "ncd:presence"]) document.addEventListener(ev, () => {
+    const setupVisible = $("#p-sim")?.classList.contains("on") && $("#board").hidden;
+    if(setupVisible && mode === "online" && !document.activeElement?.matches?.("#onlCode, #onlFriend, #simDeck0")) renderSim();
+    if(ev === "ncd:table" && gOnline && G && !$("#board").hidden) render();
+  });
+  document.addEventListener("ncd:tablechat", () => { if(gOnline && G && !$("#board").hidden) render(); });
   root.addEventListener("change", e => { if(e.target.id === "simDeck0"){ S.settings.simDeck0 = e.target.value; S.save("settings"); renderSim(); } if(e.target.id === "simDeck1"){ S.settings.simDeck1 = e.target.value; S.save("settings"); } });
   document.addEventListener("ncd:playdeck", e => { const d = S.decks.find(x => x.id === e.detail); if(!d || !isLegal(d)){ toast("Il mazzo non è ancora in regola: completalo nel deckbuilder"); return; } S.settings.simDeck0 = e.detail; S.save("settings"); renderSim(); if(d.format === "sealed") start(); });
   root.addEventListener("click", e => { const z = e.target.closest(".pkg [data-zoom]"); if(z) openLens(imgUrl(z.dataset.zoom)); });
@@ -415,12 +557,12 @@ function wire(){
     const M = G.players[me()];
     const t = e.type === "pointercancel" ? null : dropTarget(e.clientX, e.clientY);
     if(!t) return;
-    if(d.legendIdx != null){ if((t.kind === "field" || t.kind === "unit") && tutorialAllows("gosolo")) after(doAction(G, M.id, { t: "gosolo", idx: d.legendIdx })); return; }
+    if(d.legendIdx != null){ if((t.kind === "field" || t.kind === "unit") && tutorialAllows("gosolo")) after(act(M.id, { t: "gosolo", idx: d.legendIdx })); return; }
     const c = M.hand.find(x => x.uid === d.uid); if(!c) return;
-    if(t.kind === "sell"){ if(!tutorialAllows("sell", c)) { note("Segui il passo del tutorial"); return; } if(c.card.eddiable) after(doAction(G, M.id, { t: "sell", uid: c.uid })); else note("Questa carta non ha il simbolo di vendita"); return; }
+    if(t.kind === "sell"){ if(!tutorialAllows("sell", c)) { note("Segui il passo del tutorial"); return; } if(c.card.eddiable) after(act(M.id, { t: "sell", uid: c.uid })); else note("Questa carta non ha il simbolo di vendita"); return; }
     if(!tutorialAllows("play", c)){ note("Segui il passo del tutorial"); return; }
-    if(c.card.type === "Gear"){ if(t.kind === "unit" || t.kind === "legend") after(doAction(G, M.id, { t: "play", uid: c.uid, target: t.uid })); else note(t.kind === "facedown" ? "Un Gear si equipaggia solo a una Leggenda scoperta" : "Trascina il Gear su un'Unità o una Leggenda scoperta"); return; }
-    if(t.kind === "field" || t.kind === "unit") after(doAction(G, M.id, { t: "play", uid: c.uid }));
+    if(c.card.type === "Gear"){ if(t.kind === "unit" || t.kind === "legend") after(act(M.id, { t: "play", uid: c.uid, target: t.uid })); else note(t.kind === "facedown" ? "Un Gear si equipaggia solo a una Leggenda scoperta" : "Trascina il Gear su un'Unità o una Leggenda scoperta"); return; }
+    if(t.kind === "field" || t.kind === "unit") after(act(M.id, { t: "play", uid: c.uid }));
   };
   board.addEventListener("pointerup", endDrag); board.addEventListener("pointercancel", endDrag);
   // rilascio fuori dalla plancia o finestra che perde il fuoco: niente copie fantasma in giro
@@ -436,11 +578,15 @@ function wire(){
     const t = e.target;
     // registro aperto: un tocco fuori dal pannello lo chiude
     if(showLog && !t.closest("#simLog")){ showLog = false; render(); return; }
-    if(t.closest("#bEnd")){ const ok = doAction(G, me(), { t: "end" }); after(ok); if(ok !== false && mode === "hot" && G.winner == null){ handoff = true; render(); } return; }
+    if(t.closest("#bEnd")){ const ok = act(me(), { t: "end" }); after(ok); if(ok !== false && gmode === "hot" && G.winner == null){ handoff = true; render(); } return; }
     if(t.closest("#bCancel")){ targeting = null; sel = null; render(); return; }
     if(t.closest("#bLog")){ showLog = !showLog; render(); return; }
     if(t.closest("#bLogClose")){ showLog = false; render(); return; }
     if(t.closest("#bMenu")){ menu(t.closest("#bMenu")); return; }
+    if(t.closest("#bChat") || t.closest("#bChat2")){ showChat = !showChat; render(); return; }
+    if(t.closest("#bChatClose")){ showChat = false; render(); return; }
+    if(t.closest("#tchat")) return;
+    const dr = t.closest("[data-draw]"); if(dr){ ON.answerDraw(dr.dataset.draw === "1").catch(err => note(err.message)); return; }
     if(t.closest("#bAgain")){ $("#board").hidden = true; renderSim(); start(); return; }
     if(t.closest("#bExit")){ closeBoard(); return; }
     if(t.closest("#bHand")){ handoff = false; render(); tick(); return; }
@@ -448,16 +594,16 @@ function wire(){
     if(t.closest("#tutNext")){ tutorialStep(G, me(), true); render(); return; }
     if(payMode()){
       const pm = payMode();
-      if(t.closest("#bPayCancel")){ resolve(G, payOpt(o => o.kind === "cancel")); render(); tick(); return; }
-      if(t.closest("#bPayAll")){ resolve(G, payOpt(o => o.kind === "alleddies")); render(); tick(); return; }
-      const ed = t.closest("[data-eddies]"); if(ed && +ed.dataset.eddies === pm.player){ const i = payOpt(o => o.kind === "eddie"); if(i >= 0){ resolve(G, i); render(); tick(); } else note("Nessun Eddie pronto"); return; }
-      const lg = t.closest("[data-legend]"); if(lg){ const i = payOpt(o => o.l && o.l.uid === +lg.dataset.uid); if(i >= 0){ resolve(G, i); render(); tick(); } else note("Questa Leggenda non può pagare"); return; }
+      if(t.closest("#bPayCancel")){ res(payOpt(o => o.kind === "cancel")); render(); tick(); return; }
+      if(t.closest("#bPayAll")){ res(payOpt(o => o.kind === "alleddies")); render(); tick(); return; }
+      const ed = t.closest("[data-eddies]"); if(ed && +ed.dataset.eddies === pm.player){ const i = payOpt(o => o.kind === "eddie"); if(i >= 0){ res(i); render(); tick(); } else note("Nessun Eddie pronto"); return; }
+      const lg = t.closest("[data-legend]"); if(lg){ const i = payOpt(o => o.l && o.l.uid === +lg.dataset.uid); if(i >= 0){ res(i); render(); tick(); } else note("Questa Leggenda non può pagare"); return; }
       if(!t.closest(".bstrip, .pop, #simLog")) note("Tocca un Eddie o una Leggenda, oppure Annulla");
       return;
     }
-    const mull = t.closest("[data-mull]"); if(mull){ const who = mulliganPending(); mulligan(G, who, mull.dataset.mull === "redo"); if(tutorialActive() && who === 0) ensureHand(G, 0); render(); tick(); return; }
+    const mull = t.closest("[data-mull]"); if(mull){ const who = mulliganPending(); doMull(who, mull.dataset.mull === "redo"); if(tutorialActive() && who === 0) ensureHand(G, 0); render(); tick(); return; }
     const zoom = t.closest("[data-zoom]"); if(zoom){ openLens(imgUrl(zoom.dataset.zoom)); return; }
-    const ask = t.closest("[data-ask]"); if(ask){ if(G.pending && G.pending.kind === "block" && human[G.pending.player]) G.tutReacted = true; resolve(G, +ask.dataset.ask); render(); tick(); return; }
+    const ask = t.closest("[data-ask]"); if(ask){ if(G.pending && G.pending.kind === "block" && human[G.pending.player]) G.tutReacted = true; res(+ask.dataset.ask); render(); tick(); return; }
     const hand = t.closest("[data-hand=\"1\"]"); if(hand){ handCard(hand, G.players[me()]); return; }
     const leg = t.closest("[data-legend]"); if(leg){ const owner = leg.closest(".bz").classList.contains("mine") ? me() : 1 - me(); legendCard(leg, owner); return; }
     const bc = t.closest(".bc"); if(bc){ const f = bc.closest("[data-field]"); if(f){ fieldCard(bc, +f.dataset.field); return; } }
@@ -465,6 +611,7 @@ function wire(){
     const trash = t.closest("[data-trash]"); if(trash){ const P = G.players[+trash.dataset.trash]; showAsk(`Trash di ${P.name} (${P.trash.length})`, P.trash.slice(-24).map(c => ({ label: c.card.dn, pid: c.pid })), null, [{ label: "Chiudi", fn: () => {} }]); return; }
     closePop();
   });
+  board.addEventListener("submit", e => { if(e.target.id !== "tchatForm") return; e.preventDefault(); const i = $("#tchatIn"); ON.sendChat(i.value); i.value = ""; render(); $("#tchatIn")?.focus(); });
   window.addEventListener("resize", () => { if(G && !$("#board").hidden) render(); });
 }
 function pidOf(el){
@@ -472,3 +619,5 @@ function pidOf(el){
   for(const P of G.players){ const x = [...P.hand, ...P.field, ...P.legends].find(c => c.uid === uid); if(x){ if(P.legends.includes(x) && !x.faceUp) return null; if(P.hand.includes(x) && P.id !== me()) return null; return x.pid; } }
   return null;
 }
+/* per i collaudi automatici: stessa strada dei tocchi sulla plancia */
+window.__ncdSim = { G: () => G, seat: () => me(), act: a => { const r = act(me(), a); after(r); return r; }, res: i => { res(i); render(); tick(); } };

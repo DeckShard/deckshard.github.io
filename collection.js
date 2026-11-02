@@ -15,7 +15,7 @@ export function renderCollection(){
   $("#collFilters").innerHTML = filtersHTML(F);
   $("#collSort").value = S.settings.sort || "name";
   $$("#collOwned button").forEach(b => b.setAttribute("aria-pressed", String((F.owned || "") === b.dataset.o)));
-  $("#collView button").forEach?.call($$("#collView button"), b => b.setAttribute("aria-pressed", String(b.dataset.v === (S.settings.view || "grid"))));
+  $$("#collView button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.v === (S.settings.view || "grid"))));
 
   // voci della collezione: una per carta, per illustrazione o per edizione (impostazioni)
   const mode = S.settings.collView || "card";
@@ -53,7 +53,8 @@ export function renderCollection(){
     box.className = "rows";
     box.innerHTML = list.map(e => {
       const q = qtyOfEntry(e), pr = mode === "card" ? cardPrice(e.c) : (priceOf(e.show.id) || cardPrice(e.c));
-      return rowHTML(e.c, e.show.id, `<div class="pr"><b>${pr ? eur(pr.trend) + (pr.approx ? " ~" : "") : "—"}</b><span class="chip${q ? " acc" : ""}">${q ? "×" + q : "0"}</span></div>`, e.sub ? `<span class="chip">${esc(e.sub)}</span>` : "");
+      const html = rowHTML(e.c, e.show.id, `<div class="pr"><b>${pr ? eur(pr.trend) + (pr.approx ? " ~" : "") : "—"}</b><span class="chip${q ? " acc" : ""}">${q ? "×" + q : "0"}</span></div>`, e.sub ? `<span class="chip">${esc(e.sub)}</span>` : "");
+      return q ? html.replace('class="row"', 'class="row owned"') : html.replace('class="row"', 'class="row unowned coll"');   // come nella griglia: le non possedute in bianco e nero e attenuate
     }).join("");
   }
 }

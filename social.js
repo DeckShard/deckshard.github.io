@@ -47,7 +47,7 @@ export function accountHTML(){
     <h3>Account</h3>
     <div class="phead" style="gap:10px">${miniAvatar({ nick: p.nick, avatar: { img: S.profile.favImg, pos: S.profile.favPos, zoom: S.profile.favZoom } }, 46)}
       <div style="min-width:0"><b style="font-size:16px">${esc(p.nick || "…")}</b><div class="sub">${esc(st.user.email || "account di prova")}</div><div class="sub${st.status === "error" ? " bad" : ""}">☁ ${status}</div></div></div>
-    <div class="field" style="margin-top:8px"><label for="acNick">Nick pubblico<small>Così ti trovano gli amici: 3–24 caratteri, lettere, numeri, _ . -</small></label><div class="acrow" style="margin:0"><input class="inp" id="acNick" value="${esc(p.nick || "")}" maxlength="24" autocomplete="off"><button class="btn sm" id="acNickSave">Salva</button></div></div>
+    <div class="field stack" style="margin-top:8px"><label for="acNick">Nick pubblico<small>Così ti trovano gli amici</small></label><div class="acrow" style="margin:0"><input class="inp" id="acNick" value="${esc(p.nick || "")}" maxlength="24" autocomplete="off"><button class="btn sm" id="acNickSave">Salva</button></div></div>
     <div class="field"><label>Collezione visibile agli amici<small>Gli amici possono sfogliare le carte che hai (non i mazzi)</small></label>
       <span class="seg" id="acShow"><button data-v="1" aria-pressed="${!!p.show_collection}">Sì</button><button data-v="0" aria-pressed="${!p.show_collection}">No</button></span></div>
     <div class="field"><label>Messaggi dagli amici<small>Solo chi hai accettato come amico può scriverti</small></label>
@@ -73,7 +73,7 @@ export function friendsHTML(){
     <div class="acrow"><input class="inp" id="frQ" placeholder="Cerca un giocatore per nick" value="${esc(searchQ)}" autocomplete="off"><button class="btn sm" id="frSearch">Cerca</button></div>
     ${searchRes ? `<div class="frlist">${searchRes.length ? searchRes.map(f => { const known = fr.find(x => x.id === f.id); return row(f, known ? `<span class="chip">${known.status === "accepted" ? "amico" : "richiesta inviata"}</span>` : `<button class="btn sm acc2" data-fadd="${esc(f.nick)}">Aggiungi</button>`); }).join("") : `<div class="sub">Nessun giocatore con questo nick.</div>`}</div>` : ""}
     ${incoming.length ? `<h4 class="frh">Richieste ricevute</h4><div class="frlist">${incoming.map(f => row(f, `<button class="btn sm yel" data-facc="${f.id}">Accetta</button><button class="btn sm" data-frej="${f.id}">Rifiuta</button>`)).join("")}</div>` : ""}
-    ${acc.length ? `<div class="frlist">${acc.map(f => row(f, `${f.unread ? `<span class="badge">${f.unread}</span>` : ""}<button class="btn sm" data-fchat="${f.id}">Chat</button><button class="btn sm icon" data-fmenu="${f.id}" aria-label="Altro">⋯</button>`)).join("")}</div>`
+    ${acc.length ? `<div class="frlist">${acc.map(f => row(f, `${f.unread ? `<span class="badge">${f.unread}</span>` : ""}<button class="btn sm acc2" data-fduel="${f.id}" title="Sfida a una partita online">Sfida</button><button class="btn sm" data-fchat="${f.id}">Chat</button><button class="btn sm icon" data-fmenu="${f.id}" aria-label="Altro">⋯</button>`)).join("")}</div>`
       : `<div class="sub" style="margin-top:8px">Ancora nessun amico: cerca il nick di chi conosci e mandagli una richiesta.</div>`}
     ${outgoing.length ? `<h4 class="frh">Richieste inviate</h4><div class="frlist">${outgoing.map(f => row(f, `<span class="chip">in attesa</span><button class="btn sm" data-fcancel="${f.id}">Annulla</button>`)).join("")}</div>` : ""}
   </div>`;
@@ -157,6 +157,7 @@ export function wireSocial(root, redraw){
       const rj = id("[data-frej]"); if(rj){ await cloud.friendRespond(rj.dataset.frej, false); return; }
       const cn = id("[data-fcancel]"); if(cn){ await cloud.friendRemove(cn.dataset.fcancel); return; }
       const ch = id("[data-fchat]"); if(ch){ openChat(ch.dataset.fchat); return; }
+      const du = id("[data-fduel]"); if(du){ const f = cloud.friends.find(x => x.id === du.dataset.fduel); if(f) document.dispatchEvent(new CustomEvent("ncd:challenge", { detail: { id: f.id, nick: f.nick } })); return; }
       const mn = id("[data-fmenu]"); if(mn){ friendMenu(mn.dataset.fmenu); return; }
     }catch(err){ toast(err.message || String(err), 4500); const b = t.closest("button"); if(b) b.disabled = false; }
   });

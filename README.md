@@ -16,8 +16,11 @@ app.js, data.js, store.js, ui.js, collection.js, deck.js, profile.js, sim.js   l
 i18n.js                    lingua dell'interfaccia: dizionario italiano → inglese applicato sul DOM
 cloud.js                   account e cloud (Supabase): accesso, sincronizzazione, amici, chat, presenza, feedback
 social.js                  interfaccia della scheda Social: account, amici, chat, feedback
+online.js                  tavoli online: codice di 4 caratteri, sfide agli amici, mosse in tempo reale, disconnessione, patta, chat del tavolo
 supabase.sql               schema del database con le regole di sicurezza (da eseguire nel SQL Editor di Supabase)
 cloud.test.mjs             collaudo dal vivo di account, sincronizzazione, amici e chat (richiede l'accesso anonimo attivo)
+online.test.mjs            collaudo dal vivo dei tavoli online con due giocatori (richiede l'accesso anonimo attivo)
+determinism.test.mjs       le stesse mosse sullo stesso seme danno sempre lo stesso stato (base delle partite online)
 engine.js                  motore di regole, puro (collaudabile con Node)
 bot.js                     avversario euristico
 scanner.js                 scanner della collezione (OCR con Tesseract.js, caricato dalla CDN quando serve)
@@ -47,7 +50,7 @@ ln -s public/cards.json . ; ln -s public/prices.json . ; ln -s data/img img
 python -m http.server 8080              # poi apri http://localhost:8080/
 ```
 
-Collaudo: `node engine.test.mjs`, `node fuzz.test.mjs` e, con il server acceso, `BASE=http://127.0.0.1:8080 node ui.test.mjs` (serve `npm i playwright`).
+Collaudo: `node engine.test.mjs`, `node fuzz.test.mjs`, `node determinism.test.mjs` e, con il server acceso, `BASE=http://127.0.0.1:8080 node ui.test.mjs` (serve `npm i playwright`).
 
 ## Cosa fa il motore di gioco
 
@@ -66,6 +69,12 @@ L'app funziona tutta in locale anche senza account. Dalla scheda **Social** si a
 Il servizio è [Supabase](https://supabase.com) (piano gratuito, server a Francoforte): `supabase.sql` crea tabelle, funzioni e regole di sicurezza (Row Level Security) e si può rieseguire. La chiave nel codice è quella pubblica: ciò che un utente può fare lo decidono le regole del database (nessuno legge i dati altrui, si scrive solo agli amici, i blocchi valgono nei due sensi, il feedback non è leggibile dall'app). Il workflow notturno chiama `ping` per evitare che il progetto gratuito vada in pausa.
 
 Social: nick pubblico unico, ricerca dei giocatori, richieste di amicizia, lista amici con lo stato in linea, chat privata tra amici con i non letti, collezione visibile agli amici se lo si sceglie, blocca e segnala, eliminazione dell'account con tutti i dati. Dalle Impostazioni si invia un **feedback** (problema, idea, altro) che finisce in una tabella privata leggibile solo dal pannello di Supabase. Le email di accesso agli altri utenti richiedono un SMTP personalizzato (per esempio Brevo); il servizio di base di Supabase scrive solo ai membri del team.
+
+## Tavoli online
+
+Nel Simulator, modalità **Online** (serve l'account): «Crea un tavolo» dà un codice di 4 caratteri (senza 0/O e 1/I) da passare all'avversario, che lo inserisce in «Entra con un codice»; oppure si **sfida un amico** dalla lobby o con il pulsante «Sfida» nella lista amici, e la sfida gli arriva in tempo reale (avviso e badge sul Simulator). Appena il secondo giocatore entra la partita parte da sola su entrambi i telefoni.
+
+Come funziona: una partita è seme + mazzi + elenco ordinato di mosse (`game_tables`, `game_moves`). Ogni telefono applica le stesse mosse con lo stesso motore e ottiene lo stesso stato; il database accetta una mossa solo se è la successiva, quindi l'ordine è unico, e in caso di conflitto (i due mulligan insieme) la partita si ricostruisce dal registro. Per lo stesso motivo una partita si **riprende** dopo un riavvio o da un altro dispositivo («Partite in corso» nella lobby). I due giocatori devono avere la stessa versione dell'app. Ogni telefono manda un segnale ogni 10 secondi: **chi tace per più di un minuto perde** (l'avversario vede il conto alla rovescia). Dal menù ⋯: chat del tavolo (non salvata), **proposta di patta**, abbandono. Il risultato deciso dal motore lo registra il telefono di chi perde, così nessuno può dichiararsi vincitore da solo. Il record online (vittorie, sconfitte, patte) è separato da quello contro il bot.
 
 ## Lingua
 
@@ -98,6 +107,5 @@ Dalla Collection, «Scanner» apre la fotocamera. In modalità continua l'app le
 ## Prossimi passi possibili
 
 - Scanner: riconoscimento della variante (set + numero) e inquadratura continua senza premere «Scatta».
-- Account e sincronizzazione (Supabase) per avere collezione e mazzi su più dispositivi.
 - Mazzi meta: appena un sito esporrà le liste dei tornei in formato leggibile (oggi: link a ExBurst, Ripperdeck e Choom.gg e importazione del testo).
 - Immagini dall'API ufficiale Netdeck quando l'accesso sarà aperto (lista d'attesa).

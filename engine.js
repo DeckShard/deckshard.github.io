@@ -31,6 +31,7 @@ function inst(card, pid){ return { uid: UID++, cid: card.id, pid: pid || (card.d
 
 /* deck: { name, legends:[{cid,pid}], cards:[{cid,pid,n}] }; cards: Map id → carta */
 export function createGame(decks, cardsById, opts = {}){
+  UID = 1;   // stessi identificativi su ogni dispositivo: le partite online si rigiocano mossa per mossa
   const rng = opts.rng || mulberry32(opts.seed ?? (Date.now() & 0xffffffff));
   const G = { turn: 0, active: 0, first: 0, phase: "setup", log: [], winner: null, reason: "", overtime: false, rng, pending: null, players: [], auto: [!!opts.bot0, !!opts.bot1], autoPay: opts.autoPay || [false, false], events: [] };
   decks.forEach((d, i) => {
@@ -931,4 +932,16 @@ export function doAction(G, pi, a){
 /* stato sintetico, utile per i test */
 export function summary(G){
   return G.players.map(P => ({ name: P.name, hand: P.hand.length, deck: P.deck.length, eddies: P.eddies.length, field: P.field.map(u => `${u.card.dn}:${power(u)}${u.spent ? "s" : ""}${u.lag ? "L" : ""}`), gigs: P.gigs.map(g => `d${g.sides}=${g.value}`), cred: streetCred(P), legends: P.legends.map(l => (l.faceUp ? "↑" : "↓") + (l.spent ? "s" : "") + (l.removed ? "x" : "")) }));
+}
+
+/* ------------------------------------------------------------ mosse serializzabili (partite online)
+   Una partita online è seme + mazzi + elenco di mosse: ogni telefono le applica
+   nello stesso ordine e ottiene lo stesso stato.                                */
+export function moveOf(a){ const m = { t: a.t }; for(const k of ["uid", "target", "idx"]) if(a[k] !== undefined) m[k] = a[k]; return m; }
+export function applyMove(G, m){
+  if(!m) return false;
+  if(m.k === "a") return doAction(G, m.p, m.a);
+  if(m.k === "r") return resolve(G, m.i);
+  if(m.k === "m"){ if(G.players[m.p].mulliganed) return false; return mulligan(G, m.p, !!m.d); }
+  return false;
 }

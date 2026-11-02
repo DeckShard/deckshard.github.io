@@ -107,7 +107,10 @@ export function renderRules(){
     root.addEventListener("click", e => {
       const m = e.target.closest("#rulesMode button"); if(m){ fullMode = m.dataset.v === "1"; renderRules(); window.scrollTo({ top: 0 }); return; }
       const a = e.target.closest('a[href^="#rules-"], a.rlink, a.rtoc'); if(!a) return; e.preventDefault();
-      const el = $(a.getAttribute("href")); if(!el) return;
+      const id = a.getAttribute("href").slice(1);
+      // le sezioni principali sono i riquadri apribili (id «sec-…»): l'indice punta a quelli
+      const el = document.getElementById(id) || document.getElementById("sec-" + id); if(!el) return;
+      if(el.tagName === "DETAILS") el.open = true;
       const d = el.closest("details"); if(d) d.open = true;
       el.scrollIntoView({ behavior: "smooth", block: "start" });
       if(el.classList.contains("rule")){ el.classList.add("flash"); setTimeout(() => el.classList.remove("flash"), 1600); }
