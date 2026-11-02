@@ -20,6 +20,8 @@ const MANUAL = false;
 let G = null, mode = "bot", gmode = "bot", gOnline = false, gSeat = 0, challenge = null, human = [true, false], sel = null, targeting = null, pop = null, showLog = false, botTimer = null, handoff = false, wired = false;
 let lastSeen = { turn: 0, seen: 0 }, noteMsg = "", noteT = null, reactCover = null;
 let drag = null;   // trascinamento in corso dalla mano
+let peekPid = null;   // carta ingrandita con la pressione lunga
+const peekInner = pid => `<img src="${imgUrl(pid)}" alt=""><div class="hint">Rilascia per chiudere · «Ingrandisci» nel menù per lo zoom</div>`;
 const clearDrop = () => $$("#board .drop").forEach(x => x.classList.remove("drop"));
 const killGhosts = () => { $$(".bc.ghost").forEach(g => g.remove()); $$("#board .dragging").forEach(x => x.classList.remove("dragging")); $$("#board .candrop").forEach(x => x.classList.remove("candrop")); clearDrop(); };
 /* all'inizio del trascinamento: evidenzia dove la carta può essere lasciata */
@@ -367,6 +369,7 @@ function render(){
     ${mulliganPending() != null ? mulliganHTML() : pm ? "" : G.pending && human[G.pending.player] ? askHTML() : ""}
     ${G.winner != null ? `<div class="winbox"><div class="box"><h2>${G.winner === -1 ? "PATTA" : G.winner === me() ? "VITTORIA" : gmode === "hot" ? "VINCE " + esc(G.players[G.winner].name).toUpperCase() : "SCONFITTA"}</h2><p>${esc(G.reason)}</p><p style="color:var(--mute)">${G.turn} turni</p><div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">${gmode === "online" ? `<button class="btn" id="bChat2">💬 Chat</button><button class="btn yel" id="bExit">Torna alla lobby</button>` : `<button class="btn yel" id="bAgain">Rivincita</button><button class="btn" id="bExit">Esci</button>`}</div></div></div>` : ""}
     ${gmode === "online" ? drawOfferHTML() : ""}
+    ${peekPid ? `<div id="peek">${peekInner(peekPid)}</div>` : ""}
     ${handoff ? `<div class="handoff"><h2>Passa il dispositivo a ${esc(G.players[G.active].name)}</h2><p>Il tuo rivale non guarda, promesso.</p><button class="btn yel" id="bHand">Sono pronto</button></div>` : ""}`;
   if(showLog){ const l = $("#simLog"); l.scrollTop = l.scrollHeight; }
   if(tutorialActive() && tutorialStep(G, me())) { /* passo completato: la barra si aggiorna al prossimo ridisegno */ setTimeout(() => { if(G) render(); }, 0); }
@@ -518,17 +521,22 @@ function wire(){
   // pressione lunga: zoom
   let lp = null, lpFired = false;
   board.addEventListener("pointerdown", e => {
+    clearTimeout(lp);
     const el = e.target.closest(".bc"); if(!el) return; lpFired = false;
     const pid = pidOf(el); if(!pid) return;
     lp = setTimeout(() => { lpFired = true; if(drag && drag.active) return; peek(pid); }, 420);
   });
-  // anteprima: la carta grande ma non a tutto schermo, resta visibile la plancia; sparisce al rilascio
+  // anteprima: la carta grande ma non a tutto schermo, resta visibile la plancia; sparisce al rilascio.
+  // Lo stato è fuori dalla plancia (peekPid): un ridisegno a metà pressione (mossa dell'avversario,
+  // segnale del tavolo online) la ricrea invece di cancellarla
   function peek(pid){
+    peekPid = pid;
     let el = $("#peek"); if(!el){ el = document.createElement("div"); el.id = "peek"; board.appendChild(el); }
-    el.innerHTML = `<img src="${imgUrl(pid)}" alt=""><div class="hint">Rilascia per chiudere · «Ingrandisci» nel menù per lo zoom</div>`; el.hidden = false;
+    el.innerHTML = peekInner(pid); el.hidden = false;
   }
-  const unpeek = () => { const el = $("#peek"); if(el) el.hidden = true; };
+  const unpeek = () => { peekPid = null; const el = $("#peek"); if(el) el.remove(); };
   board.addEventListener("pointerup", unpeek); board.addEventListener("pointercancel", unpeek);
+  window.addEventListener("pointerup", unpeek); window.addEventListener("pointercancel", unpeek); window.addEventListener("blur", unpeek);
   board.addEventListener("contextmenu", e => e.preventDefault());
   const lpCancel = () => clearTimeout(lp);
   // trascinamento dalla mano: sulla plancia per giocare, su un'Unità/Leggenda per equipaggiare un Gear
@@ -591,6 +599,7 @@ function wire(){
   board.addEventListener("pointerup", lpCancel); board.addEventListener("pointercancel", lpCancel);
   let lpStart = null;
   board.addEventListener("pointerdown", e => { lpStart = { x: e.clientX, y: e.clientY }; }, true);
+  for(const ev of ["pointerup", "pointercancel"]) window.addEventListener(ev, () => { lpStart = null; clearTimeout(lp); });
   board.addEventListener("pointermove", e => { if(lpStart && Math.hypot(e.clientX - lpStart.x, e.clientY - lpStart.y) > 10){ lpCancel(); unpeek(); } });
   board.addEventListener("click", e => {
     if(lpFired){ lpFired = false; return; }

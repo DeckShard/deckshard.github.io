@@ -155,3 +155,11 @@
 .bstrip .onl{font-size:11.5px;white-space:nowrap;max-width:34vw;overflow:hidden;text-overflow:ellipsis;display:inline-block;vertical-align:middle}
 .bstrip .onl.ok{color:var(--good)} .bstrip .onl.warn{color:var(--warn)}
 #bChat{position:relative} #bChat .nbadge{position:absolute;top:-5px;right:-5px}
+/* chat del tavolo: 16px nel campo, altrimenti Safari su iPhone ingrandisce la pagina quando lo si tocca
+   e la lascia ingrandita (dopo, la pressione lunga sulle carte diventa uno spostamento della pagina) */
+#tchat .inp{font-size:16px}
+/* la pressione lunga sulle carte resta al gioco: il browser non la usa per spostare o ingrandire la pagina */
+#board .bc,#board .stack,#board .die{touch-action:none}
+#board .brow.field .bc{touch-action:pan-x pan-y}   /* le Unità in campo scorrono in orizzontale quando sono tante */
+#board .brow.hand .bc{touch-action:pan-x}
+#peek[hidden]{display:none}
