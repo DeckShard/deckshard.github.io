@@ -38,15 +38,17 @@ const names = () => [S.profile.nick || "Tu", mode === "bot" ? "Bot" : "Giocatore
 export function renderSim(){
   const root = $("#simSetup");
   if(!wired){ wire(); wired = true; }
-  const decks = S.decks.slice().sort((a, b) => (b.updated || 0) - (a.updated || 0));
-  const opts = (sel0, sealedToo = true) => `<option value="starter:theheistretailstarterdeck">Starter «The Heist» (bozza)</option><option value="starter:embracingpowerretailstarterdeck">Starter «Embracing Power» (bozza)</option>` +
-    decks.filter(d => sealedToo || d.format !== "sealed").map(d => `<option value="${d.id}"${d.id === sel0 ? " selected" : ""}>${d.format === "sealed" ? "🎲 " : ""}${esc(d.name)} (${deckSize(d)} carte${isLegal(d) ? "" : ", non valido"})</option>`).join("");
-  const sel0 = S.decks.find(d => d.id === S.settings.simDeck0), sealed0 = !!(sel0 && sel0.format === "sealed");
+  // si gioca solo con mazzi completi: le bozze (non valide nel deckbuilder) restano fuori
+  const decks = S.decks.filter(isLegal).sort((a, b) => (b.updated || 0) - (a.updated || 0));
+  const drafts = S.decks.length - decks.length;
+  const opts = (sel0, sealedToo = true) => `<option value="starter:theheistretailstarterdeck">Starter «The Heist»</option><option value="starter:embracingpowerretailstarterdeck">Starter «Embracing Power»</option>` +
+    decks.filter(d => sealedToo || d.format !== "sealed").map(d => `<option value="${d.id}"${d.id === sel0 ? " selected" : ""}>${d.format === "sealed" ? "🎲 " : ""}${esc(d.name)} (${deckSize(d)} carte)</option>`).join("");
+  const sel0 = decks.find(d => d.id === S.settings.simDeck0), sealed0 = !!(sel0 && sel0.format === "sealed");
   if(sealed0) mode = "bot";
   root.innerHTML = `
     <div class="card">
       <h2>Simulator</h2>
-      <div class="sub">Partita completa con le regole di base applicate dal motore: fasi, Eddies, Leggende, attacchi, Blocker, furto dei Gig, Street Cred, overtime. Gli effetti più comuni delle carte sono automatici; gli altri vengono segnalati e li applichi con gli strumenti manuali.</div>
+      <div class="sub">Partita completa con le regole di base applicate dal motore: fasi, Eddies, Leggende, attacchi, Blocker, furto dei Gig, Street Cred, overtime. Gli effetti di tutte le carte sono applicati dal motore; il registro mostra ogni innesco con la carta che lo produce.</div>
       <div class="field"><label>Modalità</label><span class="seg" id="simMode"><button data-v="bot" aria-pressed="${mode === "bot"}">Contro il bot</button><button data-v="hot" aria-pressed="${mode === "hot"}" ${sealed0 ? "disabled" : ""}>In due, stesso dispositivo</button></span></div>
       <div class="simdecks" style="margin-top:10px">
         <div><label style="font-size:12px;font-weight:700;color:var(--mute)">Il tuo mazzo</label><select class="inp" id="simDeck0">${opts(S.settings.simDeck0)}</select></div>
@@ -61,7 +63,7 @@ export function renderSim(){
       <div class="field" style="margin-top:8px"><label>Pagamento degli Eddies<small>Manuale: scegli ogni volta cosa spendere. Automatico: paga da solo e chiede solo se deve spendere una Leggenda con un'abilità Spend ancora utilizzabile.</small></label>
         <span class="seg" id="simPay"><button data-v="0" aria-pressed="${!S.profile.autoPay}">Manuale</button><button data-v="1" aria-pressed="${!!S.profile.autoPay}">Automatico</button></span></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><button class="btn sm" id="simTutorial">Tutorial: partita guidata</button></div>
-      <p class="note" style="margin:12px 0 0"><b>Sul telefono</b> la plancia è orizzontale: ruota il dispositivo (o lascia che l'app la ruoti da sola). Tocca una carta per le azioni, <b>tieni premuto</b> per ingrandirla con lo zoom. I mazzi devono avere 3 Leggende e almeno qualche carta; per i tornei usa il deckbuilder per verificarne la legalità.</p>
+      <p class="note" style="margin:12px 0 0"><b>Sul telefono</b> la plancia è orizzontale: ruota il dispositivo (o lascia che l'app la ruoti da sola). Tocca una carta per le azioni, <b>tieni premuto</b> per ingrandirla con lo zoom. Si gioca solo con i mazzi completi (3 Leggende, 40–50 carte entro i limiti RAM, o le regole del sealed)${drafts ? `: ${drafts} ${drafts === 1 ? "bozza resta" : "bozze restano"} nel deckbuilder finché non ${drafts === 1 ? "è" : "sono"} in regola` : ""}.</p>
     </div>
     ${prereleaseSetupHTML()}`;
 }
@@ -344,7 +346,7 @@ function wire(){
     if(e.target.closest("#simResume")){ openBoard(); render(); tick(); }
   });
   root.addEventListener("change", e => { if(e.target.id === "simDeck0"){ S.settings.simDeck0 = e.target.value; S.save("settings"); renderSim(); } if(e.target.id === "simDeck1"){ S.settings.simDeck1 = e.target.value; S.save("settings"); } });
-  document.addEventListener("ncd:playdeck", e => { S.settings.simDeck0 = e.detail; S.save("settings"); renderSim(); const d = S.decks.find(x => x.id === e.detail); if(d && d.format === "sealed") start(); });
+  document.addEventListener("ncd:playdeck", e => { const d = S.decks.find(x => x.id === e.detail); if(!d || !isLegal(d)){ toast("Il mazzo non è ancora in regola: completalo nel deckbuilder"); return; } S.settings.simDeck0 = e.detail; S.save("settings"); renderSim(); if(d.format === "sealed") start(); });
   root.addEventListener("click", e => { const z = e.target.closest(".pkg [data-zoom]"); if(z) openLens(imgUrl(z.dataset.zoom)); });
   wirePrerelease(root, id => { location.hash = "#deck"; openDeck(id); toast("Scegli 3 Leggende e almeno 30 carte, poi «Gioca»", 4000); });
   root.addEventListener("click", e => { if(e.target.closest("#simTutorial")){ mode = "bot"; human = [true, false]; startTutorial(); start({ deck0: starterDeck("theheistretailstarterdeck", "Tutorial"), deck1: starterDeck("embracingpowerretailstarterdeck", "Bot") }); } });

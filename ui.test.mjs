@@ -364,6 +364,28 @@ await desk.goto(BASE + "/index.html#deck"); await desk.waitForFunction(() => doc
 ok(await desk.locator('nav.tabs button[data-tab="deck"][aria-selected="true"]').count() === 1, "hash #deck apre il deckbuilder");
 await desk.screenshot({ path: "/tmp/ncd-shot-desktop.png" });
 
+/* import JSON nel formato di Deckrunners (collezione e mazzo) */
+{
+  const r = await desk.evaluate(async () => {
+    const { jsonToLines, parseCardLines, isLegal } = await import("./deck.js");
+    const obj = { app: "Deckrunners", format: 1, entries: [{ printingId: "MS01-025", setCode: "MS01", collectorNumber: "025", name: "MANTIS BLADES", rarity: "COMMON", copies: 3, serials: [] }, { printingId: "MS01-010", setCode: "MS01", collectorNumber: "010", name: "JAPANTOWN JONIN", copies: 1 }] };
+    const l = jsonToLines(obj); const p = parseCardLines(l.lines);
+    return { n: p.entries.length, tot: p.entries.reduce((a, e) => a + e.n, 0), bad: p.bad.length, names: p.entries.map(e => e.cid).length };
+  });
+  ok(r.n === 2 && r.tot === 4 && r.bad === 0, `JSON Deckrunners: ${r.n} carte, ${r.tot} copie, ${r.bad} non riconosciute`);
+  // nel simulatore compaiono solo i mazzi in regola
+  const sim = await desk.evaluate(async () => {
+    const { S, saveDeck } = await import("./store.js"); const { DATA } = await import("./data.js");
+    const c = DATA.cards.find(x => x.type === "Unit");
+    saveDeck({ id: "draft-test", name: "Bozza di prova", legends: [null, null, null], cards: [{ cid: c.id, pid: c.def.id, n: 1 }], notes: "" });
+    location.hash = "#sim"; await new Promise(r => setTimeout(r, 400));
+    const opts = [...document.querySelectorAll("#simDeck0 option")].map(o => o.textContent);
+    const note = document.querySelector("#simSetup .note").textContent;
+    return { hasDraft: opts.some(t => /Bozza di prova/.test(t)), note };
+  });
+  ok(!sim.hasDraft && /1 bozza resta/.test(sim.note), "simulatore: le bozze non sono tra i mazzi giocabili (" + sim.note.slice(-80) + ")");
+}
+
 ok(errors.length === 0, "nessun errore JS: " + errors.slice(0, 3).join(" | "));
 await browser.close();
 console.log(`\n${passes} controlli OK, ${fails} falliti`);

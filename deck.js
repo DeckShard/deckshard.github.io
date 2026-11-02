@@ -141,22 +141,24 @@ export function jsonToLines(obj){
   const pick = (o, keys) => { for(const k of keys) if(o[k] != null && o[k] !== "") return o[k]; return null; };
   const handle = o => {
     if(!o || typeof o !== "object") return;
-    const id = pick(o, ["printing_id", "printingId", "pid", "id"]); const q = +pick(o, ["qty", "quantity", "count", "n", "amount", "copies"]) || 1;
+    const q = +pick(o, ["qty", "quantity", "count", "n", "amount", "copies", "owned"]) || 1;
+    const id = pick(o, ["printing_id", "printingId", "pid", "id"]);
     if(id && DATA.byPrint.has(String(id))){ direct.push({ pid: String(id), n: q }); return; }
-    const code = pick(o, ["code", "set_code", "setCode", "cardCode", "number_code"]);
-    const set = pick(o, ["set", "setCode", "set_code", "expansion"]); const num = pick(o, ["number", "num", "collector_number", "collectorNumber", "cardNumber"]);
     const name = pick(o, ["name", "card", "cardName", "card_name", "title"]);
+    // Deckrunners: printingId "MS01-010" (codice set + numero); altri: "code"
+    const code = pick(o, ["code", "set_code", "cardCode", "number_code"]) || (id && /^[A-Za-z]{2,5}\d{0,2}[-–\s]?\d{1,3}$/.test(String(id)) ? String(id) : null);
+    const set = pick(o, ["set", "setCode", "set_code", "expansion"]); const num = pick(o, ["number", "num", "collector_number", "collectorNumber", "cardNumber"]);
     if(code) lines.push(`${q} ${code}${name ? " " + name : ""}`);
-    else if(set && num && /^[A-Za-z]{2,5}\d{0,2}$/.test(String(set))) lines.push(`${q} ${set}-${String(num).padStart(3, "0")}${name ? " " + name : ""}`);
+    else if(set && num != null && /^[A-Za-z]{2,5}\d{0,2}$/.test(String(set))) lines.push(`${q} ${set}-${String(num).padStart(3, "0")}${name ? " " + name : ""}`);
     else if(name) lines.push(`${q} ${name}`);
   };
+  const LISTS = ["entries", "cards", "collection", "items", "list", "deck", "main", "mainDeck", "legends", "units", "programs", "gears"];
   if(Array.isArray(obj)) obj.forEach(handle);
   else if(obj && typeof obj === "object"){
     if(obj.coll && typeof obj.coll === "object"){ for(const [pid, n] of Object.entries(obj.coll)) if(DATA.byPrint.has(pid)) direct.push({ pid, n: +n || 0 }); }
-    else if(Array.isArray(obj.cards)) obj.cards.forEach(handle);
-    else if(Array.isArray(obj.collection)) obj.collection.forEach(handle);
-    else if(Array.isArray(obj.items)) obj.items.forEach(handle);
-    else { for(const [k, v] of Object.entries(obj)){ if(typeof v === "number") lines.push(`${v} ${k}`); else if(v && typeof v === "object") handle({ name: k, ...v }); } }
+    else if(LISTS.some(k => Array.isArray(obj[k]))){ for(const k of LISTS) if(Array.isArray(obj[k])) obj[k].forEach(x => typeof x === "string" ? lines.push(`1 ${x}`) : handle(x)); }
+    else if(obj.deck && typeof obj.deck === "object"){ return jsonToLines(obj.deck); }
+    else { for(const [k, v] of Object.entries(obj)){ if(typeof v === "number") lines.push(`${v} ${k}`); else if(v && typeof v === "object" && !Array.isArray(v)) handle({ name: k, ...v }); } }
   }
   return { lines: lines.join("\n"), direct };
 }
@@ -299,7 +301,7 @@ function renderEditor(){
       <div class="deckhead">
         <div class="dname"><button class="btn sm icon" id="deckBack" aria-label="Indietro">←</button><input class="inp wide" id="deckName" value="${esc(d.name)}" placeholder="Nome del mazzo" style="font-weight:700;font-size:16px"></div>
         <div class="dacts">
-          <button class="btn sm acc2" id="deckPlay" title="Prova nel simulatore">▶ Gioca</button>
+          <button class="btn sm acc2" id="deckPlay" title="${isLegal(CUR) ? "Prova nel simulatore" : "Completa il mazzo per giocarlo nel simulatore"}" ${isLegal(CUR) ? "" : "disabled"}>▶ Gioca</button>
           <button class="btn sm" id="deckCopy">Copia testo</button>
           <button class="btn sm" id="deckDup">Duplica</button>
           <button class="btn sm" id="deckDel" style="color:var(--bad)">Elimina</button>
@@ -422,9 +424,15 @@ function wire(){
 }
 
 function promptImport(){
-  const t = prompt("Incolla la lista (una carta per riga: «3 Nome carta», Leggende come «Legend: Nome»):");
+  let t = prompt("Incolla la lista (una carta per riga: «3 Nome carta», Leggende come «Legend: Nome») oppure il JSON esportato da un'altra app (Deckrunners…):");
   if(!t) return;
+  let direct = [];
+  if(/^\s*[\[{]/.test(t)){   // JSON (Deckrunners e simili): stesse regole dell'import della collezione
+    let obj; try{ obj = JSON.parse(t); }catch(err){ toast("JSON non valido: " + err.message, 4000); return; }
+    const r = jsonToLines(obj); direct = r.direct; t = r.lines + "\n" + direct.map(d => `${d.n} ${DATA.byPrint.get(d.pid).card.dn}`).join("\n");
+  }
   const { deck, bad } = importText(t);
+  for(const d of direct){ const c = DATA.byPrint.get(d.pid).card; const e = deck.cards.find(x => x.cid === c.id); if(e) e.pid = d.pid; const l = deck.legends.find(x => x && x.cid === c.id); if(l) l.pid = d.pid; }
   if(!deck.cards.length && !deck.legends.some(Boolean)){ toast("Nessuna carta riconosciuta"); return; }
   deck.importErrors = bad;
   saveDeck(deck); CUR = deck; renderDeck();

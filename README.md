@@ -58,7 +58,9 @@ Nota sul Gear: il motore somma la potenza del Gear a quella dell'Unità equipagg
 
 «Importa testo» accetta una carta per riga, per nome (`3 Mantis Blades`, `2x Japantown Jonin`, `Legend: V: Streetkid`) o per codice stampato sulla carta (`3 WNC-025`, `MS01 025`, `SD01-004 x2`, `EBP-001`, oppure il solo numero, riferito al set principale). Codici riconosciuti: WNC/MS01 (Welcome to Night City), HEI/SD01 (starter The Heist), EBP/SD02 (starter Embracing Power), PRM01, PRR/PRR02 (prerelease), EOR/EOR01 (Edgerunner Open), NCB/NCB01 (Night City Brawl), BT (box topper). Le righe non riconosciute vengono mostrate nell'editor del mazzo.
 
-Collezione: «Importa collezione» accetta lo stesso formato (testo incollato o file .txt/.csv) in modalità **Aggiorna** (somma alle copie possedute) o **Sostituisci** (azzera e ricarica); «Esporta testo» produce la lista con i codici, pronta da reimportare o da portare altrove.
+Collezione: «Importa collezione» accetta lo stesso formato (testo incollato o file .txt/.csv/.json) in modalità **Aggiorna** (somma alle copie possedute) o **Sostituisci** (azzera e ricarica); «Esporta testo» produce la lista con i codici, pronta da reimportare o da portare altrove. Il JSON esportato da **Deckrunners** (`entries` con `printingId` tipo `MS01-025` e `copies`) viene letto direttamente, sia per la collezione sia incollato in «Importa testo» del deckbuilder; in generale vanno bene array o oggetti con `entries`/`cards`/`collection`/`items`, quantità in `copies`/`qty`/`quantity`/`count` e carta identificata da codice, set + numero o nome.
+
+Nel Simulator si scelgono solo i mazzi in regola (3 Leggende, 40–50 carte entro i limiti RAM, oppure le regole del sealed): le bozze restano nel deckbuilder, dove il pulsante «Gioca» si attiva quando il mazzo è completo.
 
 ## Regole, Prerelease e tutorial
 
