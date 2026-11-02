@@ -132,7 +132,7 @@ console.log(`bot vs bot: ${wins[0]}–${wins[1]}, turni medi ${(turnsTot / 60).t
   resolve(G, 0);
   ok(!G.pending && P.field.length === 1 && P.eddies.every(e => e.spent) && P.legends.filter(l => l.spent).length === 3, "pagato: 3 Eddies e 3 Leggende spese");
 }
-import { canPay, costOf } from "./engine.js";
+import { canPay, costOf, spendCost } from "./engine.js";
 
 /* --- Go Solo: la Leggenda può spendere sé stessa per il proprio costo */
 {
@@ -238,6 +238,181 @@ import { canPay, costOf } from "./engine.js";
   endTurn(G); if(G.pending) resolve(G, 0); // turno del rivale
   endTurn(G); if(G.pending) resolve(G, 0);
   ok(G.winner === P.id && /7 Gig/.test(G.reason), "vittoria con 7 Gig all'inizio del turno: " + G.reason);
+}
+
+/* --- effetti aggiunti nell'aggiornamento 10: tutte le carte applicate */
+{
+  const mk = (names, legends) => ({ name: "T", legends: legends.map(n => ({ cid: byName(n).id, pid: byName(n).def.id })), cards: names.map(n => ({ cid: byName(n).id, pid: byName(n).def.id, n: 1 })) });
+  const pool = ["Floor It", "Pyramid Song", "Mox Inciters", "Take Control", "Chrome Fang", "Appetite for Destruction", "Safety Override", "Reboot Optics", "Cyberpsychosis", "Bonnie and Clyde", "Nocturne OP55 N1", "Caliber: Totentanz's Top Dog", "Overwatch: Panam's Gift", "Misty Olszewski: Mender of Broken Spirits", "Fool on the Hill", "Arasaka Emergency Radioport", "Towerfall", "Gorilla Arms", "Delamain Cab", "Westbrook Netrunner", "Animals Wrecker", "Viktor Vektor: Drop Your Illusions", "Alt Cunningham: Mother of Daemons", "Gunpoint Diplomacy", "Sandayu Oda: Hanako's Guardian"];
+  const legs = ["Jackie Welles: Mama's Favorite", "Kerry Eurodyne: Axe, Attitude, Audience", "Johnny Silverhand: Rocking Renegade"];
+  const fresh = (seed = 11) => {
+    const d = mk([...pool, ...pool, ...pool], legs);
+    const G = createGame([d, JSON.parse(JSON.stringify(d))], byId, { seed, autoPay: [true, true] });
+    mulligan(G, 0, false); mulligan(G, 1, false); resolve(G, 0);
+    const P = G.players[G.active], R = G.players[1 - G.active];
+    const give = (Q, name) => { let c = Q.hand.find(x => x.card.dn === name) || Q.deck.find(x => x.card.dn === name) || Q.trash.find(x => x.card.dn === name); const arr = Q.hand.includes(c) ? Q.hand : Q.deck.includes(c) ? Q.deck : Q.trash; if(arr !== Q.hand){ arr.splice(arr.indexOf(c), 1); Q.hand.push(c); } return c; };
+    const cash = (Q, n = 8) => { Q.eddies = Array.from({ length: n }, (_, i) => ({ uid: 7000 + Q.id * 100 + i, card: { dn: "E" }, spent: false })); };
+    const unit = (Q, name, o = {}) => { const c = give(Q, name); Q.hand.splice(Q.hand.indexOf(c), 1); const u = { ...c, spent: !!o.spent, lag: false, mod: 0, gear: [] }; Q.field.push(u); return u; };
+    const flush = () => { let g = 0; while(G.pending && g++ < 20) resolve(G, 0); };
+    const playC = (Q, name, target) => { const c = give(Q, name); const r = doAction(G, Q.id, { t: "play", uid: c.uid, target }); return r; };
+    cash(P); cash(R); for(const l of [...P.legends, ...R.legends]) l.spent = false;
+    return { G, P, R, give, cash, unit, flush, playC };
+  };
+  // Floor It: -1 potenza a un'Unità rivale
+  { const { G, P, R, unit, flush, playC } = fresh();
+    const w = unit(R, "Animals Wrecker"); const p0 = power(w);
+    playC(P, "Floor It"); flush();
+    ok(power(w) === p0 - 1, `Floor It: ${w.card.dn} ${p0} → ${power(w)}`); }
+  // Pyramid Song: con un d4 al minimo entrambi gli effetti (−4 e bottom-deck a potenza 0)
+  { const { G, P, R, unit, flush, playC } = fresh();
+    const w = unit(R, "Delamain Cab"); P.gigs = [{ sides: 4, value: 1, uid: 1 }]; const dl = R.deck.length;
+    playC(P, "Pyramid Song"); flush();
+    ok(!R.field.includes(w) && R.deck.length === dl + 1, "Pyramid Song con d4=1: -4 potenza e poi bottom-deck dell'Unità a potenza 0"); }
+  // Towerfall senza condizione: si sceglie un solo effetto
+  { const { G, P, R, unit, flush, playC } = fresh();
+    const a = unit(R, "Animals Wrecker"), b = unit(R, "Delamain Cab"); P.gigs = [{ sides: 20, value: 20, uid: 1 }]; R.gigs = [{ sides: 4, value: 1, uid: 2 }];
+    playC(P, "Towerfall");
+    ok(G.pending && G.pending.kind === "choice" && G.pending.options.length === 2, "Towerfall con più ☆: scelta tra i due effetti");
+    resolve(G, 0); flush();
+    ok(power(a) === a.card.power - 5 && power(b) === 0 && R.field.length === 2, "Towerfall: tutte le Unità rivali -5 potenza"); }
+  // Mox Inciters: l'Unità rivale deve attaccare nel suo turno; fine turno rifiutata finché non attacca
+  { const { G, P, R, unit, flush, playC } = fresh();
+    const w = unit(R, "Animals Wrecker"); P.gigs = [{ sides: 6, value: 3, uid: 1 }];
+    playC(P, "Mox Inciters"); flush();
+    ok(w.mustAttack, "Mox Inciters: Unità rivale segnata «deve attaccare»");
+    endTurn(G); flush();   // turno di R
+    ok(G.active === R.id && endTurn(G) === false && /deve attaccare/.test(G.lastError), "fine turno rifiutata: " + G.lastError);
+    ok(doAction(G, R.id, { t: "attack", uid: w.uid, target: { kind: "gigs" } }), "attacca"); flush();
+    ok(endTurn(G) !== false, "dopo l'attacco il turno può finire"); }
+  // Take Control (Quick in reazione): l'attaccante ruba 1 Gig in meno; se è un VEHICLE pesca 1
+  { const { G, P, R, unit, flush, give } = fresh();
+    const cab = unit(P, "Delamain Cab"); R.gigs = [{ sides: 6, value: 3, uid: 1 }, { sides: 8, value: 5, uid: 2 }]; give(R, "Take Control"); const h = R.hand.length;
+    doAction(G, P.id, { t: "attack", uid: cab.uid, target: { kind: "gigs" } });
+    const q = G.pending.options.findIndex(o => o.kind === "quick"); ok(q >= 0, "Take Control disponibile come reazione");
+    resolve(G, q); flush();
+    ok(R.gigs.length === 2 && P.gigs.length === 1 && R.hand.length === h, `Take Control: nessun Gig rubato e pesca 1 contro un VEHICLE (mano ${h} → ${R.hand.length})`); }
+  // Chrome Fang: fino al prossimo turno le Unità rivali non rubano Gig con valore maggiore della loro potenza
+  { const { G, P, R, unit, flush, playC } = fresh();
+    playC(P, "Chrome Fang"); flush(); P.gigs = [{ sides: 20, value: 15, uid: 1 }, { sides: 6, value: 2, uid: 2 }];
+    endTurn(G); flush(); const w = unit(R, "Animals Wrecker");   // potenza 12
+    doAction(G, R.id, { t: "attack", uid: w.uid, target: { kind: "gigs" } }); if(G.pending && G.pending.kind === "block") resolve(G, 0);
+    flush(); ok(P.gigs.some(g => g.value === 15) && !P.gigs.some(g => g.value === 2) && R.gigs.some(g => g.value === 2), "Chrome Fang: solo il Gig con valore ≤ potenza è rubabile"); }
+  // Jackie (Leggenda): paga 1 €$ per uscire dal gioco al posto dell'Unità sconfitta
+  { const { G, P, R, unit, flush } = fresh();
+    const j = P.legends.find(l => l.card.dn.startsWith("Jackie")); j.faceUp = true;
+    const w = unit(P, "Animals Wrecker"), big = unit(R, "Animals Wrecker", { spent: true }); big.mod = 5;
+    doAction(G, P.id, { t: "attack", uid: w.uid, target: { kind: "unit", uid: big.uid } }); if(G.pending && G.pending.kind === "block") resolve(G, 0);
+    ok(G.pending && G.pending.kind === "yesno" && G.pending.ctx.save === w, "Jackie chiede se sacrificarsi"); resolve(G, 0); flush();
+    ok(P.field.includes(w) && j.removed, "Jackie esce dal gioco e l'Unità resta in campo"); }
+  // Appetite for Destruction: vittoria per 3+ → ruba anche un Gig. Safety Override: chi perde sconfigge l'avversaria
+  { const { G, P, R, unit, flush, playC, give } = fresh();
+    const w = unit(P, "Animals Wrecker"), s = unit(R, "Delamain Cab", { spent: true }); R.gigs = [{ sides: 6, value: 3, uid: 1 }]; give(R, "Safety Override");
+    playC(P, "Appetite for Destruction"); flush();
+    doAction(G, P.id, { t: "attack", uid: w.uid, target: { kind: "unit", uid: s.uid } });
+    resolve(G, G.pending.options.findIndex(o => o.kind === "quick" && /Safety/.test(o.label))); flush();
+    ok(!R.field.includes(s) && !P.field.includes(w), "Safety Override: l'attaccante vincitrice viene sconfitta a sua volta");
+    ok(P.gigs.length === 2 && R.gigs.length === 0, "Appetite for Destruction: vinto di 6 → rubato anche un Gig"); }
+  // Reboot Optics: la prossima volta che un'Unità rivale combatte non sconfigge l'Unità amica
+  { const { G, P, R, unit, flush, give } = fresh();
+    const w = unit(P, "Animals Wrecker"), s = unit(R, "Delamain Cab", { spent: true }); give(R, "Reboot Optics");
+    doAction(G, P.id, { t: "attack", uid: w.uid, target: { kind: "unit", uid: s.uid } });
+    resolve(G, G.pending.options.findIndex(o => o.kind === "quick" && /Reboot/.test(o.label))); flush();
+    ok(R.field.includes(s) && P.field.includes(w), "Reboot Optics: nessuna sconfitta"); }
+  // Cyberpsychosis: +3 per Gear; se combatte, a fine turno viene sconfitta
+  { const { G, P, R, unit, flush, playC, give } = fresh();
+    const w = unit(P, "Animals Wrecker"); const ga = give(P, "Gorilla Arms"); P.hand.splice(P.hand.indexOf(ga), 1); w.gear.push(ga);
+    const s = unit(R, "Delamain Cab", { spent: true }); const p0 = power(w);
+    playC(P, "Cyberpsychosis"); flush();
+    ok(power(w) === p0 + 3 && w.doomIfActs, `Cyberpsychosis: +3 (${p0} → ${power(w)})`);
+    doAction(G, P.id, { t: "attack", uid: w.uid, target: { kind: "unit", uid: s.uid } }); flush();
+    endTurn(G); flush();
+    ok(!P.field.includes(w) && P.trash.includes(w), "Cyberpsychosis: sconfitta a fine turno dopo aver combattuto"); }
+  // Kerry (Leggenda): ritiro del dado una volta
+  { const { G, P, R, flush } = fresh();
+    const k = P.legends.find(l => l.card.dn.startsWith("Kerry")); k.faceUp = true;
+    endTurn(G); flush(); endTurn(G);   // torna a P: tira il dado
+    ok(G.pending && G.pending.kind === "die", "scelta del dado"); resolve(G, 0);
+    ok(G.pending && G.pending.kind === "yesno" && G.pending.ctx.reroll, "Kerry: propone di ritirare"); resolve(G, 0); flush();
+    ok(/ritira il d/.test(G.log.map(l => l.text).join("\n")), "Kerry: dado ritirato"); }
+  // Bonnie and Clyde: 2 sconfitte se il rivale ha 2+ Gig in più
+  { const { G, P, R, unit, flush, playC } = fresh();
+    const a = unit(R, "Delamain Cab"), b = unit(R, "Mox Inciters"); R.gigs = [{ sides: 6, value: 3, uid: 1 }, { sides: 6, value: 3, uid: 2 }, { sides: 6, value: 3, uid: 3 }];
+    playC(P, "Bonnie and Clyde"); flush();
+    ok(R.field.length === 0, "Bonnie and Clyde: sconfitte 2 Unità con potenza ≤4"); }
+  // Nocturne: costa 1 con il fixer vuoto; Go Solo scontato
+  { const { G, P, R, flush, give } = fresh();
+    P.fixer = []; const n = give(P, "Nocturne OP55 N1");
+    ok(costOf(G, P, n) === 1, "Nocturne costa 1 €$ con il fixer vuoto");
+    doAction(G, P.id, { t: "play", uid: n.uid }); resolve(G, 2); flush();
+    const j = P.legends.find(l => l.card.dn.startsWith("Jackie")); j.faceUp = true;
+    ok(P.goSoloDiscount && legalActions(G, P.id).some(a => a.t === "gosolo"), "Nocturne: Go Solo scontato (-2 €$)");
+    const e0 = P.eddies.filter(e => !e.spent).length + P.legends.filter(l => !l.spent && !l.removed).length;
+    doAction(G, P.id, { t: "gosolo", idx: P.legends.indexOf(j) }); flush();
+    const e1 = P.eddies.filter(e => !e.spent).length + P.legends.filter(l => !l.spent && !l.removed && !l.onField).length;
+    ok(P.field.some(u => u.isLegend) && e0 - e1 === 4 + 1, `Go Solo di Jackie pagato 4 invece di 6 (risorse ${e0} → ${e1}, Jackie stessa non conta più)`); }
+  // Viktor (Unità): il primo Gear CYBERWARE del turno costa -3 (minimo 1)
+  { const { G, P, R, unit, flush, give } = fresh();
+    unit(P, "Viktor Vektor: Drop Your Illusions"); const w = unit(P, "Animals Wrecker"); const g1 = give(P, "Gorilla Arms"), g2 = give(P, "Arasaka Emergency Radioport");
+    ok(costOf(G, P, g1) === 1, "Viktor: Gorilla Arms costa 1 invece di 4");
+    doAction(G, P.id, { t: "play", uid: g1.uid, target: w.uid }); flush();
+    ok(costOf(G, P, g2) === 2, "Viktor: il secondo Gear CYBERWARE del turno costa il prezzo pieno"); }
+  // Johnny (Leggenda): l'abilità costa -1 per ogni Gig con 8+ valore
+  { const { G, P, R, flush } = fresh();
+    const j = P.legends.find(l => l.card.dn.startsWith("Johnny")); j.faceUp = true; P.gigs = [{ sides: 10, value: 9, uid: 1 }, { sides: 12, value: 8, uid: 2 }];
+    ok(spendCost(G, P, j) === 0, "Johnny: abilità gratuita con due Gig 8+"); }
+  // Alt Cunningham (Unità): scarta una carta con costo pari al Gig per impedire il furto
+  { const { G, P, R, unit, flush, give } = fresh();
+    unit(R, "Alt Cunningham: Mother of Daemons"); R.gigs = [{ sides: 6, value: 3, uid: 1 }]; give(R, "Pyramid Song");   // costo 3
+    const w = unit(P, "Animals Wrecker");
+    doAction(G, P.id, { t: "attack", uid: w.uid, target: { kind: "gigs" } }); resolve(G, 0);   // non reagisce
+    ok(G.pending && G.pending.kind === "discard" && G.pending.player === R.id, "Alt Cunningham: il difensore può scartare"); resolve(G, 0); flush();
+    ok(R.gigs.length === 1 && P.gigs.length === 1 && R.trash.some(c => c.card.cost === 3), "Gig non rubato, carta da 3 €$ scartata"); }
+  // Caliber: alla sconfitta il rivale scarta 1, e un'altra se il costo della carta scartata è pari a un Gig
+  { const { G, P, R, unit, flush, give } = fresh();
+    const c = unit(P, "Caliber: Totentanz's Top Dog"); P.gigs = [{ sides: 6, value: 3, uid: 1 }]; R.hand = [give(R, "Pyramid Song"), give(R, "Floor It")].map(x => x);
+    const big = unit(R, "Animals Wrecker", { spent: true });
+    doAction(G, P.id, { t: "attack", uid: c.uid, target: { kind: "unit", uid: big.uid } }); if(G.pending && G.pending.kind === "block") resolve(G, 0);
+    while(G.pending && G.pending.kind === "discard"){ resolve(G, G.pending.options.findIndex(o => o.c && o.c.card.dn === "Pyramid Song") >= 0 ? G.pending.options.findIndex(o => o.c && o.c.card.dn === "Pyramid Song") : 0); } flush();
+    ok(R.hand.length === 0, "Caliber: il rivale scarta 2 (la prima costava quanto un Gig)"); }
+  // Overwatch: scarta 1 e sconfigge un'Unità spesa con costo ≤ a quello della carta scartata
+  { const { G, P, R, unit, flush, give, cash } = fresh();
+    const w = unit(P, "Animals Wrecker"); const ow = give(P, "Overwatch: Panam's Gift"); P.hand.splice(P.hand.indexOf(ow), 1); w.gear.push(ow);
+    P.hand = [give(P, "Pyramid Song")]; const t1 = unit(R, "Chrome Fang", { spent: true }), t2 = unit(R, "Mox Inciters", { spent: true });
+    doAction(G, P.id, { t: "spend", uid: w.uid }); flush();
+    ok(R.field.includes(t1) && !R.field.includes(t2), "Overwatch: sconfitta solo l'Unità con costo ≤ 3"); }
+  // Misty: a fine turno sceglie un tipo e rivela
+  { const { G, P, R, unit, flush } = fresh();
+    unit(P, "Misty Olszewski: Mender of Broken Spirits"); P.deck.unshift(P.deck.find(c => c.card.type === "Program")); P.deck.splice(P.deck.lastIndexOf(P.deck[0]), 1);
+    for(const e of P.eddies) e.spent = true; const h = P.hand.length;
+    endTurn(G);
+    ok(G.pending && G.pending.kind === "choice" && G.pending.options.length === 3, "Misty: scelta del tipo"); resolve(G, 2); flush();
+    ok(P.hand.length === h + 1 && P.eddies.some(e => !e.spent), "Misty: Program indovinato → in mano e 1 Eddie pronto"); }
+  // Fool on the Hill: il rivale sceglie
+  { const { G, P, R, flush, playC, give } = fresh();
+    give(P, "Fool on the Hill"); const h = P.hand.length; playC(P, "Fool on the Hill");
+    ok(G.pending && G.pending.kind === "choice" && G.pending.player === R.id, "Fool on the Hill: decide il rivale"); resolve(G, 1); flush();
+    ok(P.hand.length === h - 1 + 2 && P.trash.length >= 3, "Fool on the Hill: trash e pesca 2"); }
+  // Arasaka Emergency Radioport: quando l'Unità è spesa guarda una Leggenda coperta e, se ARASAKA/Go Solo, la chiama gratis
+  { const { G, P, R, unit, flush, give } = fresh();
+    const w = unit(P, "Animals Wrecker"); const g = give(P, "Arasaka Emergency Radioport"); P.hand.splice(P.hand.indexOf(g), 1); w.gear.push(g);
+    R.gigs = [{ sides: 6, value: 3, uid: 1 }]; for(const l of P.legends) l.faceUp = false;
+    const j = P.legends.find(l => l.card.dn.startsWith("Jackie"));
+    doAction(G, P.id, { t: "attack", uid: w.uid, target: { kind: "gigs" } });
+    ok(G.pending && G.pending.kind === "pickcard" && G.pending.options.length === 4, "Radioport: scelta della Leggenda da guardare");
+    resolve(G, P.legends.indexOf(j));
+    ok(G.pending && G.pending.kind === "yesno" && /Jackie/.test(G.pending.options[0].label), "Radioport: Jackie ha Go Solo → Chiamata gratis proposta"); resolve(G, 0); flush();
+    ok(j.faceUp && P.called, "Jackie chiamata gratis"); }
+  // Gunpoint Diplomacy: con meno ☆ sceglie il rivale
+  { const { G, P, R, unit, flush, playC } = fresh();
+    const w = unit(P, "Animals Wrecker"); P.gigs = []; R.gigs = [{ sides: 6, value: 3, uid: 1 }];
+    playC(P, "Gunpoint Diplomacy"); if(G.pending && G.pending.kind === "target") resolve(G, 0);
+    ok(G.pending && G.pending.kind === "choice" && G.pending.player === R.id, "Gunpoint Diplomacy: con meno ☆ sceglie il rivale"); resolve(G, 0); flush();
+    ok(w.attackReady, "effetto «può attaccare Unità pronte» applicato all'Unità scelta"); }
+  // Sandayu Oda: spende un'Unità rivale per ogni coppia di Gig
+  { const { G, P, R, unit, flush, playC } = fresh();
+    const a = unit(R, "Delamain Cab"), b = unit(R, "Mox Inciters"), c = unit(R, "Chrome Fang"); P.gigs = [{ sides: 6, value: 3, uid: 1 }, { sides: 8, value: 3, uid: 2 }, { sides: 4, value: 2, uid: 3 }, { sides: 10, value: 2, uid: 4 }];
+    playC(P, "Sandayu Oda: Hanako's Guardian"); flush();
+    ok(R.field.filter(u => u.spent).length === 2, "Sandayu Oda: 2 coppie → 2 Unità rivali spese"); }
 }
 console.log(`\n${passes} controlli OK, ${fails} falliti`);
 process.exit(fails ? 1 : 0);

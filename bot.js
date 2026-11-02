@@ -39,8 +39,15 @@ export function botDecide(G, pi, kind, options, ctx){
       if(withGear.length) return withGear.reduce((a, b) => (a.g.card.cost ?? 0) <= (b.g.card.cost ?? 0) ? a : b);
       return options[options.length - 1];
     }
-    case "choice": return options.reduce((a, b) => b.alt.ops.filter(o => o.op === "manual").length < a.alt.ops.filter(o => o.op === "manual").length ? b : a);
-    case "yesno": return options.find(o => !o.disabled) || options[0];
+    case "choice": {
+      if(ctx.reveal) return (ctx.reveal.reduce((a, c) => a + (c.card.cost ?? 0), 0) >= 7 ? options[1] : options[0]) || options[0];   // Fool on the Hill: nega le carte care
+      if(ctx.typeChoice){ const cnt = {}; for(const c of P.deck) cnt[c.card.type] = (cnt[c.card.type] || 0) + 1; return options.reduce((a, b) => (cnt[b.v] || 0) > (cnt[a.v] || 0) ? b : a); }
+      if(!options[0].alt) return options[0];
+      return options.reduce((a, b) => b.alt.ops.filter(o => o.op === "manual").length < a.alt.ops.filter(o => o.op === "manual").length ? b : a); }
+    case "yesno": {
+      if(ctx.save) return power(ctx.save) >= 5 ? options[0] : options[1];                       // Jackie: si sacrifica solo per un'Unità forte
+      if(ctx.reroll) return ctx.reroll.value <= ctx.reroll.sides / 2 ? options[0] : options[1];  // Kerry: ritira i valori bassi
+      return options.find(o => !o.disabled) || options[0]; }
     case "gigvalue": { const w = options.filter(o => o.v != null); return w.length ? w.reduce((a, b) => b.v > a.v ? b : a) : options[0]; }
     default: return options[0];
   }
@@ -69,7 +76,9 @@ export function botStep(G, pi){
   // 2) chiama una Leggenda nei primi turni o quando c'è denaro in abbondanza
   if(by("call").length && (P.turns <= 2 || ready(P) >= 3)){ go(by("call")[0]); return true; }
   // 3) attacchi (prima di spendere, così le Unità spese del rivale sono già note)
-  const attacks = by("attack");
+  let attacks = by("attack");
+  const must = attacks.filter(a => a.unit.mustAttack);   // "must attack next turn if it can"
+  if(must.length) attacks = must;
   if(attacks.length){
     const blockers = R.field.filter(b => !b.spent && !b.lag && hasKw(b, "Blocker"));
     const bestBlock = blockers.length ? Math.max(...blockers.map(power)) : -1;
@@ -81,7 +90,7 @@ export function botStep(G, pi){
       if(bestBlock >= pa) score -= 4; // probabile blocco perdente
       if(score > bestScore){ bestScore = score; best = a; }
     }
-    if(best){ go(best); return true; }
+    if(best || must.length){ go(best || attacks[0]); return true; }
   }
   // 4) gioca: l'Unità più forte che può permettersi, poi Gear sull'Unità migliore, poi Programmi interpretabili
   const plays = by("play");
@@ -94,9 +103,12 @@ export function botStep(G, pi){
   // 5) Go Solo quando il campo è vuoto e c'è denaro
   const solo = by("gosolo"); if(solo.length && P.field.length <= 1 && ready(P) >= (solo[0].legend.card.cost ?? 0) + 1){ go(solo[0]); return true; }
   // 6) abilità {Spend} interpretabili
-  const sp = by("spend").filter(a => a.obj.fx.spend.some(o => o.op !== "manual") && !(P.field.includes(a.obj) && canAttack(G, P, a.obj)));
+  const sp = by("spend").filter(a => a.src.fx.spend.some(o => o.op !== "manual") && !(P.field.includes(a.obj) && canAttack(G, P, a.obj)));
   if(sp.length){ go(sp[0]); return true; }
-  doAction(G, pi, { t: "end" });
+  if(doAction(G, pi, { t: "end" }) === false){   // un'Unità deve ancora attaccare: lo fa
+    const m = legalActions(G, pi).filter(a => a.t === "attack" && a.unit.mustAttack);
+    if(m.length){ go(m[0]); return true; }
+  }
   return false;
 }
 

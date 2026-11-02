@@ -4,7 +4,7 @@
 import { DATA, imgUrl, thumbUrl } from "./data.js";
 import { S, saveDeck } from "./store.js";
 import { $, $$, esc, toast, openLens, openCard } from "./ui.js";
-import { createGame, mulligan, resolve, legalActions, doAction, power, ready, readyEddies, streetCred, canAttack, canPay, manual, rival, hasKw } from "./engine.js";
+import { createGame, mulligan, resolve, legalActions, doAction, power, ready, readyEddies, streetCred, canAttack, canPay, manual, rival, hasKw, hasSpend } from "./engine.js";
 import { botDecide, botStep } from "./bot.js";
 import { starterDeck, isLegal, deckSize, openDeck } from "./deck.js";
 import { prereleaseSetupHTML, wirePrerelease } from "./prerelease.js";
@@ -226,7 +226,7 @@ function askHTML(){
   if(mode === "hot" && p.player !== G.active && reactCover !== p) return `<div id="simAsk"><div class="box"><h3>Reazione di ${esc(P.name)}</h3><p>${esc(G.players[G.active].name)}, passa il dispositivo: le opzioni del rivale compaiono solo dopo il suo tocco.</p><div class="opts"><button class="btn yel" data-react="1">Sono ${esc(P.name)}, mostra le opzioni</button></div></div></div>`;
   const srcLine = p.ctx && p.ctx.src && p.kind !== "die" && p.kind !== "block" && p.kind !== "steal" ? `<div class="sub" style="margin:-4px 0 8px"><b>${esc(p.ctx.src)}</b>${p.ctx.text ? ` — ${esc(p.ctx.text)}` : ""}</div>` : "";
   return `<div id="simAsk"><div class="box"><h3>${titles[p.kind] || "Scegli"}</h3>${srcLine}${ctx}<div class="opts">${p.options.map((o, i) => {
-    const pid = o.unit?.pid || o.c?.pid || o.g?.pid; return `<button class="btn${pid ? " card-opt" : ""}" data-ask="${i}">${pid ? `<img src="${thumbUrl(pid)}" alt="">` : ""}${esc(o.label)}</button>`; }).join("")}</div></div></div>`;
+    const pid = o.unit?.pid || o.c?.pid || o.g?.pid; return `<button class="btn${pid ? " card-opt" : ""}" data-ask="${i}"${o.disabled ? " disabled" : ""}>${pid ? `<img src="${thumbUrl(pid)}" alt="">` : ""}${esc(o.label)}</button>`; }).join("")}</div></div></div>`;
 }
 /* finestra generica (mulligan, conferme) */
 function showAsk(title, cards, text, buttons){
@@ -284,7 +284,7 @@ function fieldCard(el, owner){
     const can = canAttack(G, M, u) && tutorialAllows("attack");
     items.push({ label: power(u) < 1 ? "Attacca l'area Gig (potenza 0: non ruba, ma attiva gli effetti)" : `Attacca l'area Gig (${1 + Math.floor(power(u) / 10)} Gig)`, cls: "acc", disabled: !can || !rival(G, M).gigs.length || u.fx.onlyUnits, fn: () => after(doAction(G, M.id, { t: "attack", uid: u.uid, target: { kind: "gigs" } })) });
     items.push({ label: "Attacca un'Unità spesa →", disabled: !can || !rival(G, M).field.some(x => x.spent), fn: () => { targeting = { kind: "attack", uid: u.uid }; sel = u.uid; render(); note("Tocca l'Unità rivale spesa da attaccare"); } });
-    if(u.fx.spend.length) items.push({ label: "Abilità {Spend}", disabled: u.spent || u.lag || !tutorialAllows("spend"), fn: () => after(doAction(G, M.id, { t: "spend", uid: u.uid })) });
+    if(hasSpend(u)) items.push({ label: "Abilità {Spend}", disabled: u.spent || u.lag || !tutorialAllows("spend"), fn: () => after(doAction(G, M.id, { t: "spend", uid: u.uid })) });
   }
   if(MANUAL && human[M.id] && G.winner == null){
     items.push({ label: "— strumenti manuali —", disabled: true, fn: () => {} },
@@ -433,7 +433,7 @@ function wire(){
     const t = e.target;
     // registro aperto: un tocco fuori dal pannello lo chiude
     if(showLog && !t.closest("#simLog")){ showLog = false; render(); return; }
-    if(t.closest("#bEnd")){ after(doAction(G, me(), { t: "end" })); if(mode === "hot" && G.winner == null){ handoff = true; render(); } return; }
+    if(t.closest("#bEnd")){ const ok = doAction(G, me(), { t: "end" }); after(ok); if(ok !== false && mode === "hot" && G.winner == null){ handoff = true; render(); } return; }
     if(t.closest("#bCancel")){ targeting = null; sel = null; render(); return; }
     if(t.closest("#bLog")){ showLog = !showLog; render(); return; }
     if(t.closest("#bLogClose")){ showLog = false; render(); return; }

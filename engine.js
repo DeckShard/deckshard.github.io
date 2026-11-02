@@ -5,10 +5,10 @@
    Adrenaline, attacchi a Unità spese o all'area Gig, Blocker, furto dei Gig
    in base alla potenza, Street Cred, vittoria a 7 Gig, overtime, deck-out.
 
-   Effetti delle carte: quelli più comuni sono interpretati dal testo
-   (pesca, +potenza, trash, Gig ±N, sconfiggi/spendi Unità rivali, scarti);
-   il resto viene segnalato come «manuale» e lasciato ai giocatori (il bot
-   li ignora).                                                             */
+   Effetti delle carte: tutti interpretati dal testo (parser.js) ed eseguiti
+   qui: pesca, ±potenza, trash, Gig ±N, sconfiggi/spendi/bottom-deck, scarti,
+   sconti, limiti al furto, effetti «la prossima volta che…», sacrifici e
+   difese (Jackie, Alt Cunningham), Chiamate e giocate gratis.             */
 
 export const DICE = [4, 6, 8, 10, 12, 20];
 export const MAX_TURNS_BEFORE_OT = 7;
@@ -86,9 +86,10 @@ function startTurn(G){
   // 1) prepara
   for(const e of P.eddies) e.spent = false;
   if(P.skipReadyLegends){ P.skipReadyLegends = false; } else for(const l of P.legends) l.spent = false;
-  for(const u of P.field){ if(u.cantReady){ u.cantReady = false; } else u.spent = false; u.lag = false; u.mod = 0; u.lagRival = false; u.stoleThisTurn = false; u.kwBlockerThisTurn = false; u.onlyUnitsThisTurn = false; u.onlyGigsThisTurn = false; u.attackReady = false; u.fightBuffPerLegend = 0; }
-  for(const u of rival(G, P).field){ u.mod = 0; if(u.lockAttackBy === P.id) u.lockAttackBy = null; u.kwBlockerThisTurn = false; u.fightBuffPerLegend = 0; }
-  P.stealLess = 0; P.programDiscountMin = null;
+  for(const u of P.field){ if(u.cantReady){ u.cantReady = false; } else u.spent = false; u.lag = false; u.mod = 0; u.lagRival = false; u.stoleThisTurn = false; u.kwBlockerThisTurn = false; u.onlyUnitsThisTurn = false; u.onlyGigsThisTurn = false; u.attackReady = false; u.fightBuffPerLegend = 0; u.stealLess = 0; u.doomIfActs = false; u.doomed = false; if(u.lockAttackBy === P.id) u.lockAttackBy = null; }
+  for(const u of rival(G, P).field){ u.mod = 0; if(u.lockAttackBy === P.id) u.lockAttackBy = null; u.kwBlockerThisTurn = false; u.fightBuffPerLegend = 0; u.stealLess = 0; u.doomIfActs = false; u.doomed = false; }
+  P.stealLess = 0; P.programDiscountMin = null; P.goSoloDiscount = null; P.stealLimit = null; P.playedGearCls = {};
+  for(const Q of G.players){ Q.winBySteal = null; Q.noDefeatNextFight = null; Q.punishNextLoss = null; }   // effetti "questo turno"
   // 2) pesca
   draw(G, P, 1); if(G.winner != null) return;
   // 3) Gig: scelta del dado (il d20 sempre per ultimo)
@@ -100,24 +101,40 @@ function startTurn(G){
     say(G, `${P.name} tira un d${s} dal fixer: ${v}.`, "gig");
     G.phase = "main";
     const g = P.gigs[P.gigs.length - 1];
-    if(v === 1 || v === s) fireEvent(G, P, "roll", { gig: g }, () => fireEvent(G, P, "startTurn", {}));
-    else fireEvent(G, P, "startTurn", {});
+    // "When you roll in a Gig…" (Kerry: puoi ritirare una volta), poi gli effetti su min/max e quelli di inizio turno
+    fireEvent(G, P, "rollIn", { gig: g }, () => {
+      if(g.value === 1 || g.value === s) fireEvent(G, P, "roll", { gig: g }, () => fireEvent(G, P, "startTurn", {}));
+      else fireEvent(G, P, "startTurn", {});
+    });
   });
 }
 function win(G, pi, reason){ G.winner = pi; G.reason = reason; G.phase = "over"; say(G, reason, "end"); }
 
+/* "A rival Unit must attack next turn if it can": l'Unità che deve ancora attaccare, se ne ha la possibilità */
+export function mustAttackPending(G, P){
+  const R = rival(G, P);
+  return P.field.find(u => u.mustAttack && canAttack(G, P, u) && ((R.gigs.length && !u.fx.onlyUnits && !u.onlyUnitsThisTurn && (power(u) >= 1 || u.fx.attack.length)) || R.field.some(t => t.spent))) || null;
+}
 export function endTurn(G){
   if(G.winner != null || G.pending) return false;
   const P = G.players[G.active];
+  const must = mustAttackPending(G, P); if(must) return err(G, `${must.card.dn} deve attaccare in questo turno`);
   G.phase = "end";
-  // effetti "alla fine del tuo turno"
-  fireEvent(G, P, "endTurn", {}, () => { if(G.pending){ G.pendingEnd = true; return; } finishEnd(G); });
+  // effetti "alla fine del tuo turno", poi le Unità condannate (Cyberpsychosis)
+  fireEvent(G, P, "endTurn", {}, () => doomStep(G, () => { if(G.pending){ G.pendingEnd = true; return; } finishEnd(G); }));
   if(G.pending){ G.pendingEnd = true; return true; }
   return true;
 }
+function doomStep(G, done){
+  const d = [];
+  for(const Q of G.players) for(const u of Q.field) if(u.doomed) d.push([Q, u]);
+  const run = i => { if(i >= d.length){ done(); return; } const [Q, u] = d[i]; if(!Q.field.includes(u)){ run(i + 1); return; } say(G, `${u.card.dn} viene sconfitta a fine turno (Cyberpsychosis).`, "fight"); defeat(G, Q, u, () => run(i + 1)); };
+  run(0);
+}
 function finishEnd(G){
   const P = G.players[G.active];
-  for(const u of P.field){ u.mod = 0; u.lag = false; u.lagRival = false; }   // il Lag dura fino alla fine del turno
+  for(const u of P.field){ u.mod = 0; u.lag = false; u.lagRival = false; u.mustAttack = false; }   // il Lag dura fino alla fine del turno
+  P.goSoloDiscount = null;
   // overtime: dopo il 7º turno dell'ultimo giocatore
   if(!G.overtime && G.players.every(p => p.turns >= MAX_TURNS_BEFORE_OT) && G.active !== G.first){ G.overtime = true; say(G, "Overtime! Morte improvvisa: vince subito chi arriva a 7 Gig (la maggioranza dei dadi).", "turn"); if(checkMajority(G)) return; }
   G.active = 1 - G.active;
@@ -240,10 +257,11 @@ export function goSolo(G, pi, idx){
   const l = P.legends[idx]; if(!l || l.removed || l.onField) return err(G, "Leggenda non disponibile");
   if(!l.faceUp) return err(G, "Go Solo solo con una Leggenda scoperta");
   if(!(l.card.kw || []).includes("Go Solo") || l.card.cost == null) return err(G, `${l.card.dn} non ha Go Solo`);
-  const extra = Math.max(0, ...rival(G, P).field.flatMap(u => (u.gear || []).map(g => g.fx.goSoloTax || 0)), 0);
-  if(!canPay(P, l.card.cost + extra)) return err(G, `Servono ${l.card.cost + extra} €$`);
+  const total = goSoloCost(G, P, l);
+  if(!canPay(P, total)) return err(G, `Servono ${total} €$`);
   // la Leggenda può spendere sé stessa come 1 €$ del proprio costo: entra comunque come Unità pronta
-  payAsk(G, P, l.card.cost + extra, () => {
+  payAsk(G, P, total, () => {
+    if(P.goSoloDiscount) P.goSoloDiscount = null;
     l.onField = true; l.spent = false;
     const u = { ...l, spent: false, lag: false, mod: 0, isLegend: true, legendRef: l }; delete u.onField;
     P.field.push(u);
@@ -253,6 +271,13 @@ export function goSolo(G, pi, idx){
   return true;
 }
 
+/* costo del Go Solo: sconto di Nocturne, sovrapprezzo di Rival Gear */
+export function goSoloCost(G, P, l){
+  let cost = l.card.cost ?? 0;
+  if(P.goSoloDiscount) cost = Math.max(P.goSoloDiscount.min, cost - P.goSoloDiscount.n);
+  const extra = Math.max(0, ...rival(G, P).field.flatMap(u => (u.gear || []).map(g => g.fx.goSoloTax || 0)), 0);
+  return cost + extra;
+}
 export function play(G, pi, uid, targetUid){
   const P = G.players[pi]; if(G.active !== pi || G.phase !== "main" || G.pending) return err(G, "Non è il momento");
   const i = P.hand.findIndex(c => c.uid === uid); if(i < 0) return err(G, "Carta non in mano");
@@ -265,6 +290,7 @@ export function play(G, pi, uid, targetUid){
     payAsk(G, P, cost, () => {
       P.hand.splice(P.hand.indexOf(c), 1);
       t.gear = t.gear || []; t.gear.push(c);
+      P.playedGearCls = P.playedGearCls || {}; for(const k of card.cls || []) P.playedGearCls[k.toUpperCase()] = true;
       say(G, `${P.name} equipaggia ${card.dn} a ${t.card.dn}.`, "play");
       runEffects(G, P, t, c.fx.play, "Play");
     });
@@ -286,7 +312,7 @@ function putInPlay(G, P, c, how = "", done, o = {}){
     const isBlue = card.color === "Blue";
     runEffects(G, P, u, u.fx.play, "Play", () => { if(isBlue) fireEvent(G, P, "playBlue", { unit: u }, done); else done && done(); });
   } else { // Program
-    say(G, `${P.name} usa ${card.dn}${how ? " " + how : ""}.`, "play"); P.playedProgram = true;
+    say(G, `${P.name} usa ${card.dn}${how ? " " + how : ""}.`, "play"); P.playedProgram = true; P.programDiscountMin = null;
     if(c.fx.quickBuffPerLegend){ /* "A friendly Unit has +1 power for each friendly face-up Legend while fighting rival Units this turn" */
       ask(G, P.id, "target", P.field.map(u => ({ label: `${u.card.dn} (${power(u)})`, unit: u })), o2 => { if(o2){ o2.unit.fightBuffPerLegend = c.fx.quickBuffPerLegend; say(G, `${o2.unit.card.dn} combatte con +${c.fx.quickBuffPerLegend} per ogni Leggenda scoperta.`); } P.trash.push(c); done && done(); });
       return;
@@ -296,20 +322,30 @@ function putInPlay(G, P, c, how = "", done, o = {}){
   }
 }
 
+/* la carta che porta l'abilità {Spend}: l'Unità/Leggenda stessa o un Gear equipaggiato (Overwatch) */
+export const spendSrc = x => x.fx.spend.length ? x : (x.gear || []).find(g => g.fx.spend.length) || null;
+export const hasSpend = x => !!spendSrc(x);
+/* costo in €$ di un'abilità {Spend} (Johnny: "costs -1 €$ for each friendly Gig with 8+ value") */
+export function spendCost(G, P, x){
+  const s = spendSrc(x) || x;
+  let c = +((s.card.text.match(/(\d+)\s*€\$,\s*\{Spend\}/) || [])[1] || 0);
+  if(s.fx.spendCostReduce) c = Math.max(0, c - s.fx.spendCostReduce.n * count(G, P, x, s.fx.spendCostReduce.per));
+  return c;
+}
 /* abilità {Spend} di Unità sul campo o Leggende scoperte */
 export function spendAbility(G, pi, uid, done, reaction = false){
   const P = G.players[pi]; if(G.pending || (!reaction && (G.active !== pi || G.phase !== "main"))) return false;
   const x = P.field.find(u => u.uid === uid) || P.legends.find(l => l.uid === uid && l.faceUp && !l.removed && !l.onField);
   if(!x) return err(G, "Carta non trovata");
   if(x.spent || x.lag) return err(G, "Già spesa o con Lag");
-  if(!x.fx.spend.length) return err(G, "Nessuna abilità {Spend}");
-  const costM = +((x.card.text.match(/(\d+)\s*€\$,\s*\{Spend\}/) || [])[1] || 0);
+  const s = spendSrc(x); if(!s) return err(G, "Nessuna abilità {Spend}");
+  const costM = spendCost(G, P, x);
   const selfIsResource = P.legends.includes(x) ? 1 : 0;   // una Leggenda che si spende per l'abilità non può anche pagare
   if(costM && ready(P) - selfIsResource < costM) return err(G, `Servono ${costM} €$ oltre alla carta stessa`);
   x.spent = true;
   payAsk(G, P, costM, () => {
     say(G, `${P.name} spende ${x.card.dn} per l'abilità.`, "play");
-    runEffects(G, P, x, x.fx.spend, "Spend", () => onSpent(G, P, x, done));
+    runEffects(G, P, x, s.fx.spend, "Spend", () => onSpent(G, P, x, done), { holder: x, srcName: s.card.dn });
   }, () => { x.spent = false; done && done(); });
   return true;
 }
@@ -356,23 +392,24 @@ export function attack(G, pi, uid, target){
     if(u.fx.onlyUnits || u.onlyUnitsThisTurn) return err(G, `${u.card.dn} può attaccare solo Unità`);
     if(!R.gigs.length) return err(G, "Il rivale non ha Gig");
   }
-  u.spent = true; u.attackReady = false;
+  u.spent = true; u.attackReady = false; u.mustAttack = false; G.attacker = u;
   say(G, `${P.name}: ${u.card.dn} (${powerIn(G, P, u, { attacking: true })}) attacca ${tu ? tu.card.dn + " (" + power(tu) + ")" : "l'area Gig"}.`, "attack");
-  runEffects(G, P, u, u.fx.attack, "Attack", () => onSpent(G, P, u, () => fireEvent(G, P, "friendlyAttack", { unit: u })));
   // finestra di reazione del difensore: Chiamata, Quick, Blocker
   const proceed = blocker => {
     if(G.winner != null) return;
     if(blocker){
       blocker.spent = true;
       say(G, `${R.name}: ${blocker.card.dn} blocca (${power(blocker)}).`, "attack");
-      fireEvent(G, R, "block", { unit: blocker }, () => fight(G, P, u, R, blocker, true));
+      fireEvent(G, R, "block", { unit: blocker }, () => fireEvent(G, R, "friendlyBlock", { unit: blocker }, () => fight(G, P, u, R, blocker, true)));
       return;
     }
     if(!P.field.includes(u)){ say(G, `${u.card.dn} non è più in campo: l'attacco si annulla.`); return; }
     if(tu && !R.field.includes(tu)){ say(G, `${tu.card.dn} non è più in campo: l'attacco si annulla.`); return; }
     if(tu) fight(G, P, u, R, tu, false); else steal(G, P, u, R);
   };
-  reactionWindow(G, R, u, tu, proceed);
+  // prima gli effetti {Attack} dell'Unità e dei suoi Gear, poi la finestra di reazione
+  const atk = [...u.fx.attack, ...(u.gear || []).flatMap(g => g.fx.attack)];
+  runEffects(G, P, u, atk, "Attack", () => onSpent(G, P, u, () => fireEvent(G, P, "friendlyAttack", { unit: u }, () => reactionWindow(G, R, u, tu, proceed))));
   return true;
 }
 function reactionWindow(G, R, au, tu, proceed){
@@ -381,7 +418,7 @@ function reactionWindow(G, R, au, tu, proceed){
   if(!unblockable) for(const b of R.field) if(!b.spent && !b.lag && (hasKw(b, "Blocker") || b.kwBlockerThisTurn) && b !== tu) opts.push({ label: `Blocca con ${b.card.dn} (${power(b)})`, kind: "block", uid: b.uid, unit: b });
   if(!R.called && canPay(R, 1)) R.legends.forEach((l, i) => { if(!l.faceUp && !l.removed) opts.push({ label: `Chiama la Leggenda ${i + 1} (1 €$)`, kind: "call", idx: i }); });
   for(const c of R.hand) if(c.fx.quick && c.card.type === "Program" && canPay(R, c.card.cost ?? 0)) opts.push({ label: `Quick: ${c.card.dn} (${c.card.cost ?? 0} €$)`, kind: "quick", uid: c.uid, c });
-  for(const x of [...R.field, ...R.legends.filter(l => l.faceUp && !l.removed && !l.onField)]) if(x.fx.quick && x.fx.spend.length && !x.spent && !x.lag) opts.push({ label: `Quick: abilità di ${x.card.dn}`, kind: "qspend", uid: x.uid });
+  for(const x of [...R.field, ...R.legends.filter(l => l.faceUp && !l.removed && !l.onField)]) if(spendSrc(x) && spendSrc(x).fx.quick && !x.spent && !x.lag && ready(R) - (R.legends.includes(x) ? 1 : 0) >= spendCost(G, R, x)) opts.push({ label: `Quick: abilità di ${spendSrc(x).card.dn}`, kind: "qspend", uid: x.uid });
   if(opts.length === 1){ proceed(null); return; }
   ask(G, R.id, "block", opts, o => {
     if(!o || o.kind === "none"){ proceed(null); return; }
@@ -401,30 +438,70 @@ function fight(G, A, au, D, du, blocked){
   if(du.fx.winsVs && cls(au).includes(du.fx.winsVs)){ dWins = true; aWins = false; }
   if(au.cantBeDefeatedInFight){ dWins = false; }
   if(du.cantBeDefeatedInFight){ aWins = false; }
+  // Reboot Optics: "la prossima volta che un'Unità rivale combatte, non sconfigge l'Unità amica opposta"
+  if(D.noDefeatNextFight){ D.noDefeatNextFight = null; if(aWins){ aWins = false; say(G, `${du.card.dn} non viene sconfitta (Reboot Optics).`); } }
+  if(A.noDefeatNextFight){ A.noDefeatNextFight = null; if(dWins){ dWins = false; say(G, `${au.card.dn} non viene sconfitta (Reboot Optics).`); } }
+  for(const u of [au, du]) if(u.doomIfActs) u.doomed = true;   // Cyberpsychosis
   const after = () => { if(blocked) say(G, "Attacco deviato: nessun Gig rubato.", "fight"); };
-  if(aWins && !dWins){ say(G, `${au.card.dn} vince ${pa}–${pd}: ${du.card.dn} sconfitta.`, "fight"); defeat(G, D, du); fireEvent(G, D, "loseFight", { unit: du, opponent: au }, () => fireEvent(G, A, "winFight", { unit: au, opponent: du, margin: pa - pd }, after)); }
-  else if(dWins && !aWins){ say(G, `${du.card.dn} vince ${pd}–${pa}: ${au.card.dn} sconfitta.`, "fight"); defeat(G, A, au); fireEvent(G, A, "loseFight", { unit: au, opponent: du }, () => fireEvent(G, D, "winFight", { unit: du, opponent: au, margin: pd - pa }, after)); }
-  else if(!aWins && !dWins && pa === pd){ say(G, `Pareggio ${pa}–${pd}: entrambe sconfitte.`, "fight"); defeat(G, D, du); defeat(G, A, au); after(); }
+  // Appetite for Destruction: vince per 3+ → ruba anche un Gig; Safety Override: perde → sconfitta anche l'avversaria
+  const bonus = (W, wu, L, lu, margin, cb) => {
+    const step2 = () => { if(W.winBySteal && margin >= W.winBySteal && L.gigs.length){ W.winBySteal = null; say(G, `${wu.card.dn} vince di ${margin}: ruba anche un Gig (Appetite for Destruction).`, "steal"); stealOne(G, W, wu, L, cb); } else cb(); };
+    if(L.punishNextLoss && W.field.includes(wu)){ L.punishNextLoss = null; say(G, `${wu.card.dn} viene sconfitta a sua volta (Safety Override).`, "fight"); defeat(G, W, wu, step2); } else step2();
+  };
+  if(aWins && !dWins){ say(G, `${au.card.dn} vince ${pa}–${pd}: ${du.card.dn} sconfitta.`, "fight"); defeat(G, D, du, () => fireEvent(G, D, "loseFight", { unit: du, opponent: au }, () => fireEvent(G, A, "winFight", { unit: au, opponent: du, margin: pa - pd }, () => bonus(A, au, D, du, pa - pd, after)))); }
+  else if(dWins && !aWins){ say(G, `${du.card.dn} vince ${pd}–${pa}: ${au.card.dn} sconfitta.`, "fight"); defeat(G, A, au, () => fireEvent(G, A, "loseFight", { unit: au, opponent: du }, () => fireEvent(G, D, "winFight", { unit: du, opponent: au, margin: pd - pa }, () => bonus(D, du, A, au, pd - pa, after)))); }
+  else if(!aWins && !dWins && pa === pd){ say(G, `Pareggio ${pa}–${pd}: entrambe sconfitte.`, "fight"); defeat(G, D, du, () => defeat(G, A, au, after)); }
   else { say(G, `Nessuna delle due viene sconfitta (${pa}–${pd}).`, "fight"); after(); }
+}
+/* ruba un singolo Gig (scelto da A) con gli eventi del caso */
+function stealOne(G, A, au, D, done){
+  const pool = stealable(G, D, au, D.gigs);
+  if(!pool.length){ say(G, `Nessun Gig rubabile.`); done && done(); return; }
+  ask(G, A.id, "steal", pool.map(g => ({ label: `d${g.sides} = ${g.value}`, gig: g })), o => {
+    const g = o.gig; D.gigs.splice(D.gigs.indexOf(g), 1); A.gigs.push(g); au.stoleThisTurn = true; if(au.doomIfActs) au.doomed = true;
+    say(G, `${A.name} ruba un d${g.sides} (${g.value}) — ${A.gigs.length} Gig.`, "steal");
+    if(checkMajority(G)) return;
+    fireEvent(G, A, "steal", { unit: au, gig: g }, () => fireEvent(G, A, "friendlySteal", { unit: au, gig: g }, () => { if(au.isLegend) fireEvent(G, A, "legendSteal", { unit: au, gig: g }, done); else done && done(); }));
+  });
+}
+/* Gig rubabili da un'Unità: Chrome Fang / Westbrook Netrunner limitano in base al valore */
+function stealable(G, D, au, gigs){
+  const lim = D.stealLimit; if(!lim) return gigs;
+  const pw = powerIn(G, rival(G, D), au, { attacking: true });
+  if(lim.units && !au.isLegend) gigs = gigs.filter(g => !(g.value > pw));
+  if(lim.legends && au.isLegend) gigs = gigs.filter(g => !(g.value < pw));
+  return gigs;
 }
 function steal(G, A, au, D, extra = 0){
   const pw = powerIn(G, A, au, { attacking: true });
   const base = pw < 1 ? 0 : 1 + Math.floor(pw / 10);
-  const n = Math.min(D.gigs.length, Math.max(0, base - (D.stealLess || 0)) + extra);
+  const n = Math.min(D.gigs.length, Math.max(0, base - (D.stealLess || 0) - (au.stealLess || 0)) + extra);
   if(!n){ say(G, `${au.card.dn} arriva all'area Gig ma con potenza ${pw} non ruba nulla.`, "steal"); return; }
   const stolen = [];
   const pickOne = k => {
     if(k >= n || !D.gigs.length){ done(); return; }
-    ask(G, A.id, "steal", D.gigs.map(g => ({ label: `d${g.sides} = ${g.value}`, gig: g })), o => {
-      const g = o.gig; D.gigs.splice(D.gigs.indexOf(g), 1); A.gigs.push(g); stolen.push(g);
-      say(G, `${A.name} ruba un d${g.sides} (${g.value}) — ${A.gigs.length} Gig.`, "steal");
-      if(checkMajority(G)) return;
-      pickOne(k + 1);
+    const pool = stealable(G, D, au, D.gigs);
+    if(!pool.length){ say(G, `${au.card.dn} non può rubare nessuno dei Gig di ${D.name} (limite di valore).`, "steal"); done(); return; }
+    ask(G, A.id, "steal", pool.map(g => ({ label: `d${g.sides} = ${g.value}`, gig: g })), o => {
+      const g = o.gig;
+      const take = () => {
+        D.gigs.splice(D.gigs.indexOf(g), 1); A.gigs.push(g); stolen.push(g);
+        say(G, `${A.name} ruba un d${g.sides} (${g.value}) — ${A.gigs.length} Gig.`, "steal");
+        if(checkMajority(G)) return;
+        pickOne(k + 1);
+      };
+      // Alt Cunningham: il difensore può scartare una carta con costo pari al valore del Gig per impedire il furto
+      const guard = D.field.some(u => u.fx.preventStealDiscard), cards = D.hand.filter(c => (c.card.cost ?? -1) === g.value);
+      if(guard && cards.length){
+        ask(G, D.id, "discard", [...cards.map(c => ({ label: `Scarta ${c.card.dn} (${c.card.cost} €$): il Gig non viene rubato`, c })), { label: "Lascia rubare il Gig", c: null }], o2 => {
+          if(o2 && o2.c){ D.hand.splice(D.hand.indexOf(o2.c), 1); D.trash.push(o2.c); say(G, `${D.name} scarta ${o2.c.card.dn}: il d${g.sides} (${g.value}) non viene rubato (Alt Cunningham).`, "steal"); pickOne(k + 1); } else take();
+        }, { src: "Alt Cunningham", text: "When a rival Unit would steal a Gig, you may discard 1 with cost equal to that Gig's value. If you do, the Gig isn't stolen." });
+      } else take();
     });
   };
   const done = () => {
     if(!stolen.length) return;
-    au.stoleThisTurn = true;
+    au.stoleThisTurn = true; if(au.doomIfActs) au.doomed = true;
     // eventi: dell'Unità che ruba, delle Unità amiche, delle Leggende
     const chain = [];
     for(const g of stolen){ chain.push(cb => fireEvent(G, A, "steal", { unit: au, gig: g }, cb)); chain.push(cb => fireEvent(G, A, "friendlySteal", { unit: au, gig: g }, cb)); if(au.isLegend) chain.push(cb => fireEvent(G, A, "legendSteal", { unit: au, gig: g }, cb)); }
@@ -441,18 +518,30 @@ function checkMajority(G){
   return false;
 }
 
-export function defeat(G, P, u){
-  const i = P.field.indexOf(u); if(i < 0) return;
+export function defeat(G, P, u, done){
+  const i = P.field.indexOf(u); if(i < 0){ done && done(); return; }
   const dm = (u.gear || []).find(g => g.fx.deadman);
-  if(dm){ u.gear.splice(u.gear.indexOf(dm), 1); P.trash.push(dm); say(G, `${dm.card.dn} viene sconfitto al posto di ${u.card.dn}.`); return; }
+  if(dm){ u.gear.splice(u.gear.indexOf(dm), 1); P.trash.push(dm); say(G, `${dm.card.dn} viene sconfitto al posto di ${u.card.dn}.`); done && done(); return; }
+  // Jackie Welles: "se un'Unità amica sta per essere sconfitta, puoi pagare 1 €$ per sconfiggere questa Leggenda al suo posto"
+  const saver = !u.isLegend && P.legends.find(l => l.faceUp && !l.removed && !l.onField && l.fx.saveUnitPay && canPay(P, l.fx.saveUnitPay));
+  if(saver && !u._noSave){
+    ask(G, P.id, "yesno", [{ label: `Paga ${saver.fx.saveUnitPay} €$: ${saver.card.dn} esce dal gioco al posto di ${u.card.dn}`, v: true }, { label: `No, ${u.card.dn} viene sconfitta`, v: false }], o => {
+      const no = () => { u._noSave = true; defeat(G, P, u, done); };
+      if(o && o.v) payAsk(G, P, saver.fx.saveUnitPay, () => { saver.removed = true; say(G, `${saver.card.dn} esce dal gioco al posto di ${u.card.dn}.`, "fight"); done && done(); }, no);
+      else no();
+    }, { src: saver.card.dn, text: saver.card.text.replace(/\s+/g, " "), save: u });
+    return;
+  }
+  u._noSave = false;
   P.field.splice(i, 1);
   const wasEquipped = (u.gear || []).length > 0;
   if(u.isLegend){ u.legendRef.removed = true; u.legendRef.onField = false; say(G, `${u.card.dn} esce dal gioco (Go Solo).`); }
   else { P.trash.push(u); for(const g of u.gear || []) P.trash.push(g); }
-  runEffects(G, P, u, u.fx.defeated, "Defeated");
-  for(const g of u.gear || []) runEffects(G, P, u, g.fx.defeated, "Defeated");
-  fireEvent(G, P, "friendlyDefeated", { unit: u, equipped: wasEquipped });
-  fireEvent(G, P, "defeatedFriendly", { unit: u, equipped: wasEquipped });
+  const gears = (u.gear || []).slice();
+  runEffects(G, P, u, u.fx.defeated, "Defeated", () => {
+    const run = k => { if(k >= gears.length){ fireEvent(G, P, "friendlyDefeated", { unit: u, equipped: wasEquipped }, () => fireEvent(G, P, "defeatedFriendly", { unit: u, equipped: wasEquipped }, done)); return; } runEffects(G, P, u, gears[k].fx.defeated, "Defeated", () => run(k + 1)); };
+    run(0);
+  });
 }
 
 /* ------------------------------------------------------------ condizioni e conteggi */
@@ -485,8 +574,15 @@ export function testCond(G, P, src, cond, ctx = {}){
     case "ctxGigSides": return ctx.gig ? ctx.gig.sides === cond.n : false;
     case "ctxCardType": return ctx.card ? ctx.card.card.type === cond.t : false;
     case "ctxCostEqualsGig": return ctx.card ? v.includes(ctx.card.card.cost ?? -1) : false;
-    case "ctxUnitCls": return ctx.unit ? (ctx.unit.card.cls || []).some(k => cond.cls.includes(k.toUpperCase())) : false;
+    case "ctxUnitCls": { const u = ctx.unit || ctx.last; return u ? (u.card.cls || []).some(k => cond.cls.includes(k.toUpperCase())) : false; }
     case "spentCount": return [...P.field, ...P.legends.filter(l => !l.removed)].filter(x => x.spent).length >= cond.n;
+    case "equippedCount": return [...P.field, ...P.legends.filter(l => l.faceUp && !l.removed && !l.onField)].filter(x => (x.gear || []).length).length >= cond.n;
+    case "credLess": return streetCred(P) < cond.n;
+    case "d4Min": return P.gigs.some(g => g.sides === 4 && g.value === 1);
+    case "fixerEmpty": return P.fixer.length === 0;
+    case "did": return !!ctx.did;
+    case "discardedEqualsGig": return ctx.discarded != null && v.includes(ctx.discarded);
+    case "peekedTag": return !!ctx.peeked && ((ctx.peeked.card.cls || []).some(k => k.toUpperCase() === cond.cls) || (ctx.peeked.card.kw || []).includes(cond.kw));
     default: return false;
   }
 }
@@ -512,6 +608,12 @@ export function costOf(G, P, c){
   if(c.fx.costIf && testCond(G, P, c, c.fx.costIf.cond)) cost = c.fx.costIf.cost;
   if(c.fx.costReduce){ cost = Math.max(c.fx.costReduce.min, cost - c.fx.costReduce.n * count(G, P, c, c.fx.costReduce.per)); }
   if(c.card.type === "Program" && P.programDiscountMin != null){ cost = Math.max(1, cost - P.programDiscountMin * P.gigs.filter(isMin).length); }
+  if(c.card.type === "Gear"){   // Viktor Vektor: il primo Gear CYBERWARE del turno costa -3 (minimo 1)
+    for(const h of [...P.field, ...P.legends.filter(l => l.faceUp && !l.removed && !l.onField)]){
+      const d = h.fx.firstGearDiscount; if(!d) continue;
+      if((c.card.cls || []).some(k => k.toUpperCase() === d.cls) && !(P.playedGearCls || {})[d.cls]) cost = Math.max(d.min, cost - d.n);
+    }
+  }
   return cost;
 }
 
@@ -561,14 +663,16 @@ function runEffects(G, P, src, ops, trigger, done, ctx = {}){
   const R = rival(G, P);
   const queue = ops.slice();
   let cur = null;
-  const askE = (pi, kind, options, cb, extra = {}) => ask(G, pi, kind, options, cb, { src: src.card.dn, text: cur && cur.text, ...extra });
+  const askE = (pi, kind, options, cb, extra = {}) => ask(G, pi, kind, options, cb, { src: ctx.srcName || src.card.dn, text: cur && cur.text, ...extra });
   let last = null;   // ultima Unità bersagliata ("give it +2 power", "it can attack…")
+  let prev = null;   // operazione precedente ("you may defeat 2 instead")
   const next = () => {
     if(G.winner != null){ done && done(); return; }
     const o = queue.shift(); if(!o){ done && done(); return; }
-    cur = o;
-    if(o.skipIf && testCond(G, P, src, o.skipIf, ctx)){ next(); return; }
-    if(o.cond){ const ok = testCond(G, P, src, o.cond, ctx); if(ok === !!o.negate){ next(); return; } }
+    prev = cur; cur = o;
+    const cctx = () => ({ ...ctx, last: last || ctx.last });
+    if(o.skipIf && testCond(G, P, src, o.skipIf, cctx())){ next(); return; }
+    if(o.cond){ const ok = testCond(G, P, src, o.cond, cctx()); if(ok === !!o.negate){ next(); return; } }
     const times = o.per ? count(G, P, src, o.per) : 1;
     const nTimes = o.n != null && o.per ? o.n * times : o.n;
     switch(o.op){
@@ -611,6 +715,8 @@ function runEffects(G, P, src, ops, trigger, done, ctx = {}){
       case "mayDo": {
         const go = () => runEffects(G, P, src, o.then, trigger, next, ctx);
         if(o.kind === "pay"){ if(!canPay(P, o.n)){ next(); break; } askE(P.id, "yesno", [{ label: `Paga ${o.n} €$`, v: true }, { label: "No", v: false }], o2 => { if(o2 && o2.v) payAsk(G, P, o.n, go, next); else next(); }); break; }
+        if(o.kind === "discard"){ if(P.hand.length < o.n){ next(); break; }
+          let k = 0; const one = () => { if(k >= o.n){ ctx.did = true; go(); return; } askE(P.id, "discard", [...P.hand.map(c => ({ label: c.card.dn, c })), ...(k ? [] : [{ label: "Non scartare", c: null }])], o2 => { if(o2 && o2.c){ P.hand.splice(P.hand.indexOf(o2.c), 1); P.trash.push(o2.c); say(G, `${P.name} scarta ${o2.c.card.dn}.`); k++; one(); } else next(); }); }; one(); break; }
         if(o.kind === "discardPrograms"){ const progs = P.hand.filter(c => c.card.type === "Program"); if(progs.length < o.n){ next(); break; }
           let k = 0; const one = () => { if(k >= o.n){ go(); return; } askE(P.id, "discard", [...P.hand.filter(c => c.card.type === "Program").map(c => ({ label: c.card.dn, c })), ...(k ? [] : [{ label: "Non scartare", c: null }])], o2 => { if(o2 && o2.c){ P.hand.splice(P.hand.indexOf(o2.c), 1); P.trash.push(o2.c); say(G, `${P.name} scarta ${o2.c.card.dn}.`); k++; one(); } else next(); }); }; one(); break; }
         if(o.kind === "defeatFriendlyGear" || o.kind === "defeatAnyGear"){
@@ -619,9 +725,9 @@ function runEffects(G, P, src, ops, trigger, done, ctx = {}){
           askE(P.id, "pickcard", [...pool, { label: "Nessuno", g: null }], o2 => { if(o2 && o2.g){ o2.h.gear.splice(o2.h.gear.indexOf(o2.g), 1); o2.owner.trash.push(o2.g); say(G, `${o2.g.card.dn} sconfitto.`); ctx.card = o2.g; go(); } else next(); }); break; }
         next(); break; }
       case "freeCall": {
-        const fd = P.legends.filter(l => !l.faceUp && !l.removed);
+        const fd = o.peeked ? (ctx.peeked && !ctx.peeked.faceUp && !ctx.peeked.removed ? [ctx.peeked] : []) : P.legends.filter(l => !l.faceUp && !l.removed);
         if(P.called || !fd.length){ next(); break; }
-        askE(P.id, "yesno", [{ label: "Chiama una Leggenda gratis", v: true }, { label: "No", v: false }], o2 => {
+        askE(P.id, "yesno", [{ label: o.peeked ? `Chiama ${ctx.peeked.card.dn} gratis` : "Chiama una Leggenda gratis", v: true }, { label: "No", v: false }], o2 => {
           if(o2 && o2.v){ const l = fd[Math.floor(G.rng() * fd.length)]; l.faceUp = true; P.called = true; say(G, `${P.name} chiama ${l.card.dn} gratis!`, "call"); runEffects(G, P, l, l.fx.call, "Call", next); } else next(); }); break; }
       case "playFree": {
         const from = o.from || "hand";
@@ -659,25 +765,29 @@ function runEffects(G, P, src, ops, trigger, done, ctx = {}){
       case "adrenaline": askE(P.id, "target", unitOpts(G, P.field.filter(u => u !== src && u.lag && (u.card.cost ?? 0) <= o.maxCost)), o2 => { if(o2){ o2.unit.lag = false; say(G, `${o2.unit.card.dn} ha Adrenaline: può attaccare subito.`); } next(); }); break;
       case "grantKw": askE(P.id, "target", unitOpts(G, P.field.filter(u => (u.card.cost ?? 0) <= o.maxCost)), o2 => { if(o2){ o2.unit.kwBlockerThisTurn = true; last = o2.unit; say(G, `${o2.unit.card.dn} ha Blocker fino a fine turno.`); } next(); }); break;
       case "grantNoLag": askE(P.id, "target", unitOpts(G, P.field.filter(u => u.lag)), o2 => { if(o2){ o2.unit.lag = false; o2.unit.onlyUnitsThisTurn = true; last = o2.unit; say(G, `${o2.unit.card.dn} può attaccare Unità spese subito.`); } next(); }); break;
-      case "grantLast": if(last) last[o.flag] = true; next(); break;
+      case "grantLast": { const u = last || ctx.last; if(u){ u[o.flag] = true; say(G, `${u.card.dn}: al prossimo attacco può attaccare Unità pronte.`); } next(); break; }
       case "noLag": if(P.field.includes(src)){ src.lag = false; src.onlyUnitsThisTurn = !!o.onlyUnits; say(G, `${src.card.dn} può attaccare subito${o.onlyUnits ? " (solo Unità)" : ""}.`); } next(); break;
       case "noLagLast": if(last){ last.lag = false; last.onlyUnitsThisTurn = true; } next(); break;
       case "chooseForUnit": askE(P.id, "target", unitOpts(G, P.field), o2 => { if(o2) last = o2.unit; next(); }); break;
       case "choose": {
         // "Give a friendly Unit these effects… If you have less ☆, they choose for you": la scelta è di chi deve farla
-        const chooser = (o.rivalChooses && testCond(G, P, src, o.rivalChooses)) ? R.id : P.id;
+        const chooser = ((o.rivalChooses && testCond(G, P, src, o.rivalChooses)) || ctx.rivalChooses) ? R.id : P.id;
+        if(o.bothIf && testCond(G, P, src, o.bothIf, cctx())){   // "If …, choose both instead"
+          say(G, `${P.name} ottiene entrambi gli effetti.`);
+          const run = k => { if(k >= o.alts.length){ next(); return; } runEffects(G, P, src, o.alts[k].ops, trigger, () => run(k + 1), { ...ctx, last }); }; run(0); break; }
         askE(chooser, "choice", o.alts.map(a => ({ label: a.text, alt: a })), o2 => { if(o2){ say(G, `${G.players[chooser].name} sceglie: «${o2.alt.text}»`); runEffects(G, P, src, o2.alt.ops, trigger, next, { ...ctx, last }); } else next(); }); break; }
-      case "discard": { let k = 0; const one = () => { if(k++ >= (o.n || 1) || !P.hand.length){ next(); return; } askE(P.id, "discard", P.hand.map(c => ({ label: c.card.dn, c })), o2 => { if(o2){ P.hand.splice(P.hand.indexOf(o2.c), 1); P.trash.push(o2.c); say(G, `${P.name} scarta ${o2.c.card.dn}.`); } one(); }); }; one(); break; }
+      case "rivalChooses": ctx.rivalChooses = true; say(G, `${R.name} sceglierà l'effetto al posto di ${P.name}.`); next(); break;
+      case "discard": { let k = 0; const one = () => { if(k++ >= (o.n || 1) || !P.hand.length){ next(); return; } askE(P.id, "discard", P.hand.map(c => ({ label: c.card.dn, c })), o2 => { if(o2){ P.hand.splice(P.hand.indexOf(o2.c), 1); P.trash.push(o2.c); ctx.card = o2.c; ctx.did = true; say(G, `${P.name} scarta ${o2.c.card.dn}.`); } one(); }); }; one(); break; }
       case "rivalDiscard": {
-        let k = 0; const one = () => { if(k++ >= o.n || !R.hand.length){ next(); return; } askE(R.id, "discard", R.hand.map(c => ({ label: c.card.dn, c })), o2 => { if(o2){ R.hand.splice(R.hand.indexOf(o2.c), 1); R.trash.push(o2.c); say(G, `${R.name} scarta ${o2.c.card.dn}.`); } one(); }); }; one(); break; }
+        let k = 0; const one = () => { if(k++ >= o.n || !R.hand.length){ next(); return; } askE(R.id, "discard", R.hand.map(c => ({ label: c.card.dn, c })), o2 => { if(o2){ R.hand.splice(R.hand.indexOf(o2.c), 1); R.trash.push(o2.c); ctx.card = o2.c; say(G, `${R.name} scarta ${o2.c.card.dn}.`); } one(); }); }; one(); break; }
       case "eachRedraw": { for(const Q of G.players){ const n = Q.hand.length; Q.trash.push(...Q.hand); Q.hand = []; say(G, `${Q.name} scarta ${n} carte.`); ctx.discarded = (ctx.discarded || 0) + n; }
         let i = 0; const one = () => { if(i >= 2){ next(); return; } const Q = G.players[(P.id + i) % 2]; i++; askE(Q.id, "yesno", [{ label: `Pesca ${o.n}`, v: true }, { label: "Non pescare", v: false }], o2 => { if(o2 && o2.v) draw(G, Q, o.n); one(); }); }; one(); break; }
-      case "eachDefeats": { let i = 0; const one = () => { if(i >= 2){ next(); return; } const Q = G.players[(P.id + i) % 2]; i++; if(!Q.field.length){ one(); return; } askE(Q.id, "target", unitOpts(G, Q.field), o2 => { if(o2){ say(G, `${Q.name} sconfigge ${o2.unit.card.dn}.`, "fight"); defeat(G, Q, o2.unit); } one(); }); }; one(); break; }
+      case "eachDefeats": { let i = 0; const one = () => { if(i >= 2){ next(); return; } const Q = G.players[(P.id + i) % 2]; i++; if(!Q.field.length){ one(); return; } askE(Q.id, "target", unitOpts(G, Q.field), o2 => { if(o2){ say(G, `${Q.name} sconfigge ${o2.unit.card.dn}.`, "fight"); defeat(G, Q, o2.unit, one); } else one(); }); }; one(); break; }
       case "buff": {
         const n = o.n * (o.per ? 0 : 1);
         const pool = o.equipped ? P.field.filter(u => (u.gear || []).length) : P.field;
         askE(P.id, "target", unitOpts(G, pool), o2 => { if(o2){ const add = o.per ? o.n * count(G, P, o2.unit, o.per) : o.n; o2.unit.mod = (o2.unit.mod || 0) + add; last = o2.unit; say(G, `${o2.unit.card.dn} +${add} potenza fino a fine turno.`); } next(); }); break; }
-      case "buffSelf": { const u = ctx.holder || src; if(P.field.includes(u) || u.isLegend || P.legends.includes(u)){ const add = o.eq === "maxGig" ? Math.max(0, ...vals(P)) : o.per ? o.n * count(G, P, u, o.per) : o.n; u.mod = (u.mod || 0) + add; say(G, `${u.card.dn} +${add} potenza fino a fine turno.`); } next(); break; }
+      case "buffSelf": { const u = ctx.holder || src; if(P.field.includes(u) || u.isLegend || P.legends.includes(u)){ const add = o.eq === "maxGig" ? Math.max(0, ...vals(P)) : o.eq === "revealedCost" ? (ctx.card ? ctx.card.card.cost ?? 0 : 0) : o.per ? o.n * count(G, P, u, o.per) : o.n; u.mod = (u.mod || 0) + add; say(G, `${u.card.dn} +${add} potenza fino a fine turno.`); } next(); break; }
       case "buffLast": { const u = last || ctx.last || ctx.unit; if(u){ u.mod = (u.mod || 0) + o.n; say(G, `${u.card.dn} +${o.n} potenza fino a fine turno.`); } next(); break; }
       case "gig": {
         const pick = o.ctx && ctx.gig ? [{ label: `d${ctx.gig.sides} = ${ctx.gig.value}`, gig: ctx.gig }] : P.gigs.map(g => ({ label: `d${g.sides} = ${g.value}`, gig: g }));
@@ -692,22 +802,50 @@ function runEffects(G, P, src, ops, trigger, done, ctx = {}){
         }); break; }
       case "defeat": {
         const maxP = o.maxFrom === "d20" ? Math.max(-1, ...P.gigs.filter(g => g.sides === 20).map(g => g.value)) : o.max;
+        const maxC = o.maxFrom === "discarded" ? (ctx.card ? ctx.card.card.cost ?? 0 : -1) : o.max;
         const friendlyMax = Math.max(-1, ...P.field.map(u => power(u)));
-        const pool = (o.any ? [...P.field, ...R.field] : R.field).filter(u => (!o.spentOnly || u.spent) && (o.by === "power" ? power(u) <= maxP : o.by === "cost" ? (u.card.cost ?? 0) <= o.max : true) && (!o.lessThanFriendly || power(u) < friendlyMax));
-        askE(P.id, "target", unitOpts(G, pool), o2 => { if(o2){ const owner = P.field.includes(o2.unit) ? P : R; say(G, `${o2.unit.card.dn} sconfitta da ${src.card.dn}.`, "fight"); defeat(G, owner, o2.unit); } next(); }); break; }
-      case "defeatOpponent": { const opp = ctx.opponent; const owner = opp && (P.field.includes(opp) ? P : R.field.includes(opp) ? R : null); if(owner){ say(G, `${opp.card.dn} sconfitta.`, "fight"); defeat(G, owner, opp); } next(); break; }
+        const pool = (o.any ? [...P.field, ...R.field] : R.field).filter(u => (!o.spentOnly || u.spent) && (o.by === "power" ? power(u) <= maxP : o.by === "cost" ? (u.card.cost ?? 0) <= maxC : true) && (!o.lessThanFriendly || power(u) < friendlyMax));
+        askE(P.id, "target", [...unitOpts(G, pool), ...(o.may ? [{ label: "Nessuna", unit: null }] : [])], o2 => { if(o2 && o2.unit){ const owner = P.field.includes(o2.unit) ? P : R; say(G, `${o2.unit.card.dn} sconfitta da ${src.card.dn}.`, "fight"); defeat(G, owner, o2.unit, next); } else next(); }); break; }
+      case "repeatPrev": { if(prev && prev.op === "defeat"){ for(let k = 0; k < o.n; k++) queue.unshift({ ...prev, may: true, cond: null }); } next(); break; }
+      case "defeatOpponent": { const opp = ctx.opponent; const owner = opp && (P.field.includes(opp) ? P : R.field.includes(opp) ? R : null); if(owner){ say(G, `${opp.card.dn} sconfitta.`, "fight"); defeat(G, owner, opp, next); } else next(); break; }
       case "defeatGear": {
         const pool = []; for(const u of R.field) for(const g of u.gear || []) if((g.card.power ?? 0) <= o.max) pool.push({ label: `${g.card.dn} su ${u.card.dn}`, g, u });
         askE(P.id, "target", pool, o2 => { if(o2){ o2.u.gear.splice(o2.u.gear.indexOf(o2.g), 1); R.trash.push(o2.g); say(G, `${o2.g.card.dn} sconfitto.`); } next(); }); break; }
-      case "defeatAllOther": { for(const u of [...P.field.filter(x => x !== src), ...R.field]){ const owner = P.field.includes(u) ? P : R; defeat(G, owner, u); } say(G, "Tutte le altre Unità sono sconfitte."); next(); break; }
+      case "defeatAllOther": { const all = [...P.field.filter(x => x !== src), ...R.field]; say(G, "Tutte le altre Unità sono sconfitte."); const run = k => { if(k >= all.length){ next(); return; } const u = all[k], owner = P.field.includes(u) ? P : R; defeat(G, owner, u, () => run(k + 1)); }; run(0); break; }
       case "spendAll": for(const u of R.field) u.spent = true; say(G, `Tutte le Unità di ${R.name} sono spese.`); next(); break;
-      case "spend": askE(P.id, "target", unitOpts(G, R.field.filter(u => !u.spent && (o.max == null || (u.card.cost ?? 0) <= o.max))), o2 => { if(o2){ o2.unit.spent = true; last = o2.unit; if(o.lock) o2.unit.cantReady = true; say(G, `${o2.unit.card.dn} viene spesa${o.lock ? " e non si prepara al prossimo turno" : ""}.`); } next(); }); break;
+      case "spend": { let k = 0; const K = o.per ? times : 1; const one = () => { if(k++ >= K){ next(); return; } askE(P.id, "target", unitOpts(G, R.field.filter(u => !u.spent && (o.max == null || (u.card.cost ?? 0) <= o.max))), o2 => { if(o2){ o2.unit.spent = true; last = o2.unit; if(o.lock) o2.unit.cantReady = true; say(G, `${o2.unit.card.dn} viene spesa${o.lock ? " e non si prepara al prossimo turno" : ""}.`); one(); } else next(); }); }; one(); break; }
       case "spendLock": askE(P.id, "target", unitOpts(G, R.field), o2 => { if(o2){ o2.unit.cantReady = true; say(G, `${o2.unit.card.dn} non si preparerà al prossimo turno.`); } next(); }); break;
       case "lockLast": if(last){ last.cantReady = true; } next(); break;
-      case "cantAttackUntil": askE(P.id, "target", unitOpts(G, R.field), o2 => { if(o2){ o2.unit.lockAttackBy = P.id; say(G, `${o2.unit.card.dn} non può attaccare fino al prossimo turno di ${P.name}.`); } next(); }); break;
+      case "cantAttackUntil": askE(P.id, "target", unitOpts(G, o.any ? [...R.field, ...P.field] : R.field), o2 => { if(o2){ o2.unit.lockAttackBy = P.id; say(G, `${o2.unit.card.dn} non può attaccare fino al prossimo turno di ${P.name}.`); } next(); }); break;
+      case "mustAttack": askE(P.id, "target", unitOpts(G, R.field), o2 => { if(o2){ o2.unit.mustAttack = true; say(G, `${o2.unit.card.dn} dovrà attaccare nel prossimo turno di ${R.name}, se può.`); } next(); }); break;
+      case "debuff": { const pool = R.field.slice().sort((a, b) => (b === G.attacker) - (a === G.attacker)); const n = o.eq === "selfPower" ? power(ctx.holder || src) : o.n;
+        askE(P.id, "target", unitOpts(G, pool), o2 => { if(o2){ o2.unit.mod = (o2.unit.mod || 0) - n; last = o2.unit; say(G, `${o2.unit.card.dn} -${n} potenza fino a fine turno (ora ${power(o2.unit)}).`); } next(); }); break; }
+      case "debuffAll": for(const u of R.field){ u.mod = (u.mod || 0) - o.n; } say(G, `Tutte le Unità di ${R.name} hanno -${o.n} potenza fino a fine turno.`); next(); break;
+      case "bottomDeckAll": { const list = R.field.filter(u => power(u) <= o.maxPower); for(const u of list) bottomDeckUnit(G, R, u); if(!list.length) say(G, `Nessuna Unità rivale con potenza ${o.maxPower}.`); next(); break; }
+      case "stealLess": { const pool = R.field.slice().sort((a, b) => (b === G.attacker) - (a === G.attacker));
+        askE(P.id, "target", unitOpts(G, pool), o2 => { if(o2){ o2.unit.stealLess = (o2.unit.stealLess || 0) + o.n; ctx.unit = o2.unit; say(G, `${o2.unit.card.dn} ruba ${o.n} Gig in meno in questo turno.`); } next(); }); break; }
+      case "goSoloDiscount": P.goSoloDiscount = { n: o.n, min: o.min }; say(G, `Il prossimo Go Solo di ${P.name} costa -${o.n} €$ (minimo ${o.min}) in questo turno.`); next(); break;
+      case "nextProgramDiscount": P.programDiscountMin = o.n; say(G, `Il prossimo Programma di ${P.name} costa -${o.n} €$ per ogni Gig al minimo (minimo ${o.min}).`); next(); break;
+      case "flag": P[o.flag] = o.n || true; say(G, `${P.name}: «${o.text}»`); next(); break;
+      case "doomLast": { const u = last || ctx.last; if(u){ u.doomIfActs = true; say(G, `${u.card.dn}: se ruba o combatte, sarà sconfitta a fine turno.`); } next(); break; }
+      case "stealLimit": P.stealLimit = { ...(P.stealLimit || {}), [o.who]: o.mode }; say(G, `${P.name}: «${o.text}»`); next(); break;
+      case "readyEquipped": { let k = 0; for(const x of [...P.field, ...P.legends.filter(l => l.faceUp && !l.removed && !l.onField)]) if((x.gear || []).length && x.spent){ x.spent = false; k++; } say(G, `${P.name} prepara ${k} Unità/Leggende equipaggiate.`); next(); break; }
+      case "rerollOnce": { const g = ctx.gig; if(!g){ next(); break; }
+        askE(P.id, "yesno", [{ label: `Ritira il d${g.sides} (ora ${g.value})`, v: true }, { label: `Tieni ${g.value}`, v: false }], o2 => { if(o2 && o2.v){ const v = rollDie(g.sides, G.rng); say(G, `${P.name} ritira il d${g.sides}: ${v} (era ${g.value}).`, "gig"); g.value = v; } next(); }, { reroll: g }); break; }
+      case "revealRivalChoice": { const top = P.deck.splice(0, Math.min(o.n, P.deck.length)); if(!top.length){ next(); break; }
+        say(G, `${P.name} rivela ${top.map(c => c.card.dn).join(", ")}.`);
+        askE(R.id, "choice", [{ label: `${P.name} le aggiunge alla mano`, v: "hand" }, { label: `Vanno nel trash e ${P.name} pesca ${o.draw}`, v: "trash" }], o2 => {
+          if(o2 && o2.v === "trash"){ P.trash.push(...top); say(G, `${R.name} le manda nel trash.`); draw(G, P, o.draw); } else { P.hand.push(...top); say(G, `${R.name} le lascia andare in mano a ${P.name}.`); } next(); }, { reveal: top }); break; }
+      case "searchTrash": { const top = P.deck.splice(0, Math.min(o.n, P.deck.length)); if(!top.length){ next(); break; }
+        say(G, `${P.name} guarda le prime ${top.length} carte del mazzo.`); let k = 0;
+        const one = () => { const pool = top.filter(c => !P.trash.includes(c)); if(k >= o.k || !pool.length){ P.deck.unshift(...pool); next(); return; }
+          askE(P.id, "pickcard", pool.map(c => ({ label: `Trash ${c.card.dn}`, c })), o2 => { if(o2){ P.trash.push(o2.c); say(G, `${P.name} manda ${o2.c.card.dn} nel trash.`); k++; } one(); }); }; one(); break; }
+      case "chooseTypeReveal": { if(!P.deck.length){ next(); break; }
+        askE(P.id, "choice", ["Unit", "Gear", "Program"].map(t => ({ label: t, v: t })), o2 => { const t = o2 ? o2.v : "Unit"; const c = P.deck.shift(); say(G, `${P.name} sceglie «${t}» e rivela ${c.card.dn} (${c.card.type}).`);
+          if(c.card.type === t){ P.hand.push(c); let k = 0; for(const e of P.eddies) if(e.spent && k < o.eddies){ e.spent = false; k++; } say(G, `${c.card.dn} va in mano e ${P.name} prepara ${k} Eddie.`); } else { P.trash.push(c); say(G, `${c.card.dn} va nel trash.`); } next(); }, { typeChoice: true }); break; }
       case "bottomDeck": {
         const Q = o.who === "rival" ? R : P;
-        let pool = Q.field.filter(u => (!o.unequipped || !(u.gear || []).length) && (!o.spentOnly || u.spent) && (!o.readyOnly || !u.spent));
+        let pool = Q.field.filter(u => (!o.unequipped || !(u.gear || []).length) && (!o.spentOnly || u.spent) && (!o.readyOnly || !u.spent) && (o.maxPower == null || power(u) <= o.maxPower));
         if(o.lowest && pool.length){ const m = Math.min(...pool.map(power)); pool = pool.filter(u => power(u) === m); }
         askE(P.id, "target", unitOpts(G, pool), o2 => { if(o2){ bottomDeckUnit(G, Q, o2.unit); if(o.then) runEffects(G, P, src, o.then, trigger, next, ctx); else next(); } else next(); }); break; }
       case "bottomDeckSelf": { const u = ctx.holder || src; if(P.field.includes(u)) bottomDeckUnit(G, P, u); next(); break; }
@@ -716,7 +854,9 @@ function runEffects(G, P, src, ops, trigger, done, ctx = {}){
         if(!gears.length || !targets.length){ next(); break; }
         askE(P.id, "pickcard", [...gears.map(g => ({ label: g.card.dn, g })), { label: "Nessuno", g: null }], a => { if(!a || !a.g){ next(); return; }
           askE(P.id, "target", unitOpts(G, targets), b => { if(b){ l.gear.splice(l.gear.indexOf(a.g), 1); b.unit.gear = b.unit.gear || []; b.unit.gear.push(a.g); say(G, `${a.g.card.dn} passa a ${b.unit.card.dn}.`); if(o.readyIt && b.unit.spent){ b.unit.spent = false; say(G, `${b.unit.card.dn} è di nuovo pronta.`); } } next(); }); }); break; }
-      case "peekLegend": { const fd = P.legends.filter(l => !l.faceUp && !l.removed); if(fd.length){ G.events.push({ kind: "peek", p: P.id, legends: (o.all ? fd : [fd[0]]).map(l => l.card.dn) }); say(G, `${P.name} guarda ${o.all ? "le Leggende coperte" : "una Leggenda coperta"} (solo lui ne vede il nome).`); } next(); break; }
+      case "peekLegend": { const fd = P.legends.filter(l => !l.faceUp && !l.removed); if(!fd.length){ next(); break; }
+        if(o.pick){ askE(P.id, "pickcard", [...fd.map(l => ({ label: `Guarda la Leggenda coperta ${P.legends.indexOf(l) + 1}`, l })), { label: "Nessuna", l: null }], o2 => { if(o2 && o2.l){ ctx.peeked = o2.l; G.events.push({ kind: "peek", p: P.id, legends: [o2.l.card.dn] }); say(G, `${P.name} guarda una Leggenda coperta (solo lui ne vede il nome).`); } next(); }); break; }
+        G.events.push({ kind: "peek", p: P.id, legends: (o.all ? fd : [fd[0]]).map(l => l.card.dn) }); say(G, `${P.name} guarda ${o.all ? "le Leggende coperte" : "una Leggenda coperta"} (solo lui ne vede il nome).`); next(); break; }
       case "manualText": case "manual": say(G, `${src.card.dn} — effetto manuale: «${o.text}»`, "manual"); G.events.push({ kind: "manual", p: P.id, card: src.card.dn, text: o.text }); next(); break;
       default: next();
     }
@@ -761,13 +901,13 @@ export function legalActions(G, pi){
   if(G.winner != null || G.pending || G.active !== pi || G.phase !== "main") return acts;
   if(!P.sold) for(const c of P.hand) if(c.card.eddiable) acts.push({ t: "sell", uid: c.uid, card: c });
   for(const c of P.hand){
-    const cost = c.card.cost ?? 0; if(!canPay(P, cost)) continue;
+    const cost = costOf(G, P, c); if(!canPay(P, cost)) continue;
     if(c.card.type === "Gear"){ for(const t of [...P.field, ...P.legends.filter(l => l.faceUp && !l.removed && !l.onField)]) acts.push({ t: "play", uid: c.uid, card: c, target: t.uid, targetObj: t }); }
     else acts.push({ t: "play", uid: c.uid, card: c });
   }
   if(!P.called && canPay(P, 1) && P.legends.some(l => !l.faceUp && !l.removed)) acts.push({ t: "call" });
-  P.legends.forEach((l, i) => { if(!l.removed && !l.onField && l.faceUp && (l.card.kw || []).includes("Go Solo") && l.card.cost != null && canPay(P, l.card.cost)) acts.push({ t: "gosolo", idx: i, legend: l }); });
-  for(const x of [...P.field, ...P.legends.filter(l => l.faceUp && !l.removed && !l.onField)]) if(x.fx.spend.length && !x.spent && !x.lag && ready(P) - (P.legends.includes(x) ? 1 : 0) >= +((x.card.text.match(/(\d+)\s*€\$,\s*\{Spend\}/) || [])[1] || 0)) acts.push({ t: "spend", uid: x.uid, obj: x });
+  P.legends.forEach((l, i) => { if(!l.removed && !l.onField && l.faceUp && (l.card.kw || []).includes("Go Solo") && l.card.cost != null && canPay(P, goSoloCost(G, P, l))) acts.push({ t: "gosolo", idx: i, legend: l }); });
+  for(const x of [...P.field, ...P.legends.filter(l => l.faceUp && !l.removed && !l.onField)]) if(hasSpend(x) && !x.spent && !x.lag && ready(P) - (P.legends.includes(x) ? 1 : 0) >= spendCost(G, P, x)) acts.push({ t: "spend", uid: x.uid, obj: x, src: spendSrc(x) });
   for(const u of P.field){
     if(!canAttack(G, P, u)) continue;
     for(const t of R.field) if(t.spent) acts.push({ t: "attack", uid: u.uid, unit: u, target: { kind: "unit", uid: t.uid }, targetObj: t });

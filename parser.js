@@ -20,7 +20,7 @@ const CONDS = [
   [/^you have (more|less) ☆ than a rival$/i, m => ({ c: "credCmp", d: m[1].toLowerCase() })],
   [/^your ☆ is an even number$/i, () => ({ c: "credEven" })],
   [/^your ☆ differs from a rival's by (\d+)\+$/i, m => ({ c: "credDiff", n: +m[1] })],
-  [/^a rival controls at least (\d+) more gigs than you$/i, m => ({ c: "rivalMoreGigs", n: +m[1] })],
+  [/^a rival controls at least (\d+) (?:more gigs than you|gigs more than you)$/i, m => ({ c: "rivalMoreGigs", n: +m[1] })],
   [/^a rival controls more gigs than you$/i, () => ({ c: "rivalMoreGigs", n: 1 })],
   [/^all friendly legends are face-up$/i, () => ({ c: "allLegendsUp" })],
   [/^this unit has power (\d+)\+$/i, m => ({ c: "selfPower", n: +m[1] })],
@@ -38,6 +38,14 @@ const CONDS = [
   [/^that unit is an ai, drone, or vehicle$/i, () => ({ c: "ctxUnitCls", cls: ["AI", "DRONE", "VEHICLE"] })],
   [/^it's a rocker unit$/i, () => ({ c: "ctxUnitCls", cls: ["ROCKER"] })],
   [/^5 or more friendly units and\/or legends are spent$/i, () => ({ c: "spentCount", n: 5 })],
+  [/^(\d+) or more friendly units and\/or legends are equipped$/i, m => ({ c: "equippedCount", n: +m[1] })],
+  [/^you have less than (\d+) ☆$/i, m => ({ c: "credLess", n: +m[1] })],
+  [/^a friendly d4 is a min gig$/i, () => ({ c: "d4Min" })],
+  [/^your fixer area is empty$/i, () => ({ c: "fixerEmpty" })],
+  [/^you do$/i, () => ({ c: "did" })],
+  [/^the total number of discarded cards equals the value of a friendly gig$/i, () => ({ c: "discardedEqualsGig" })],
+  [/^the card's cost equals the value of a friendly gig$/i, () => ({ c: "ctxCostEqualsGig" })],
+  [/^that legend is arasaka or has \{go solo\}$/i, () => ({ c: "peekedTag", cls: "ARASAKA", kw: "Go Solo" })],
 ];
 export function parseCond(s){
   s = s.replace(/\s+/g, " ").replace(/\(street cred\)/i, "").replace(/\s+/g, " ").trim().replace(/\.$/, "");
@@ -67,6 +75,33 @@ function parseCounter(s){
 /* ---------------- effetti di una frase */
 const RX = [
   [/^draw (\d+)$/i, m => ({ op: "draw", n: +m[1] })],
+  [/^give a rival unit -(\d+) power this turn$/i, m => ({ op: "debuff", n: +m[1] })],
+  [/^give all rival units -(\d+) power this turn$/i, m => ({ op: "debuffAll", n: +m[1] })],
+  [/^a rival unit loses power equal to this unit's power this turn$/i, () => ({ op: "debuff", eq: "selfPower" })],
+  [/^bottom-deck a rival unit with power (\d+)$/i, m => ({ op: "bottomDeck", who: "rival", maxPower: +m[1] })],
+  [/^bottom-deck all rival units with power (\d+)$/i, m => ({ op: "bottomDeckAll", who: "rival", maxPower: +m[1] })],
+  [/^that rival discards (\d+) more$/i, m => ({ op: "rivalDiscard", n: +m[1] })],
+  [/^spend a rival unit for each (.+)$/i, m => ({ op: "spend", per: parseCounter(m[1]) })],
+  [/^you may defeat (\d+) instead$/i, m => ({ op: "repeatPrev", n: +m[1] - 1 })],
+  [/^a rival unit must attack next turn if it can$/i, () => ({ op: "mustAttack" })],
+  [/^a unit can't attack until your next turn$/i, () => ({ op: "cantAttackUntil", any: true })],
+  [/^a friendly legend may use \{go solo\} for -(\d+) €\$ this turn, to a minimum of (\d+) €\$$/i, m => ({ op: "goSoloDiscount", n: +m[1], min: +m[2] })],
+  [/^your next program this turn plays for -(\d+) €\$ for each friendly min gig, to a minimum of (\d+) €\$$/i, m => ({ op: "nextProgramDiscount", n: +m[1], min: +m[2] })],
+  [/^a rival unit steals (\d+) fewer gigs? this turn$/i, m => ({ op: "stealLess", n: +m[1] })],
+  [/^the next time a friendly unit wins a fight by (\d+)\+ power this turn, it also steals a gig$/i, m => ({ op: "flag", flag: "winBySteal", n: +m[1] })],
+  [/^the next time a rival unit fights this turn, it doesn't defeat the opposing friendly unit$/i, () => ({ op: "flag", flag: "noDefeatNextFight" })],
+  [/^the next time a friendly unit loses a fight this turn, defeat the opposing rival unit$/i, () => ({ op: "flag", flag: "punishNextLoss" })],
+  [/^if that unit steals or fights, defeat it at the end of this turn$/i, () => ({ op: "doomLast" })],
+  [/^until your next turn, rival units can't steal friendly gigs with value higher than their power$/i, () => ({ op: "stealLimit", who: "units", mode: "higher" })],
+  [/^until your next turn, rival legends can't steal friendly gigs with value less than their power$/i, () => ({ op: "stealLimit", who: "legends", mode: "less" })],
+  [/^you may decrease a (?:friendly )?gig by up to (\d+)$/i, m => ({ op: "gig", n: +m[1], mode: "down" })],
+  [/^defeat a spent rival unit with cost equal to or less than the discarded card's cost$/i, () => ({ op: "defeat", spentOnly: true, by: "cost", maxFrom: "discarded" })],
+  [/^this unit gains power equal to that card's cost this turn$/i, () => ({ op: "buffSelf", eq: "revealedCost" })],
+  [/^ready them$/i, () => ({ op: "readyEquipped" })],
+  [/^you may ignore the result and reroll it once$/i, () => ({ op: "rerollOnce" })],
+  [/^(?:then, )?you may look at a friendly face-down legend$/i, () => ({ op: "peekLegend", pick: true })],
+  [/^you may call it for free$/i, () => ({ op: "freeCall", peeked: true })],
+  [/^they instead choose one effect for you$/i, () => ({ op: "rivalChooses" })],
   [/^draw (\d+) for each (.+)$/i, m => ({ op: "draw", n: +m[1], per: parseCounter(m[2]) })],
   [/^trash (\d+)$/i, m => ({ op: "mill", n: +m[1] })],
   [/^trash the top card of your deck$/i, () => ({ op: "mill", n: 1 })],
@@ -163,8 +198,14 @@ const LINE_RX = [
   [/^you may discard (\d+) programs?\.\s*if you do, (.+?\.)/i, m => ({ op: "mayDo", kind: "discardPrograms", n: +m[1], then: parseBody(m[2]) })],
   [/^you may discard 1 with cost equal to that gig's value\.\s*if you do, the gig isn't stolen\.?/i, () => ({ op: "manualText" })],
   [/^play a (unit|gear|program) with cost (\d+) or less from your hand for free\.?/i, m => ({ op: "playFree", type: cap(m[1]), maxCost: +m[2], from: "hand" })],
-  [/^you may play a (unit|gear|program) with cost (\d+) or less from your (hand or trash|trash|hand) for free\.\s*(it can attack rival units this turn\.)?/i, m => ({ op: "playFree", type: cap(m[1]), maxCost: +m[2], from: m[3].toLowerCase(), noLagUnits: !!m[4] })],
   [/^you may play a program with cost (\d+) or less from your (hand or trash|trash|hand) for free\.\s*bottom-deck it after you play it\.?/i, m => ({ op: "playFree", type: "Program", maxCost: +m[1], from: m[2].toLowerCase(), bottomAfter: true })],
+  [/^play a (\w+) gear with cost (\d+) or less from your trash for free\.\s*equip it only to another friendly unit\.?/i, m => ({ op: "playFree", type: "Gear", cls: m[1].toUpperCase(), maxCost: +m[2], from: "trash", onlyOtherUnits: true })],
+  [/^you may play a (unit|gear|program) with cost (\d+) or less from your (hand or trash|trash|hand) for free\.\s*(it can attack rival units this turn\.)?/i, m => ({ op: "playFree", type: cap(m[1]), maxCost: +m[2], from: m[3].toLowerCase(), noLagUnits: !!m[4] })],
+  [/^reveal the top card of your deck and add it to your hand\.\s*/i, () => [{ op: "revealTop" }, { op: "takeRevealed" }]],
+  [/^reveal the top (\d+) cards of your deck\.\s*a rival chooses whether you add them to your hand or trash them\.\s*if you trash them, draw (\d+)\.?/i, m => ({ op: "revealRivalChoice", n: +m[1], draw: +m[2] })],
+  [/^search the top (\d+) cards of your deck and trash (\d+)\.?/i, m => ({ op: "searchTrash", n: +m[1], k: +m[2] })],
+  [/^choose a card type\.\s*then, reveal the top card of your deck\.\s*if it's the chosen type, add it to your hand and ready (\d+) eddie\.\s*otherwise, trash it\.?/i, m => ({ op: "chooseTypeReveal", eddies: +m[1] })],
+  [/^you may discard (\d+)\.\s*if you do, (.+?\.)/i, m => ({ op: "mayDo", kind: "discard", n: +m[1], then: parseBody(m[2]) })],
   [/^play a program from your trash\.\s*bottom-deck it after you play it\.?/i, () => ({ op: "playFree", type: "Program", maxCost: 99, from: "trash", pay: true, bottomAfter: true })],
   [/^you may call a legend for free\.?/i, () => ({ op: "freeCall" })],
   [/^swap a friendly gig with a rival gig\.?/i, () => ({ op: "swapGig" })],
@@ -175,7 +216,7 @@ const LINE_RX = [
   [/^bottom-deck a ready friendly unit\.\s*if you do, bottom-deck a spent rival unit\.?/i, () => ({ op: "bottomDeck", who: "friendly", readyOnly: true, then: [{ op: "bottomDeck", who: "rival", spentOnly: true }] })],
   [/^give a friendly unit these effects\.\s*/i, () => ({ op: "chooseForUnit" })],
   [/^the next time this unit attacks this turn, it may attack ready units\.?/i, () => ({ op: "grantLast", flag: "attackReady" })],
-  [/^give this unit \+(\d+) power this turn\.?/i, m => ({ op: "buffLast", n: +m[1] })],
+  [/^give this unit \+(\d+) power this turn\.?$/i, m => ({ op: "buffLast", n: +m[1] })],
 ];
 
 export function parseBody(body){
@@ -195,8 +236,15 @@ export function parseBody(body){
     let t = sentences[i];
     let cond = null, negate = false;
     // "If COND, EFFECT." / "Then, if COND, EFFECT." / "Otherwise, EFFECT."
-    let m = t.match(/^(?:then, )?if (.+?), (.+)$/i);
-    if(m){ cond = parseCond(m[1]); if(!cond){ ops.push({ op: "manual", text: t }); lastCond = null; continue; } t = m[2]; }
+    let m = t.match(/^(?:then, )?if (.+)$/i);
+    if(m && parseOne(t)){ m = null; }   // "If that Unit steals or fights, defeat it…": frase intera già nota
+    if(m){
+      // la condizione può contenere virgole ("that Unit is an AI, DRONE, or VEHICLE"): prova ogni taglio
+      const body = m[1], parts = body.split(", "); let found = null;
+      for(let k = 1; k < parts.length && !found; k++){ const c = parseCond(parts.slice(0, k).join(", ")); if(c) found = { cond: c, rest: parts.slice(k).join(", ") }; }
+      if(!found){ ops.push({ op: "manual", text: t }); lastCond = null; continue; }
+      cond = found.cond; t = found.rest;
+    }
     else if((m = t.match(/^otherwise, (.+)$/i)) && lastCond){ cond = lastCond; negate = true; t = m[1]; }
     else if((m = t.match(/^then, (.+)$/i))) t = m[1];
     // "…, EFFETTO instead." sostituisce l'effetto precedente quando la condizione vale
@@ -212,6 +260,12 @@ export function parseBody(body){
 function parseOne(t){
   t = t.replace(/\.$/, "").trim();
   for(const [rx, mk] of RX){ const m = t.match(rx); if(m){ const r = mk(m); if(Array.isArray(r) ? r.every(Boolean) : r){ if(r.per === null) return null; return r; } } }
+  // "draw 1, then discard 1"
+  const parts = t.split(/,\s*then\s+/i);
+  if(parts.length > 1){ const ops = parts.map(x => parseOne(x)); if(ops.every(Boolean)) return ops.flat(); }
+  // "EFFETTO if CONDIZIONE"
+  const m = t.match(/^(.+?) if (.+)$/i);
+  if(m){ const cond = parseCond(m[2]); const r = parseOne(m[1]); if(cond && r) return [].concat(r).map(o => ({ ...o, cond })); }
   return null;
 }
 
@@ -238,7 +292,11 @@ function parseStatics(text, out){
   if(/rivals must pay \+2 €\$ to use \{go solo\}/i.test(clean)) out.goSoloTax = 2;
   if((m = clean.match(/if a rival controls at least (\d+) more gigs than you, play this program for (\d+) €\$/i))) out.costIf = { cond: { c: "rivalMoreGigs", n: +m[1] }, cost: +m[2] };
   if(/if this unit would be defeated, defeat its "deadman transmitter" instead/i.test(clean)) out.deadman = true;
-  if(/a rival unit loses power equal to this unit's power while attacking/i.test(clean)) out.manualStatic = true;
+  if(/if a friendly unit would be defeated, you may pay (\d+) €\$ to defeat this legend instead/i.test(clean)) out.saveUnitPay = +clean.match(/pay (\d+) €\$/i)[1];
+  if((m = clean.match(/this effect costs -(\d+) €\$ for each (.+?)\./i))){ const per = parseCounter(m[2]); if(per) out.spendCostReduce = { n: +m[1], per }; }
+  if((m = clean.match(/play your first (\w+) gear each turn for -(\d+) €\$, to a minimum of (\d+) €\$/i))) out.firstGearDiscount = { cls: m[1].toUpperCase(), n: +m[2], min: +m[3] };
+  if(/when a rival unit would steal a gig, you may discard 1 with cost equal to that gig's value/i.test(clean)) out.preventStealDiscard = true;
+  if((m = clean.match(/if your fixer area is empty, play this program for (\d+) €\$/i))) out.costIf = { cond: { c: "fixerEmpty" }, cost: +m[1] };
 }
 
 /* ---------------- struttura finale */
@@ -248,21 +306,24 @@ export function parseEffects(text){
     quick: false, cantAttack: false, onlyUnits: false };
   if(!text) return out;
   parseStatics(text, out);
-  const lines = text.replace(/\([^)]*\)/g, " ").replace(/\[[^\]]*\]/g, " ").split(/\n/).map(l => l.replace(/\s+/g, " ").trim()).filter(Boolean);
-  let key = "passive", chooseFor = null;
+  const lines = text.split(/\n/).filter(l => !/^\s*\[Flavou?r/i.test(l)).join("\n").replace(/\([^)]*\)/g, " ").replace(/\[[^\]]*\]/g, " ").split(/\n/).map(l => l.replace(/\s+/g, " ").trim()).filter(Boolean)
+    .flatMap(l => l.split(/(?<=\.)\s+(?=(?:At the (?:end|start) of your turn,|When |The first time |Until your next turn,|Choose one effect\.))/i));
+  let key = "passive", chooseFor = null, chooseBothIf = null;
   for(const l of lines){
     const head = l.replace(/^(\{Quick\}\s*|\d+\s*€\$,?\s*)+/i, "");
     const trig = head.match(/^\{(Play|Call|Attack|Defeated|Spend)\}/i);
     const triggers = (head.match(/^(\{(Play|Call|Attack|Defeated|Spend)\}:?\s*)+/i) || [""])[0].match(/Play|Call|Attack|Defeated|Spend/gi) || [];
     if(trig) key = trig[1].toLowerCase(); else if(!chooseFor) key = "passive";
     let body = l.replace(/^(\{[^}]+\}:?\s*|[\d]+\s*€\$,?\s*)+/g, "").trim();
-    if(/^choose one effect\.?$/i.test(body)){ chooseFor = key; continue; }
+    const cm = body.match(/^choose one effect\.(?:\s*if (.+?), choose both instead\.?)?$/i);
+    if(cm){ chooseFor = key; chooseBothIf = cm[1] ? parseCond(cm[1]) : null; continue; }
     // eventi: "When …, EFFECT" / "At the end of your turn, EFFECT" / "The first time … each turn, EFFECT"
     let ev = null, evCond = null, once = false, m;
     const EV = [
       [/^when this unit steals a gig, (.+)$/i, "steal"], [/^when a friendly unit steals a d(\d+), (.+)$/i, "friendlyStealDie"],
       [/^when a friendly legend steals a gig, (.+)$/i, "legendSteal"], [/^when a friendly (\w+) or (\w+) unit steals 1 or more gigs, (.+)$/i, "friendlyStealCls"],
-      [/^when this unit uses \{blocker\}, (.+)$/i, "block"], [/^when this unit wins a fight(?: against a rival unit)?, (.+)$/i, "winFight"],
+      [/^when this unit uses \{blocker\}, (.+)$/i, "block"], [/^when a friendly unit uses \{blocker\}, (.+)$/i, "friendlyBlock"],
+      [/^when you roll in a gig from your fixer area, (.+)$/i, "rollIn"], [/^when this unit wins a fight(?: against a rival unit)?, (.+)$/i, "winFight"],
       [/^when this unit loses a fight, (.+)$/i, "loseFight"], [/^when this unit or legend is spent, (.+)$/i, "hostSpent"],
       [/^when a friendly equipped unit or legend is spent, (.+)$/i, "anyEquippedSpent"], [/^when a friendly equipped unit is defeated, (.+)$/i, "defeatedFriendlyEquipped"],
       [/^when you play a (\w+) program, (.+)$/i, "playProgramCls"], [/^when a rival adjusts or swaps 1 or more friendly gigs, (.+)$/i, "rivalAdjust"],
@@ -298,11 +359,11 @@ export function parseEffects(text){
     let ops;
     if(body.includes("//")){
       const alts = body.split(/\s*\/\/\s*/).map(a => ({ text: a.trim(), ops: parseBody(a) }));
-      ops = [{ op: "choose", alts, text: body }];
-      if(chooseFor){ key = chooseFor; chooseFor = null; }
+      ops = [{ op: "choose", alts, text: body, bothIf: chooseBothIf }];
+      if(chooseFor){ key = chooseFor; chooseFor = null; chooseBothIf = null; }
     } else ops = parseBody(body);
     // frasi puramente statiche già gestite altrove: non vanno segnalate come manuali
-    const STATIC = /^(this unit can't attack|this unit can only attack|play this (unit|program|gear) for -|this unit has \+\d+ power while|other friendly units have|friendly \w+ units have|a friendly unit has \+\d+ power for each|during your turn, this legend has|this unit wins all fights|if you have (more|less) ☆.*can't be blocked|if you have more ☆.*can attack ready units|if a rival controls more gigs than you, this unit can attack|if a rival controls at least \d+ more gigs than you, this unit has|rival units can't attack the turn|rivals must pay|if a rival controls at least \d+ more gigs than you, play this program|if this unit would be defeated, defeat its|\{adrenaline\}|\{blocker\}|\{go solo\}|["“].*["”]$)/i;
+    const STATIC = /^(this unit can't attack|this unit can only attack|play this (unit|program|gear) for -|this unit has \+\d+ power while|other friendly units have|friendly \w+ units have|a friendly unit has \+\d+ power for each|during your turn, this legend has|this unit wins all fights|if you have (more|less) ☆.*can't be blocked|if you have more ☆.*can attack ready units|if a rival controls more gigs than you, this unit can attack|if a rival controls at least \d+ more gigs than you, this unit has|rival units can't attack the turn|rivals must pay|if a rival controls at least \d+ more gigs than you, play this program|if this unit would be defeated, defeat its|this effect costs -|play your first \w+ gear each turn|when a rival unit would steal a gig|if you do, the gig isn't stolen|if a friendly unit would be defeated, you may pay|if your fixer area is empty, play this program|choose one effect|\{adrenaline\}|\{blocker\}|\{go solo\}|["“].*["”]$)/i;
     ops = ops.filter(o => !(o.op === "manual" && STATIC.test(o.text)));
     const keys = triggers.length > 1 ? triggers.map(t => t.toLowerCase()) : [key];
     for(const k of keys){ if(k === "passive") out.passive.push(...ops.filter(o => o.op !== "manual")); else out[k].push(...ops); }
