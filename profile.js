@@ -71,9 +71,9 @@ export function renderProfile(){
       <div class="field"><label>Fazione Holophone<small>${esc(FACTIONS.find(f => f.id === p.faction)?.d || "La fazione scelta nel gioco organizzato ufficiale")}</small></label>
         <span class="seg" id="pfFaction">${FACTIONS.map(f => `<button data-v="${f.id}" aria-pressed="${p.faction === f.id}">${f.id}</button>`).join("")}</span></div>
       <div class="field" style="grid-template-columns:1fr"><label>Personaggio preferito<small>Tutte le illustrazioni di Leggende e Unità dei personaggi (anche Secret, Iconic e Nova Rare), in ordine alfabetico; i personaggi senza carta usano le iniziali.</small></label>
-        ${p.favImg ? `<div style="display:grid;grid-template-columns:auto 1fr;gap:6px 10px;align-items:center;margin:8px 0 4px;font-size:12.5px;color:var(--mute)">
+        ${p.favImg ? `<details class="fold" style="margin:8px 0 4px"><summary>Regola l'inquadratura dell'avatar</summary><div style="display:grid;grid-template-columns:auto 1fr;gap:6px 10px;align-items:center;margin-top:8px;font-size:12.5px;color:var(--mute)">
           <span>Inquadratura</span><input type="range" id="pfPos" min="0" max="100" value="${p.favPos ?? 34}" aria-label="Posizione verticale del ritaglio">
-          <span>Zoom</span><input type="range" id="pfZoom" min="100" max="260" value="${p.favZoom ?? 150}" aria-label="Zoom del ritaglio"></div>` : ""}
+          <span>Zoom</span><input type="range" id="pfZoom" min="100" max="260" value="${p.favZoom ?? 150}" aria-label="Zoom del ritaglio"></div></details>` : ""}
         <input class="inp" id="pfCharQ" type="search" placeholder="Cerca personaggio…" autocomplete="off" style="margin-top:6px">
         <div class="chars" id="pfChars">${chars.map(x => `<button data-fav="${esc(x.key)}" data-img="${x.pid ? imgUrl(x.pid) : ""}" class="${p.fav === x.key ? "sel" : ""}" title="${esc(x.key)}">${x.pid ? `<div class="art" style="background-image:url('${thumbUrl(x.pid)}')"></div>` : `<div class="ph">${esc(initials(x.name))}</div>`}<span>${esc(x.name)}${x.tag ? ` <i>${esc(x.tag)}</i>` : ""}</span></button>`).join("")}</div>
       </div>

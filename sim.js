@@ -8,7 +8,7 @@ import { createGame, mulligan, resolve, legalActions, doAction, power, ready, re
 import { botDecide, botStep } from "./bot.js";
 import { starterDeck, isLegal, deckSize, openDeck } from "./deck.js";
 import { prereleaseSetupHTML, wirePrerelease } from "./prerelease.js";
-import { tutorialHTML, startTutorial, tutorialStep, tutorialBarHTML, tutorialActive, stopTutorial } from "./tutorial.js";
+import { startTutorial, tutorialStep, tutorialBarHTML, tutorialActive, stopTutorial, tutorialAllows, ensureHand, TUTORIAL_SEED } from "./tutorial.js";
 
 /* Strumenti manuali (spendi/prepara, ±potenza, sconfiggi, ±1 sui Gig, pesca…):
    permettono di applicare a mano gli effetti che il motore non interpreta,
@@ -39,16 +39,19 @@ export function renderSim(){
   const root = $("#simSetup");
   if(!wired){ wire(); wired = true; }
   const decks = S.decks.slice().sort((a, b) => (b.updated || 0) - (a.updated || 0));
-  const opts = sel0 => `<option value="starter:theheistretailstarterdeck">Starter «The Heist» (bozza)</option><option value="starter:embracingpowerretailstarterdeck">Starter «Embracing Power» (bozza)</option>` +
-    decks.map(d => `<option value="${d.id}"${d.id === sel0 ? " selected" : ""}>${esc(d.name)} (${deckSize(d)} carte${isLegal(d) ? "" : ", non valido"})</option>`).join("");
+  const opts = (sel0, sealedToo = true) => `<option value="starter:theheistretailstarterdeck">Starter «The Heist» (bozza)</option><option value="starter:embracingpowerretailstarterdeck">Starter «Embracing Power» (bozza)</option>` +
+    decks.filter(d => sealedToo || d.format !== "sealed").map(d => `<option value="${d.id}"${d.id === sel0 ? " selected" : ""}>${d.format === "sealed" ? "🎲 " : ""}${esc(d.name)} (${deckSize(d)} carte${isLegal(d) ? "" : ", non valido"})</option>`).join("");
+  const sel0 = S.decks.find(d => d.id === S.settings.simDeck0), sealed0 = !!(sel0 && sel0.format === "sealed");
+  if(sealed0) mode = "bot";
   root.innerHTML = `
     <div class="card">
       <h2>Simulator</h2>
       <div class="sub">Partita completa con le regole di base applicate dal motore: fasi, Eddies, Leggende, attacchi, Blocker, furto dei Gig, Street Cred, overtime. Gli effetti più comuni delle carte sono automatici; gli altri vengono segnalati e li applichi con gli strumenti manuali.</div>
-      <div class="field"><label>Modalità</label><span class="seg" id="simMode"><button data-v="bot" aria-pressed="${mode === "bot"}">Contro il bot</button><button data-v="hot" aria-pressed="${mode === "hot"}">In due, stesso dispositivo</button></span></div>
+      <div class="field"><label>Modalità</label><span class="seg" id="simMode"><button data-v="bot" aria-pressed="${mode === "bot"}">Contro il bot</button><button data-v="hot" aria-pressed="${mode === "hot"}" ${sealed0 ? "disabled" : ""}>In due, stesso dispositivo</button></span></div>
       <div class="simdecks" style="margin-top:10px">
         <div><label style="font-size:12px;font-weight:700;color:var(--mute)">Il tuo mazzo</label><select class="inp" id="simDeck0">${opts(S.settings.simDeck0)}</select></div>
-        <div><label style="font-size:12px;font-weight:700;color:var(--mute)">${mode === "bot" ? "Mazzo del bot" : "Mazzo del giocatore 2"}</label><select class="inp" id="simDeck1">${opts(S.settings.simDeck1 || "starter:embracingpowerretailstarterdeck")}</select></div>
+        <div><label style="font-size:12px;font-weight:700;color:var(--mute)">${mode === "bot" ? "Mazzo del bot" : "Mazzo del giocatore 2"}</label>
+          ${sealed0 ? `<div class="inp" style="opacity:.85">🎲 Bot del Prerelease: gioca con il kit che ha aperto lui</div><select id="simDeck1" hidden><option value="${S.settings.simDeck0}"></option></select>` : `<select class="inp" id="simDeck1">${opts(S.settings.simDeck1 || "starter:embracingpowerretailstarterdeck", false)}</select>`}</div>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;align-items:center">
         <button class="btn acc2" id="simStart">▶ Inizia la partita</button>
@@ -71,12 +74,15 @@ function deckFrom(v){
 function start(opts = {}){
   let d0 = opts.deck0 || deckFrom($("#simDeck0").value), d1 = opts.deck1 || deckFrom($("#simDeck1").value);
   if(d0 && d0.format === "sealed" && d0.botDeck && !opts.deck1){ d1 = d0.botDeck; mode = "bot"; }
+  else if(d1 && d1.format === "sealed" && d1.botDeck && !opts.deck1){ /* mazzo sealed scelto come avversario: va bene, lo gioca il bot o il secondo giocatore */ }
   if(!d0 || !d1){ toast("Scegli due mazzi"); return; }
   for(const d of [d0, d1]) if(d.legends.filter(Boolean).length < 3 || deckSize(d) < 10){ toast(`«${d.name}»: servono 3 Leggende e un mazzo con carte`); return; }
   S.settings.simDeck0 = $("#simDeck0").value; S.settings.simDeck1 = $("#simDeck1").value; S.save("settings");
   human = mode === "bot" ? [true, false] : [true, true];
   const nm = names();
-  G = createGame([{ ...d0, name: nm[0] }, { ...d1, name: nm[1] }], DATA.byId, { bot0: !human[0], bot1: !human[1], autoPay: [!!S.profile.autoPay, !!S.profile.autoPay] });
+  const tut = tutorialActive();
+  G = createGame([{ ...d0, name: nm[0] }, { ...d1, name: nm[1] }], DATA.byId, { bot0: !human[0], bot1: !human[1], autoPay: [!!S.profile.autoPay, !!S.profile.autoPay], seed: tut ? TUTORIAL_SEED : undefined, first: tut ? 1 : undefined });
+  if(tut) ensureHand(G, 0);
   G.decide = botDecide; G.mulliganAsked = [false, false];
   sel = null; targeting = null; pop = null; handoff = false; lastSeen = { turn: 0, seen: 0 };
   $("#board").innerHTML = ""; openBoard();
@@ -184,7 +190,7 @@ function render(){
     <div class="bstrip">
       <span class="st">T${G.turn} · ${status}</span>
       <span class="lg" id="lastLog" title="${esc(last ? last.text : "")}">${payTxt ? payTxt + " · " : ""}${noteMsg ? `<b id="noteMsg" style="color:var(--acc2)">${esc(noteMsg)} · </b>` : ""}${pendingTxt ? `<b>${esc(pendingTxt)}</b> · ` : ""}${esc(last ? last.text : "")}</span>
-      ${myTurn && human[M.id] ? `<button class="btn sm yel" id="bEnd">Fine turno</button>` : ""}
+      ${myTurn && human[M.id] && tutorialAllows("end") ? `<button class="btn sm yel" id="bEnd">Fine turno</button>` : ""}
       ${pm ? `${payOpt(o => o.kind === "alleddies") >= 0 ? `<button class="btn sm acc2" id="bPayAll">Tutto con Eddies</button>` : ""}<button class="btn sm" id="bPayCancel">Annulla</button>` : targeting ? `<button class="btn sm" id="bCancel">Annulla</button>` : ""}
       <button class="btn sm icon" id="bLog" title="Registro">≡</button>
       <button class="btn sm icon" id="bMenu" title="Menù">⋯</button>
@@ -255,9 +261,10 @@ function handCard(el, P){
   const myTurn = G.active === P.id && G.phase === "main" && !G.pending && G.winner == null && human[P.id];
   const cost = c.card.cost ?? 0, items = [];
   if(myTurn){
-    if(c.card.type === "Gear") items.push({ label: `Equipaggia (${cost} €$) → scegli l'Unità`, cls: "acc", disabled: !canPay(P, cost), fn: () => { targeting = { kind: "gear", uid: c.uid }; sel = c.uid; render(); note("Tocca l'Unità o la Leggenda scoperta da equipaggiare"); } });
-    else items.push({ label: `Gioca (${cost} €$)`, cls: "acc", disabled: !canPay(P, cost), fn: () => after(doAction(G, P.id, { t: "play", uid: c.uid })) });
-    if(c.card.eddiable) items.push({ label: P.sold ? "Vendi (già venduto in questo turno)" : "Vendi → 1 €$", disabled: P.sold, fn: () => after(doAction(G, P.id, { t: "sell", uid: c.uid })) });
+    const okPlay = tutorialAllows("play", c), okSell = tutorialAllows("sell", c);
+    if(c.card.type === "Gear") items.push({ label: `Equipaggia (${cost} €$) → scegli l'Unità`, cls: "acc", disabled: !canPay(P, cost) || !okPlay, fn: () => { targeting = { kind: "gear", uid: c.uid }; sel = c.uid; render(); note("Tocca l'Unità o la Leggenda scoperta da equipaggiare"); } });
+    else items.push({ label: `Gioca (${cost} €$)`, cls: "acc", disabled: !canPay(P, cost) || !okPlay, fn: () => after(doAction(G, P.id, { t: "play", uid: c.uid })) });
+    if(c.card.eddiable) items.push({ label: P.sold ? "Vendi (già venduto in questo turno)" : "Vendi → 1 €$", disabled: P.sold || !okSell, fn: () => after(doAction(G, P.id, { t: "sell", uid: c.uid })) });
     if(MANUAL) items.push({ label: "Scarta (manuale)", cls: "danger", fn: () => { manual.discard(G, P.id, c.uid); after(); } });
   }
   items.push({ label: "Ingrandisci", fn: () => openLens(imgUrl(c.pid)) }, { label: "Scheda carta", fn: () => openCard(c.cid, c.pid) });
@@ -274,10 +281,10 @@ function fieldCard(el, owner){
   }
   const items = [];
   if(mine && myTurn){
-    const can = canAttack(G, M, u);
+    const can = canAttack(G, M, u) && tutorialAllows("attack");
     items.push({ label: power(u) < 1 ? "Attacca l'area Gig (potenza 0: non ruba, ma attiva gli effetti)" : `Attacca l'area Gig (${1 + Math.floor(power(u) / 10)} Gig)`, cls: "acc", disabled: !can || !rival(G, M).gigs.length || u.fx.onlyUnits, fn: () => after(doAction(G, M.id, { t: "attack", uid: u.uid, target: { kind: "gigs" } })) });
     items.push({ label: "Attacca un'Unità spesa →", disabled: !can || !rival(G, M).field.some(x => x.spent), fn: () => { targeting = { kind: "attack", uid: u.uid }; sel = u.uid; render(); note("Tocca l'Unità rivale spesa da attaccare"); } });
-    if(u.fx.spend.length) items.push({ label: "Abilità {Spend}", disabled: u.spent || u.lag, fn: () => after(doAction(G, M.id, { t: "spend", uid: u.uid })) });
+    if(u.fx.spend.length) items.push({ label: "Abilità {Spend}", disabled: u.spent || u.lag || !tutorialAllows("spend"), fn: () => after(doAction(G, M.id, { t: "spend", uid: u.uid })) });
   }
   if(MANUAL && human[M.id] && G.winner == null){
     items.push({ label: "— strumenti manuali —", disabled: true, fn: () => {} },
@@ -297,9 +304,9 @@ function legendCard(el, owner){
   if(targeting && targeting.kind === "gear" && mine && l.faceUp && !l.onField && !l.removed && myTurn){ after(doAction(G, M.id, { t: "play", uid: targeting.uid, target: l.uid })); return; }
   const items = [], idx = P.legends.indexOf(l);
   if(mine && myTurn && !l.removed && !l.onField){
-    if(!l.faceUp) items.push({ label: "Chiama questa Leggenda (1 €$)", cls: "acc", disabled: P.called || !canPay(P, 1), fn: () => after(doAction(G, M.id, { t: "call", idx })) });
-    if(l.faceUp && (l.card.kw || []).includes("Go Solo") && l.card.cost != null) items.push({ label: `Go Solo (${l.card.cost} €$): entra come Unità pronta${l.spent ? "" : ", può pagare 1 €$ da sé"}`, disabled: !canPay(P, l.card.cost), fn: () => after(doAction(G, M.id, { t: "gosolo", idx })) });
-    if(l.faceUp && l.fx.spend.length) items.push({ label: "Abilità {Spend}", disabled: l.spent, fn: () => after(doAction(G, M.id, { t: "spend", uid: l.uid })) });
+    if(!l.faceUp) items.push({ label: "Chiama questa Leggenda (1 €$)", cls: "acc", disabled: P.called || !canPay(P, 1) || !tutorialAllows("call"), fn: () => after(doAction(G, M.id, { t: "call", idx })) });
+    if(l.faceUp && (l.card.kw || []).includes("Go Solo") && l.card.cost != null) items.push({ label: `Go Solo (${l.card.cost} €$): entra come Unità pronta${l.spent ? "" : ", può pagare 1 €$ da sé"}`, disabled: !canPay(P, l.card.cost) || !tutorialAllows("gosolo"), fn: () => after(doAction(G, M.id, { t: "gosolo", idx })) });
+    if(l.faceUp && l.fx.spend.length) items.push({ label: "Abilità {Spend}", disabled: l.spent || !tutorialAllows("spend"), fn: () => after(doAction(G, M.id, { t: "spend", uid: l.uid })) });
     if(MANUAL) items.push({ label: l.spent ? "Prepara (manuale)" : "Spendi come 1 €$ (manuale)", fn: () => { manual.toggleSpent(G, owner, l.uid); after(); } });
     if(MANUAL && !l.faceUp) items.push({ label: "Scopri senza chiamare (manuale)", fn: () => { manual.flip(G, owner, idx); after(); } });
   }
@@ -331,11 +338,12 @@ function menu(el){
 function wire(){
   const root = $("#simSetup");
   root.addEventListener("click", e => {
-    const m = e.target.closest("#simMode button"); if(m){ mode = m.dataset.v; renderSim(); return; }
+    const m = e.target.closest("#simMode button"); if(m && !m.disabled){ mode = m.dataset.v; renderSim(); return; }
     const pb = e.target.closest("#simPay button"); if(pb){ S.profile.autoPay = pb.dataset.v === "1"; S.save("profile"); renderSim(); return; }
     if(e.target.closest("#simStart")){ start(); return; }
     if(e.target.closest("#simResume")){ openBoard(); render(); tick(); }
   });
+  root.addEventListener("change", e => { if(e.target.id === "simDeck0"){ S.settings.simDeck0 = e.target.value; S.save("settings"); renderSim(); } if(e.target.id === "simDeck1"){ S.settings.simDeck1 = e.target.value; S.save("settings"); } });
   document.addEventListener("ncd:playdeck", e => { S.settings.simDeck0 = e.detail; S.save("settings"); renderSim(); const d = S.decks.find(x => x.id === e.detail); if(d && d.format === "sealed") start(); });
   root.addEventListener("click", e => { const z = e.target.closest(".pkg [data-zoom]"); if(z) openLens(imgUrl(z.dataset.zoom)); });
   wirePrerelease(root, id => { location.hash = "#deck"; openDeck(id); toast("Scegli 3 Leggende e almeno 30 carte, poi «Gioca»", 4000); });
@@ -404,9 +412,10 @@ function wire(){
     const M = G.players[me()];
     const t = e.type === "pointercancel" ? null : dropTarget(e.clientX, e.clientY);
     if(!t) return;
-    if(d.legendIdx != null){ if(t.kind === "field" || t.kind === "unit") after(doAction(G, M.id, { t: "gosolo", idx: d.legendIdx })); return; }
+    if(d.legendIdx != null){ if((t.kind === "field" || t.kind === "unit") && tutorialAllows("gosolo")) after(doAction(G, M.id, { t: "gosolo", idx: d.legendIdx })); return; }
     const c = M.hand.find(x => x.uid === d.uid); if(!c) return;
-    if(t.kind === "sell"){ if(c.card.eddiable) after(doAction(G, M.id, { t: "sell", uid: c.uid })); else note("Questa carta non ha il simbolo di vendita"); return; }
+    if(t.kind === "sell"){ if(!tutorialAllows("sell", c)) { note("Segui il passo del tutorial"); return; } if(c.card.eddiable) after(doAction(G, M.id, { t: "sell", uid: c.uid })); else note("Questa carta non ha il simbolo di vendita"); return; }
+    if(!tutorialAllows("play", c)){ note("Segui il passo del tutorial"); return; }
     if(c.card.type === "Gear"){ if(t.kind === "unit" || t.kind === "legend") after(doAction(G, M.id, { t: "play", uid: c.uid, target: t.uid })); else note(t.kind === "facedown" ? "Un Gear si equipaggia solo a una Leggenda scoperta" : "Trascina il Gear su un'Unità o una Leggenda scoperta"); return; }
     if(t.kind === "field" || t.kind === "unit") after(doAction(G, M.id, { t: "play", uid: c.uid }));
   };
@@ -433,7 +442,6 @@ function wire(){
     if(t.closest("#bExit")){ closeBoard(); return; }
     if(t.closest("#bHand")){ handoff = false; render(); tick(); return; }
     if(t.closest("[data-react]")){ reactCover = G.pending; render(); return; }
-    if(t.closest("#tutSkip")){ stopTutorial(); render(); return; }
     if(t.closest("#tutNext")){ tutorialStep(G, me(), true); render(); return; }
     if(payMode()){
       const pm = payMode();
@@ -444,7 +452,7 @@ function wire(){
       if(!t.closest(".bstrip, .pop, #simLog")) note("Tocca un Eddie o una Leggenda, oppure Annulla");
       return;
     }
-    const mull = t.closest("[data-mull]"); if(mull){ mulligan(G, mulliganPending(), mull.dataset.mull === "redo"); render(); tick(); return; }
+    const mull = t.closest("[data-mull]"); if(mull){ const who = mulliganPending(); mulligan(G, who, mull.dataset.mull === "redo"); if(tutorialActive() && who === 0) ensureHand(G, 0); render(); tick(); return; }
     const zoom = t.closest("[data-zoom]"); if(zoom){ openLens(imgUrl(zoom.dataset.zoom)); return; }
     const ask = t.closest("[data-ask]"); if(ask){ resolve(G, +ask.dataset.ask); render(); tick(); return; }
     const hand = t.closest("[data-hand=\"1\"]"); if(hand){ handCard(hand, G.players[me()]); return; }

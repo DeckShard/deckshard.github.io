@@ -8,6 +8,7 @@ import { $, $$, esc, toast, rowHTML, statsHTML, makeFilters, filtersHTML, passes
 export const DECK_MIN = 40, DECK_MAX = 50, MAX_COPIES = 3;
 
 let CUR = null;               // mazzo in modifica
+const LF = { q: "", kind: "all" };   // filtri dell'elenco mazzi
 const F = makeFilters("deck");
 let browse = "cards";         // "legends" | "cards"
 let wired = false;
@@ -217,12 +218,20 @@ export function renderDeck(){
   if(!wired){ wire(); wired = true; }
   if(CUR){ renderEditor(); return; }
   $("#deckEdit").hidden = true; const list = $("#deckList"); list.hidden = false;
-  const decks = S.decks.slice().sort((a, b) => (b.updated || 0) - (a.updated || 0));
+  const all = S.decks.slice().sort((a, b) => (b.updated || 0) - (a.updated || 0));
+  const q = (LF.q || "").toLowerCase();
+  const decks = all.filter(d => (LF.kind === "all" || (LF.kind === "sealed") === (d.format === "sealed")) && (!q || d.name.toLowerCase().includes(q) || d.legends.filter(Boolean).some(l => (DATA.byId.get(l.cid)?.dn || "").toLowerCase().includes(q))));
+  const built = decks.filter(d => d.format !== "sealed"), sealed = decks.filter(d => d.format === "sealed");
+  const nS = all.filter(d => d.format === "sealed").length;
   list.innerHTML = `
     <div class="card">
-      <div class="deckhead"><div><h2 style="margin:0">I tuoi mazzi</h2><div class="sub">${decks.length ? decks.length + " mazzi" : "Nessun mazzo ancora"}</div></div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn acc2" id="deckNew">+ Nuovo</button><button class="btn sm" id="deckImport">Importa testo</button></div></div>
-      <div class="rows decks" style="margin-top:12px">${decks.map(d => deckRowHTML(d)).join("") || `<div class="empty">Crea un mazzo da zero, importalo da testo o parti da uno starter qui sotto.</div>`}</div>
+      <div class="deckhead"><div><h2 style="margin:0">I tuoi mazzi</h2><div class="sub">${all.length ? `${all.length - nS} costruiti${nS ? ` · ${nS} prerelease` : ""}` : "Nessun mazzo ancora"}</div></div>
+        <div class="dacts"><button class="btn acc2" id="deckNew">+ Nuovo</button><button class="btn sm" id="deckImport">Importa testo</button></div></div>
+      ${all.length > 3 ? `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px">
+        <input class="inp" id="deckListQ" type="search" placeholder="Cerca per nome o Leggenda…" value="${esc(LF.q || "")}" style="flex:1;min-width:160px">
+        <span class="seg" id="deckListKind"><button data-v="all" aria-pressed="${LF.kind === "all"}">Tutti</button><button data-v="built" aria-pressed="${LF.kind === "built"}">Costruiti</button><button data-v="sealed" aria-pressed="${LF.kind === "sealed"}">Prerelease</button></span></div>` : ""}
+      ${LF.kind !== "sealed" ? `<div class="rows decks" style="margin-top:12px">${built.map(d => deckRowHTML(d)).join("") || `<div class="empty">${q ? "Nessun mazzo con questo nome." : "Crea un mazzo da zero, importalo da testo o parti da uno starter qui sotto."}</div>`}</div>` : ""}
+      ${sealed.length && LF.kind !== "built" ? `<h3 style="margin-top:14px">Mazzi Prerelease</h3><div class="rows decks" style="margin-top:6px">${sealed.map(d => deckRowHTML(d)).join("")}</div>` : ""}
     </div>
     <div class="card">
       <h3>Punti di partenza</h3>
@@ -281,7 +290,7 @@ function renderEditor(){
     return `<h3 style="margin:12px 0 4px">${TYPE_IT[t]} <small style="color:var(--mute)">${cnt}</small></h3><div class="rows dlist">${es.map(e => {
       const c = DATA.byId.get(e.cid), own = cardQty(c), ramKo = d.format !== "sealed" && (c.ramN || 0) > (lim[c.color] || 0);
       return rowHTML(c, e.pid, `<span class="qtyctl"><button data-dq="-1" data-cid="${c.id}" aria-label="meno">−</button><b>${e.n}</b><button data-dq="1" data-cid="${c.id}" aria-label="più">+</button></span>`,
-        `${ramKo ? `<span class="chip bad">RAM ${c.ramN}</span>` : `<span class="chip">RAM ${c.ramN}</span>`}${d.format === "sealed" ? `<span class="chip">aperte ${poolCount(d, c.id)}</span>` : own < e.n ? `<span class="chip bad">hai ${own}</span>` : ""}`, true);
+        `${ramKo ? `<span class="chip bad">RAM ${c.ramN}</span>` : `<span class="chip">RAM ${c.ramN}</span>`}${d.format === "sealed" ? "" : own < e.n ? `<span class="chip bad">hai ${own}</span>` : ""}`, true, d.format === "sealed" ? `${e.n}/${poolCount(d, c.id)}x` : "");
     }).join("")}</div>`;
   }).join("");
 
@@ -333,8 +342,9 @@ function renderBrowser(){
     const ramKo = browse === "cards" && d.format !== "sealed" && (c.ramN || 0) > (lim[c.color] || 0);
     const right = browse === "legends" ? `<span class="chip${inDeck ? " acc" : ""}">${inDeck ? "nel mazzo" : "+"}</span>` : `<span class="chip${inDeck ? " acc" : ""}">${inDeck ? "×" + inDeck : "+"}</span>`;
     const pe = d.format === "sealed" ? d.pool.find(e => e.cid === c.id) : null;
-    const extra = d.format === "sealed" ? `<span class="chip">aperte ${poolCount(d, c.id)}</span>` : `<span class="chip${ramKo ? " bad" : ""}">RAM ${c.ramN}</span>${cardQty(c) ? `<span class="chip">hai ${cardQty(c)}</span>` : ""}`;
-    return rowHTML(c, pe ? pe.pid : null, right, extra);
+    const extra = d.format === "sealed" ? "" : `<span class="chip${ramKo ? " bad" : ""}">RAM ${c.ramN}</span>${cardQty(c) ? `<span class="chip">hai ${cardQty(c)}</span>` : ""}`;
+    const left = d.format === "sealed" ? poolCount(d, c.id) - (browse === "legends" ? (inDeck ? 1 : 0) : (inDeck || 0)) : 0;
+    return rowHTML(c, pe ? pe.pid : null, right, extra, false, d.format === "sealed" ? `${left}x` : "");
   }).join("") || `<div class="empty">Nessuna carta con questi filtri.</div>`;
 }
 
@@ -358,7 +368,9 @@ function setLegend(i, cid){
 
 function wire(){
   const list = $("#deckList"), ed = $("#deckEdit");
+  list.addEventListener("input", e => { if(e.target.id === "deckListQ"){ LF.q = e.target.value; const pos = e.target.selectionStart; renderDeck(); const el = $("#deckListQ"); if(el){ el.focus(); el.setSelectionRange(pos, pos); } } });
   list.addEventListener("click", e => {
+    const k = e.target.closest("#deckListKind button"); if(k){ LF.kind = k.dataset.v; renderDeck(); return; }
     if(e.target.closest("#deckNew")){ const d = { id: newId(), name: "Nuovo mazzo", legends: [null, null, null], cards: [], notes: "" }; saveDeck(d); CUR = d; browse = "legends"; renderDeck(); return; }
     if(e.target.closest("#deckImport")){ promptImport(); return; }
     const st = e.target.closest("[data-starter]"); if(st){ const d = starterDeck(st.dataset.starter, st.dataset.name); saveDeck(d); CUR = d; browse = "cards"; renderDeck(); toast("Bozza creata: controlla le quantità"); return; }

@@ -20,6 +20,29 @@ let active = false, idx = 0;
 export const tutorialActive = () => active;
 export function startTutorial(){ active = true; idx = 0; }
 export function stopTutorial(){ active = false; }
+export const TUTORIAL_SEED = 20771;
+/* la mano del tutorial deve sempre permettere i passi: una carta vendibile e un'Unità da 2 €$ o meno */
+export function ensureHand(G, me){
+  const P = G.players[me];
+  const need = [c => c.card.eddiable && c.card.type !== "Unit", c => c.card.type === "Unit" && (c.card.cost ?? 0) <= 2];
+  for(const test of need){
+    if(P.hand.some(test)) continue;
+    const i = P.deck.findIndex(test); if(i < 0) continue;
+    const card = P.deck.splice(i, 1)[0];
+    // scambia con una carta della mano che non serve agli altri passi
+    const j = P.hand.findIndex(c => !need.some(t2 => t2(c))); const out = j >= 0 ? P.hand.splice(j, 1)[0] : P.hand.pop();
+    P.hand.push(card); if(out) P.deck.push(out);
+  }
+}
+/* azioni permesse nel passo corrente: nei passi "fai X" si può fare solo X (e reagire) */
+export function tutorialAllows(kind, card){
+  if(!active) return true;
+  const only = { 2: "sell", 3: "playUnit", 4: "call", 5: "end", 7: "attack" }[idx];
+  if(!only) return true;
+  if(kind === "react" || kind === "pay") return true;
+  if(only === "playUnit") return kind === "play" && card && card.card.type === "Unit";
+  return kind === only;
+}
 /* avanza se il passo corrente risulta completato; ritorna true se è avanzato */
 export function tutorialStep(G, me, force = false){
   if(!active || !G) return false;
@@ -30,6 +53,6 @@ export function tutorialStep(G, me, force = false){
 export function tutorialBarHTML(G, me){
   const s = STEPS[idx];
   return `<div class="tutbar"><span class="n">${idx + 1}/${STEPS.length}</span><span class="tx">${s.t}</span>
-    ${s.info || s.last ? `<button class="btn sm yel" id="tutNext">${s.last ? "Chiudi il tutorial" : "Avanti"}</button>` : ""}<button class="btn sm icon" id="tutSkip" title="Chiudi il tutorial">✕</button></div>`;
+    ${s.info || s.last ? `<button class="btn sm yel" id="tutNext">${s.last ? "Chiudi il tutorial" : "Avanti"}</button>` : ""}</div>`;
 }
 export const tutorialHTML = () => "";

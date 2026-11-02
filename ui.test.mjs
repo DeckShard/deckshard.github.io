@@ -333,8 +333,29 @@ await page.waitForSelector(".tutbar");
 ok((await page.locator(".tutbar .n").textContent()) === "1/10", "tutorial: primo passo");
 await page.click('[data-mull="keep"]'); await page.waitForTimeout(300);
 { const tn = await page.locator(".tutbar .n").textContent(); ok(/^(2|3)\/10/.test(tn), "tutorial: avanza dopo il mulligan (" + tn + ")"); }
-await page.click("#tutSkip"); ok(await page.locator(".tutbar").count() === 0, "tutorial chiuso");
-for(let i = 0; i < 5 && await page.locator("#simAsk [data-ask]").count(); i++){ await page.click("#simAsk [data-ask]"); await page.waitForTimeout(200); }
+ok(await page.locator("#tutSkip").count() === 0, "tutorial senza pulsante di chiusura");
+// il bot inizia (partita seedata); al mio turno: dado, poi i passi guidati con le azioni giuste sempre disponibili
+for(let i = 0; i < 80; i++){ if(await page.locator("#simAsk [data-ask]").count()){ await page.click("#simAsk [data-ask] >> nth=0"); } if(/^3\/10/.test(await page.locator(".tutbar .n").textContent().catch(() => ""))) break; await page.waitForTimeout(300); }
+ok(/^3\/10/.test(await page.locator(".tutbar .n").textContent()), "tutorial: passo della vendita raggiunto al mio turno");
+ok(await page.locator("#bEnd").count() === 0, "fine turno nascosto finché il passo non è completato");
+// vendita: la carta vendibile c'è sempre
+let soldT = false;
+for(let k = 0; k < (await page.locator('[data-handrow] .bc').count()) && !soldT; k++){
+  await page.click(`[data-handrow] .bc >> nth=${k}`); const sb = page.locator('.pop button:has-text("Vendi")');
+  if(await sb.count() && await sb.isEnabled()){ await sb.click(); soldT = true; } else await page.click("#board .bstrip .st");
+}
+await page.waitForTimeout(300);
+ok(soldT && /^4\/10/.test(await page.locator(".tutbar .n").textContent()), "venduta: passo 4 (gioca un'Unità)");
+// l'Unità da ≤2 €$ c'è sempre
+let playedT = false;
+for(let k = 0; k < (await page.locator('[data-handrow] .bc').count()) && !playedT; k++){
+  await page.click(`[data-handrow] .bc >> nth=${k}`); const pb = page.locator('.pop button:has-text("Gioca")');
+  if(await pb.count() && await pb.isEnabled()){ await pb.click(); playedT = true; } else await page.click("#board .bstrip .st");
+}
+for(let k = 0; k < 6 && /Paga \d+ €\$/.test(await page.locator(".bstrip .lg").textContent()); k++){ const ed = page.locator(".bz.mine [data-eddies].target"), lg = page.locator(".bz.mine [data-legend].target"); if(await ed.count()) await ed.click(); else if(await lg.count()) await lg.first().click(); await page.waitForTimeout(120); }
+for(let i = 0; i < 6 && await page.locator("#simAsk [data-ask]").count(); i++){ await page.click("#simAsk [data-ask] >> nth=-1"); await page.waitForTimeout(150); }
+await page.waitForTimeout(300);
+ok(playedT && /^5\/10/.test(await page.locator(".tutbar .n").textContent()), "giocata: passo 5 (chiama una Leggenda)");
 await page.click("#bMenu"); await page.click('.pop button:has-text("Esci")');
 
 /* desktop: tab in alto, griglia larga */

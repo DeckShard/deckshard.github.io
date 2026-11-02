@@ -40,12 +40,12 @@ export function tileHTML(c, pid, opts = {}){
   </div>`;
 }
 /* riga compatta: con `compact` le statistiche sono testo breve (€$ · ⚡ · RAM) che va a capo, mai troncato */
-export function rowHTML(c, pid, right = "", extra = "", compact = false){
+export function rowHTML(c, pid, right = "", extra = "", compact = false, badge = ""){
   const p = pid ? DATA.byPrint.get(pid) : c.def;
   const stats = compact ? `<span class="st">${c.cost != null ? `€$ ${c.cost}` : ""}${c.power != null ? ` · ⚡ ${c.power}` : ""} · ${TYPE_IT[c.type] || c.type}</span>` : statsHTML(c);
   return `<div class="row" data-cid="${c.id}" data-pid="${p.id}">
     <span class="ci" style="background:var(--c${c.color || "Mute"})"></span>
-    ${p.img ? `<img class="thumb" src="${thumbUrl(p.id)}" alt="" loading="lazy">` : `<span class="thumb"></span>`}
+    ${p.img ? `<span class="thumbwrap"><img class="thumb" src="${thumbUrl(p.id)}" alt="" loading="lazy">${badge ? `<span class="tq">${badge}</span>` : ""}</span>` : `<span class="thumb"></span>`}
     <div class="nm"><b>${esc(c.dn)}</b><span>${stats} ${extra}</span></div>
     ${right}
   </div>`;
@@ -219,6 +219,21 @@ export function openLens(src){
   img.onpointerdown = down; img.onpointermove = move; img.onpointerup = up; img.onpointercancel = up; img.onwheel = wheel; img.ondblclick = dbl; lens.onclick = close;
   lens._hide = hide;
 }
+/* pressione lunga su una miniatura (elenco carte, deckbuilder): lente, senza aprire la scheda */
+(function longPressZoom(){
+  let t = null, fired = false, start = null;
+  document.addEventListener("pointerdown", e => {
+    const img = e.target.closest(".row .thumb, .lslot img, .pt img"); if(!img || e.target.closest("#board")) return;
+    const row = img.closest("[data-pid], [data-print], .lslot"); const pid = row ? (row.dataset.pid || row.dataset.print) : null; if(!pid) return;
+    fired = false; start = { x: e.clientX, y: e.clientY };
+    t = setTimeout(() => { fired = true; openLens(imgUrl(pid)); }, 420);
+  });
+  const cancel = () => { clearTimeout(t); t = null; };
+  document.addEventListener("pointermove", e => { if(t && start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 10) cancel(); });
+  document.addEventListener("pointerup", cancel); document.addEventListener("pointercancel", cancel);
+  document.addEventListener("click", e => { if(fired){ fired = false; e.stopImmediatePropagation(); e.preventDefault(); } }, true);
+  document.addEventListener("contextmenu", e => { if(e.target.closest(".row .thumb, .lslot img, .pt img, .gc")) e.preventDefault(); });
+})();
 document.addEventListener("keydown", e => {
   if(e.key !== "Escape") return;
   const lens = $("#lens");

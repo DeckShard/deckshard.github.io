@@ -42,7 +42,7 @@ export function createGame(decks, cardsById, opts = {}){
   });
   // tiro del d20 per chi inizia: il vincitore sceglie, qui inizia sempre lui
   let a, b; do { a = rollDie(20, rng); b = rollDie(20, rng); } while(a === b);
-  G.first = a > b ? 0 : 1; G.active = G.first;
+  G.first = opts.first != null ? opts.first : (a > b ? 0 : 1); G.active = G.first;
   say(G, `Tiro iniziale: ${G.players[0].name} ${a} – ${G.players[1].name} ${b}. Inizia ${G.players[G.first].name}.`);
   for(const P of G.players){ draw(G, P, 6, true); }
   // chi inizia spende le 2 Leggende più a sinistra e non le prepara al primo turno
