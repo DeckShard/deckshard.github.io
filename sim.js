@@ -17,7 +17,7 @@ import { startTutorial, tutorialStep, tutorialBarHTML, tutorialActive, stopTutor
    ma escono dalle regole. Spenti per ora; da riattivare per una modalità
    "tavolo libero" se servirà. */
 const MANUAL = false;
-let G = null, mode = "bot", gmode = "bot", gOnline = false, gSeat = 0, showChat = false, challenge = null, human = [true, false], sel = null, targeting = null, pop = null, showLog = false, botTimer = null, handoff = false, wired = false;
+let G = null, mode = "bot", gmode = "bot", gOnline = false, gSeat = 0, challenge = null, human = [true, false], sel = null, targeting = null, pop = null, showLog = false, botTimer = null, handoff = false, wired = false;
 let lastSeen = { turn: 0, seen: 0 }, noteMsg = "", noteT = null, reactCover = null;
 let drag = null;   // trascinamento in corso dalla mano
 const clearDrop = () => $$("#board .drop").forEach(x => x.classList.remove("drop"));
@@ -91,7 +91,7 @@ function start(opts = {}){
   for(const d of [d0, d1]) if(d.legends.filter(Boolean).length < 3 || deckSize(d) < 10){ toast(`«${d.name}»: servono 3 Leggende e un mazzo con carte`); return; }
   S.settings.simDeck0 = $("#simDeck0").value; S.settings.simDeck1 = $("#simDeck1").value; S.save("settings");
   if(gOnline) ON.detach();
-  gmode = mode; gOnline = false; showChat = false;
+  gmode = mode; gOnline = false;
   human = mode === "bot" ? [true, false] : [true, true];
   const nm = names();
   const tut = tutorialActive();
@@ -118,7 +118,7 @@ function openBoard(){
   try{ document.documentElement.requestFullscreen?.().then(() => screen.orientation?.lock?.("landscape").catch(() => {})).catch(() => {}); }catch(e){}
 }
 function closeBoard(){
-  stopTutorial(); showChat = false;
+  stopTutorial(); closeTableChat();
   if(gOnline && G && G.winner != null){ ON.detach(); }   // partita online finita: si lascia il tavolo
   $("#board").hidden = true; document.body.style.overflow = "";
   try{ screen.orientation?.unlock?.(); if(document.fullscreenElement) document.exitFullscreen?.(); }catch(e){}
@@ -191,12 +191,34 @@ function drawOfferHTML(){
   if(ON.T.drawOffer === cloudState.user?.id) return "";
   return `<div id="simAsk" class="drawask"><div class="box"><h3>${esc(G.players[1 - me()].name)} propone la patta</h3><p>Se accetti, la partita finisce senza vincitori.</p><div class="opts"><button class="btn yel" data-draw="1">Accetto la patta</button><button class="btn" data-draw="0">Continuiamo</button></div></div></div>`;
 }
-function chatHTML(){
-  ON.T.chatUnread = 0;
-  return `<div id="tchat"><div style="display:flex;justify-content:space-between;align-items:center"><b>Chat del tavolo</b><button class="btn sm icon" id="bChatClose">✕</button></div>
-    <div id="tchatList">${ON.T.chat.map(m => `<div class="m${m.mine ? " me" : ""}"><b>${esc(m.who)}</b> ${esc(m.text)}</div>`).join("") || `<div class="sub">Nessun messaggio. Sii gentile: la chat del tavolo non viene salvata.</div>`}</div>
-    <form id="tchatForm" style="display:flex;gap:6px"><input class="inp" id="tchatIn" maxlength="300" autocomplete="off" placeholder="Scrivi…"><button class="btn sm yel">Invia</button></form></div>`;
+/* chat del tavolo: pannello a parte, fuori dalla plancia. La plancia si ridisegna spesso
+   (mosse, segnali, tastiera che cambia l'altezza dello schermo): se la chat ne facesse parte,
+   il campo di testo verrebbe ricreato a ogni ridisegno e la tastiera si aprirebbe e chiuderebbe di continuo */
+const chatOpen = () => !!document.querySelector("#tchat:not([hidden])");
+function chatListHTML(){
+  return ON.T.chat.map(m => `<div class="msg${m.mine ? " me" : ""}">${m.mine ? "" : `<small>${esc(m.who)}</small>`}${esc(m.text)}</div>`).join("") || `<div class="sub">Nessun messaggio. Sii gentile: la chat del tavolo non viene salvata.</div>`;
 }
+function openTableChat(){
+  closePop();
+  let el = $("#tchat");
+  if(!el){
+    el = document.createElement("div"); el.id = "tchat";
+    el.innerHTML = `<div class="box"><div class="chh"><b>Chat del tavolo</b><button class="btn sm icon" id="bChatClose" aria-label="Chiudi">✕</button></div>
+      <div id="tchatList"></div>
+      <form id="tchatForm" class="chin"><input class="inp" id="tchatIn" maxlength="300" autocomplete="off" enterkeyhint="send" placeholder="Scrivi…"><button class="btn yel" type="submit">Invia</button></form></div>`;
+    el.addEventListener("click", e => { if(e.target.closest("#bChatClose") || e.target === el) closeTableChat(); });
+    el.addEventListener("submit", e => { e.preventDefault(); const i = $("#tchatIn"); ON.sendChat(i.value); i.value = ""; i.focus(); });
+    document.body.appendChild(el);
+  }
+  el.hidden = false; ON.T.chatUnread = 0; refreshTableChat();
+  const b = $("#bChat .nbadge"); if(b) b.remove();
+}
+function refreshTableChat(){
+  const l = $("#tchatList"); if(!l || !chatOpen()) return;
+  ON.T.chatUnread = 0;
+  l.innerHTML = chatListHTML(); l.scrollTop = l.scrollHeight;
+}
+function closeTableChat(){ const el = $("#tchat"); if(el){ el.hidden = true; if(document.activeElement && el.contains(document.activeElement)) document.activeElement.blur(); } if(G && !$("#board").hidden) render(); }
 /* la partita si ricostruisce sempre da seme + mazzi + mosse */
 function buildOnline(moves){
   const { decks, opts } = ON.setupOf(ON.T.row);
@@ -229,7 +251,7 @@ ON.setOnlineHooks({
   start(row, seat, nicks, moves){
     clearTimeout(botTimer); stopTutorial();
     gmode = "online"; mode = "online"; gOnline = true; gSeat = seat; human = [seat === 0, seat === 1];
-    sel = null; targeting = null; pop = null; handoff = false; showLog = false; showChat = false; lastSeen = { turn: 0, seen: 0 };
+    sel = null; targeting = null; pop = null; handoff = false; showLog = false; lastSeen = { turn: 0, seen: 0 };
     buildOnline(moves.map(m => m.move));
     if(location.hash !== "#sim") location.hash = "#sim";
     $("#board").innerHTML = ""; openBoard(); render(); tick();
@@ -243,7 +265,7 @@ setInterval(() => { if(gOnline && G && G.winner == null && !$("#board").hidden){
 function onlineMenuItems(){
   const mine = ON.T.drawOffer && ON.T.drawOffer === cloudState.user?.id;
   return [
-    { label: `Chat del tavolo${ON.T.chatUnread ? ` (${ON.T.chatUnread})` : ""}`, fn: () => { showChat = true; render(); } },
+    { label: `Chat del tavolo${ON.T.chatUnread ? ` (${ON.T.chatUnread})` : ""}`, fn: () => openTableChat() },
     { label: mine ? "Patta proposta: in attesa di risposta" : "Proponi la patta", disabled: G.winner != null || mine, fn: async () => { try{ await ON.offerDraw(); note("Patta proposta"); }catch(e){ note(e.message); } } },
     { label: "Abbandona la partita", cls: "danger", disabled: G.winner != null, fn: () => showAsk("Abbandonare la partita?", null, "La vittoria va all'avversario.", [{ label: "Abbandono", cls: "danger", fn: async () => { try{ await ON.resign(); }catch(e){ note(e.message); } } }, { label: "Continuo", fn: () => {} }]) }
   ];
@@ -304,7 +326,6 @@ function render(){
   const H = board.clientHeight; board.style.setProperty("--bh", H + "px");
   if(drag){ drag = null; killGhosts(); }   // un ridisegno durante un trascinamento lo annulla, senza lasciare copie in giro
   board.style.setProperty("--cw", Math.max(32, Math.min(64, (H - 110) / (1.4 * 4.15 + 0.6))).toFixed(1) + "px");
-  const chatIn = $("#tchatIn"), draft = chatIn ? chatIn.value : "", chatFocus = chatIn && document.activeElement === chatIn;
   board.innerHTML = `
     <div class="bz rival">
       <div class="brow">
@@ -324,7 +345,7 @@ function render(){
       <span class="lg" id="lastLog" title="${esc(last ? last.text : "")}">${payTxt ? payTxt + " · " : ""}${noteMsg ? `<b id="noteMsg" style="color:var(--acc2)">${esc(noteMsg)} · </b>` : ""}${pendingTxt ? `<b>${esc(pendingTxt)}</b> · ` : ""}${esc(last ? last.text : "")}</span>
       ${myTurn && human[M.id] && tutorialAllows("end") ? `<button class="btn sm yel" id="bEnd">Fine turno</button>` : ""}
       ${pm ? `${payOpt(o => o.kind === "alleddies") >= 0 ? `<button class="btn sm acc2" id="bPayAll">Tutto con Eddies</button>` : ""}<button class="btn sm" id="bPayCancel">Annulla</button>` : targeting ? `<button class="btn sm" id="bCancel">Annulla</button>` : ""}
-      ${gmode === "online" ? `<span id="onlBadge">${onlineBadgeHTML()}</span><button class="btn sm icon" id="bChat" title="Chat del tavolo">💬${ON.T.chatUnread && !showChat ? `<span class="nbadge">${ON.T.chatUnread}</span>` : ""}</button>` : ""}
+      ${gmode === "online" ? `<span id="onlBadge">${onlineBadgeHTML()}</span><button class="btn sm icon" id="bChat" title="Chat del tavolo">💬${ON.T.chatUnread && !chatOpen() ? `<span class="nbadge">${ON.T.chatUnread}</span>` : ""}</button>` : ""}
       <button class="btn sm icon" id="bLog" title="Registro">≡</button>
       <button class="btn sm icon" id="bMenu" title="Menù">⋯</button>
     </div>
@@ -344,11 +365,10 @@ function render(){
     ${tutorialActive() ? tutorialBarHTML(G, me()) : ""}
     ${showLog ? `<div id="simLog"><div style="display:flex;justify-content:space-between;align-items:center"><b>Registro</b><button class="btn sm icon" id="bLogClose">✕</button></div>${G.log.slice(-80).map(e => `<div class="e ${e.kind}">${esc(e.text)}</div>`).join("")}</div>` : ""}
     ${mulliganPending() != null ? mulliganHTML() : pm ? "" : G.pending && human[G.pending.player] ? askHTML() : ""}
-    ${G.winner != null ? `<div class="winbox"><div class="box"><h2>${G.winner === -1 ? "PATTA" : G.winner === me() ? "VITTORIA" : gmode === "hot" ? "VINCE " + esc(G.players[G.winner].name).toUpperCase() : "SCONFITTA"}</h2><p>${esc(G.reason)}</p><p style="color:var(--mute)">${G.turn} turni</p><div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">${gmode === "online" ? `${showChat ? "" : `<button class="btn" id="bChat2">💬 Chat</button>`}<button class="btn yel" id="bExit">Torna alla lobby</button>` : `<button class="btn yel" id="bAgain">Rivincita</button><button class="btn" id="bExit">Esci</button>`}</div></div></div>` : ""}
-    ${gmode === "online" ? drawOfferHTML() + (showChat ? chatHTML() : "") : ""}
+    ${G.winner != null ? `<div class="winbox"><div class="box"><h2>${G.winner === -1 ? "PATTA" : G.winner === me() ? "VITTORIA" : gmode === "hot" ? "VINCE " + esc(G.players[G.winner].name).toUpperCase() : "SCONFITTA"}</h2><p>${esc(G.reason)}</p><p style="color:var(--mute)">${G.turn} turni</p><div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">${gmode === "online" ? `<button class="btn" id="bChat2">💬 Chat</button><button class="btn yel" id="bExit">Torna alla lobby</button>` : `<button class="btn yel" id="bAgain">Rivincita</button><button class="btn" id="bExit">Esci</button>`}</div></div></div>` : ""}
+    ${gmode === "online" ? drawOfferHTML() : ""}
     ${handoff ? `<div class="handoff"><h2>Passa il dispositivo a ${esc(G.players[G.active].name)}</h2><p>Il tuo rivale non guarda, promesso.</p><button class="btn yel" id="bHand">Sono pronto</button></div>` : ""}`;
   if(showLog){ const l = $("#simLog"); l.scrollTop = l.scrollHeight; }
-  if(showChat){ const l = $("#tchatList"); if(l) l.scrollTop = l.scrollHeight; const i = $("#tchatIn"); if(i){ i.value = draft; if(chatFocus) i.focus(); } }
   if(tutorialActive() && tutorialStep(G, me())) { /* passo completato: la barra si aggiorna al prossimo ridisegno */ setTimeout(() => { if(G) render(); }, 0); }
 }
 
@@ -487,7 +507,7 @@ function wire(){
     if(setupVisible && mode === "online" && !document.activeElement?.matches?.("#onlCode, #onlFriend, #simDeck0")) renderSim();
     if(ev === "ncd:table" && gOnline && G && !$("#board").hidden) render();
   });
-  document.addEventListener("ncd:tablechat", () => { if(gOnline && G && !$("#board").hidden) render(); });
+  document.addEventListener("ncd:tablechat", () => { if(chatOpen()) refreshTableChat(); else if(gOnline && G && !$("#board").hidden) render(); });
   root.addEventListener("change", e => { if(e.target.id === "simDeck0"){ S.settings.simDeck0 = e.target.value; S.save("settings"); renderSim(); } if(e.target.id === "simDeck1"){ S.settings.simDeck1 = e.target.value; S.save("settings"); } });
   document.addEventListener("ncd:playdeck", e => { const d = S.decks.find(x => x.id === e.detail); if(!d || !isLegal(d)){ toast("Il mazzo non è ancora in regola: completalo nel deckbuilder"); return; } S.settings.simDeck0 = e.detail; S.save("settings"); renderSim(); if(d.format === "sealed") start(); });
   root.addEventListener("click", e => { const z = e.target.closest(".pkg [data-zoom]"); if(z) openLens(imgUrl(z.dataset.zoom)); });
@@ -583,9 +603,7 @@ function wire(){
     if(t.closest("#bLog")){ showLog = !showLog; render(); return; }
     if(t.closest("#bLogClose")){ showLog = false; render(); return; }
     if(t.closest("#bMenu")){ menu(t.closest("#bMenu")); return; }
-    if(t.closest("#bChat") || t.closest("#bChat2")){ showChat = !showChat; render(); return; }
-    if(t.closest("#bChatClose")){ showChat = false; render(); return; }
-    if(t.closest("#tchat")) return;
+    if(t.closest("#bChat") || t.closest("#bChat2")){ openTableChat(); return; }
     const dr = t.closest("[data-draw]"); if(dr){ ON.answerDraw(dr.dataset.draw === "1").catch(err => note(err.message)); return; }
     if(t.closest("#bAgain")){ $("#board").hidden = true; renderSim(); start(); return; }
     if(t.closest("#bExit")){ closeBoard(); return; }
@@ -611,8 +629,8 @@ function wire(){
     const trash = t.closest("[data-trash]"); if(trash){ const P = G.players[+trash.dataset.trash]; showAsk(`Trash di ${P.name} (${P.trash.length})`, P.trash.slice(-24).map(c => ({ label: c.card.dn, pid: c.pid })), null, [{ label: "Chiudi", fn: () => {} }]); return; }
     closePop();
   });
-  board.addEventListener("submit", e => { if(e.target.id !== "tchatForm") return; e.preventDefault(); const i = $("#tchatIn"); ON.sendChat(i.value); i.value = ""; render(); $("#tchatIn")?.focus(); });
-  window.addEventListener("resize", () => { if(G && !$("#board").hidden) render(); });
+  // con la chat aperta la tastiera cambia l'altezza dello schermo: la plancia si ridisegna quando si chiude
+  window.addEventListener("resize", () => { if(G && !$("#board").hidden && !chatOpen()) render(); });
 }
 function pidOf(el){
   if(!G) return null; const uid = +el.dataset.uid;
@@ -620,4 +638,4 @@ function pidOf(el){
   return null;
 }
 /* per i collaudi automatici: stessa strada dei tocchi sulla plancia */
-window.__ncdSim = { G: () => G, seat: () => me(), act: a => { const r = act(me(), a); after(r); return r; }, res: i => { res(i); render(); tick(); } };
+window.__ncdSim = { chat: () => openTableChat(), G: () => G, seat: () => me(), act: a => { const r = act(me(), a); after(r); return r; }, res: i => { res(i); render(); tick(); } };

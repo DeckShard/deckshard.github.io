@@ -88,17 +88,25 @@ async function openChat(id){
   el.hidden = false; renderChat();
   try{ chatMsgs = await cloud.loadMessages(id); renderChat(true); await cloud.markRead(id); }catch(e){ toast(e.message, 4000); }
 }
-function closeChat(){ chatWith = null; const el = $("#chat"); if(el) el.hidden = true; }
+function closeChat(){ chatWith = null; const el = $("#chat"); if(el){ el.hidden = true; el.dataset.with = ""; if(el.contains(document.activeElement)) document.activeElement.blur(); } }
+/* la finestra si costruisce una volta sola per amico; dopo si aggiornano solo intestazione e messaggi,
+   così il campo di testo (e la tastiera del telefono) non viene mai ricreato mentre si scrive */
 function renderChat(scroll){
   const el = $("#chat"); if(!el || !chatWith) return;
   const me = cloud.state.user.id, f = chatWith, on = cloud.state.online.has(f.id);
-  el.innerHTML = `<div class="box">
-    <div class="chh">${miniAvatar(f, 34)}<div class="nm"><b>${esc(f.nick)}</b><span>${on ? "in linea" : "non in linea"}</span></div><button class="btn sm icon" id="chClose" aria-label="Chiudi">✕</button></div>
-    <div class="chmsgs" id="chMsgs">${chatMsgs.length ? chatMsgs.map(m => `<div class="msg${m.sender === me ? " me" : ""}" data-mid="${m.id}"><span>${esc(m.body)}</span><small>${when(m.created_at)}${m.sender === me && m.read_at ? " · letto" : ""}</small></div>`).join("") : `<div class="sub" style="text-align:center;margin:auto">Nessun messaggio: scrivi tu per primo.</div>`}</div>
-    <form class="chin" id="chForm"><input class="inp" id="chText" maxlength="500" placeholder="Scrivi a ${esc(f.nick)}…" autocomplete="off"><button class="btn yel" type="submit">Invia</button></form>
-  </div>`;
-  const box = $("#chMsgs"); if(scroll !== false) box.scrollTop = box.scrollHeight;
-  $("#chText").focus({ preventScroll: true });
+  if(el.dataset.with !== f.id || !$("#chText")){
+    el.dataset.with = f.id;
+    el.innerHTML = `<div class="box">
+      <div class="chh">${miniAvatar(f, 34)}<div class="nm"><b>${esc(f.nick)}</b><span id="chOn"></span></div><button class="btn sm icon" id="chClose" aria-label="Chiudi">✕</button></div>
+      <div class="chmsgs" id="chMsgs"></div>
+      <form class="chin" id="chForm"><input class="inp" id="chText" maxlength="500" placeholder="Scrivi a ${esc(f.nick)}…" autocomplete="off" enterkeyhint="send"><button class="btn yel" type="submit">Invia</button></form>
+    </div>`;
+    if(matchMedia("(pointer: fine)").matches) $("#chText").focus({ preventScroll: true });   // sul telefono la tastiera si apre solo toccando il campo
+  }
+  $("#chOn").textContent = on ? "in linea" : "non in linea";
+  const box = $("#chMsgs"), atEnd = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+  box.innerHTML = chatMsgs.length ? chatMsgs.map(m => `<div class="msg${m.sender === me ? " me" : ""}" data-mid="${m.id}"><span>${esc(m.body)}</span><small>${when(m.created_at)}${m.sender === me && m.read_at ? " · letto" : ""}</small></div>`).join("") : `<div class="sub" style="text-align:center;margin:auto">Nessun messaggio: scrivi tu per primo.</div>`;
+  if(scroll !== false && (scroll || atEnd || chatMsgs.length && chatMsgs[chatMsgs.length - 1].sender === me)) box.scrollTop = box.scrollHeight;
 }
 document.addEventListener("ncd:message", async e => {
   const m = e.detail;
@@ -115,8 +123,8 @@ document.addEventListener("submit", async e => {
   if(e.target.id !== "chForm") return;
   e.preventDefault();
   const t = $("#chText"), body = t.value.trim(); if(!body || !chatWith) return;
-  t.value = "";
-  try{ const m = await cloud.sendMessage(chatWith.id, body); chatMsgs.push(m); renderChat(); }
+  t.value = ""; t.focus({ preventScroll: true });   // la tastiera resta aperta per il messaggio successivo
+  try{ const m = await cloud.sendMessage(chatWith.id, body); chatMsgs.push(m); renderChat(true); }
   catch(err){ t.value = body; toast(err.message, 4000); }
 });
 
