@@ -42,7 +42,7 @@ jobs:
         run: |
           rm -rf site && mkdir -p site/img
           cp index.html sw.js manifest.webmanifest icon.svg icon-192.png icon-512.png theme.css sim.css site/
-          cp app.js data.js store.js ui.js collection.js deck.js profile.js sim.js engine.js bot.js site/
+          cp app.js data.js store.js ui.js collection.js deck.js profile.js sim.js engine.js bot.js scanner.js site/
           cp public/*.json site/
           cp -r data/img/. site/img/
           touch site/.nojekyll
