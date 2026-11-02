@@ -33,11 +33,11 @@ export function botDecide(G, pi, kind, options, ctx){
     }
     case "gigpick": { const w = options.filter(o => o.gig); return w.length ? w.reduce((a, b) => (b.gig.sides - b.gig.value) > (a.gig.sides - a.gig.value) ? b : a) : options[0]; }
     case "pickcard": {   // carte da prendere in mano / Gear da sacrificare: la più utile; "Nessuna" solo se non c'è altro
-      const withCard = options.filter(o => o.c);
+      const withCard = options.filter(o => o.c && !o.disabled);
       if(withCard.length) return withCard.reduce((a, b) => val(b.c) > val(a.c) ? b : a);
       const withGear = options.filter(o => o.g);
       if(withGear.length) return withGear.reduce((a, b) => (a.g.card.cost ?? 0) <= (b.g.card.cost ?? 0) ? a : b);
-      return options[options.length - 1];
+      return options[options.length - 1];   // «Nessuna» / «Ok, vanno in fondo al mazzo»
     }
     case "choice": {
       if(ctx.reveal) return (ctx.reveal.reduce((a, c) => a + (c.card.cost ?? 0), 0) >= 7 ? options[1] : options[0]) || options[0];   // Fool on the Hill: nega le carte care

@@ -372,6 +372,8 @@ function render(){
     ${peekPid ? `<div id="peek">${peekInner(peekPid)}</div>` : ""}
     ${handoff ? `<div class="handoff"><h2>Passa il dispositivo a ${esc(G.players[G.active].name)}</h2><p>Il tuo rivale non guarda, promesso.</p><button class="btn yel" id="bHand">Sono pronto</button></div>` : ""}`;
   if(showLog){ const l = $("#simLog"); l.scrollTop = l.scrollHeight; }
+  // scelta tra carte: subito la miniatura, poi l'immagine grande appena è scaricata (leggibile anche il testo)
+  $$("#simAsk .pk img[data-full]").forEach(img => { const full = img.dataset.full, pre = new Image(); pre.onload = () => { if(img.isConnected) img.src = full; }; pre.src = full; });
   if(tutorialActive() && tutorialStep(G, me())) { /* passo completato: la barra si aggiorna al prossimo ridisegno */ setTimeout(() => { if(G) render(); }, 0); }
 }
 
@@ -382,9 +384,31 @@ function askHTML(){
   const ctx = p.kind === "block" && p.ctx.attacker ? `<p style="color:var(--ink2);margin:0 0 8px">${esc(p.ctx.attacker.card.dn)} (${power(p.ctx.attacker)}) attacca ${p.ctx.target ? esc(p.ctx.target.card.dn) + " (" + power(p.ctx.target) + ")" : "la tua area Gig"}. Puoi bloccare, chiamare una Leggenda o usare una carta Quick, anche più volte.</p>` : "";
   // in due sullo stesso dispositivo: la decisione del difensore si apre solo dopo un tocco, così l'attaccante non vede le sue carte
   if(gmode === "hot" && p.player !== G.active && reactCover !== p) return `<div id="simAsk"><div class="box"><h3>Reazione di ${esc(P.name)}</h3><p>${esc(G.players[G.active].name)}, passa il dispositivo: le opzioni del rivale compaiono solo dopo il suo tocco.</p><div class="opts"><button class="btn yel" data-react="1">Sono ${esc(P.name)}, mostra le opzioni</button></div></div></div>`;
+  if((p.kind === "pickcard" || p.kind === "discard") && p.options.some(o => o.c && o.c.pid)) return pickerHTML(p, P, titles[p.kind]);
   const srcLine = p.ctx && p.ctx.src && p.kind !== "die" && p.kind !== "block" && p.kind !== "steal" ? `<div class="sub" style="margin:-4px 0 8px"><b>${esc(p.ctx.src)}</b>${p.ctx.text ? ` — ${esc(p.ctx.text)}` : ""}</div>` : "";
   return `<div id="simAsk"><div class="box"><h3>${titles[p.kind] || "Scegli"}</h3>${srcLine}${ctx}<div class="opts">${p.options.map((o, i) => {
     const pid = o.unit?.pid || o.c?.pid || o.g?.pid; return `<button class="btn${pid ? " card-opt" : ""}" data-ask="${i}"${o.disabled ? " disabled" : ""}>${pid ? `<img src="${thumbUrl(pid)}" alt="">` : ""}${esc(o.label)}</button>`; }).join("")}</div></div></div>`;
+}
+/* scelta tra carte (ricerca nel mazzo, trash, recupero, scarto): le carte si vedono grandi, con il testo
+   della carta che produce l'effetto e cosa si può fare. Tocca una carta per sceglierla (🔍 o pressione
+   lunga per ingrandirla), poi conferma: niente scelte per sbaglio con un tocco solo.               */
+let pickSel = null;   // { p: richiesta in corso, i: opzione scelta }
+function pickerHTML(p, P, title){
+  if(!pickSel || pickSel.p !== p) pickSel = { p, i: null };
+  const ctx = p.ctx || {}, srcPrint = ctx.srcPid ? DATA.byPrint.get(ctx.srcPid) : null, srcCard = srcPrint && srcPrint.card;
+  const verb = ctx.verb || (p.kind === "discard" ? "Scarta" : "Scegli");
+  const info = ctx.info || (p.kind === "discard" ? ["Scegli una carta dalla tua mano."] : []);
+  const cards = p.options.map((o, i) => ({ o, i })).filter(x => x.o.c && x.o.c.pid), others = p.options.map((o, i) => ({ o, i })).filter(x => !(x.o.c && x.o.c.pid));
+  const chosen = pickSel.i != null ? p.options[pickSel.i] : null;
+  return `<div id="simAsk" class="picker"><div class="box">
+    <div class="pkhead">${srcPrint ? `<div class="bc pksrc" data-zoom="${srcPrint.id}" title="Ingrandisci"><img src="${thumbUrl(srcPrint.id)}" alt=""></div>` : ""}
+      <div class="pkt"><h3>${title || "Scegli la carta"}</h3>${ctx.src ? `<div class="pkfx"><b>${esc(ctx.src)}</b>${srcCard && srcCard.text ? ` — ${esc(srcCard.text)}` : ctx.text ? ` — ${esc(ctx.text)}` : ""}</div>` : ""}
+      ${info.length ? `<div class="pkinfo">${info.map(t => `<span>${esc(t)}</span>`).join(" ")}</div>` : ""}</div></div>
+    <div class="pkrow">${cards.map(({ o, i }) => `<div class="pk${o.disabled ? " off" : ""}${pickSel.i === i ? " on" : ""}" ${o.disabled ? "" : `data-pick="${i}"`}>
+        <img src="${thumbUrl(o.c.pid)}" data-full="${imgUrl(o.c.pid)}" alt="${esc(o.c.card.dn)}" draggable="false"><button class="zm" data-zoom="${o.c.pid}" aria-label="Ingrandisci">🔍</button>
+        <span class="nm">${esc(o.c.card.dn)}</span>${o.disabled ? `<span class="why">non prendibile</span>` : ""}</div>`).join("")}</div>
+    <div class="opts">${chosen ? `<button class="btn yel" data-ask="${pickSel.i}">${esc(verb)}: ${esc(chosen.c.card.dn)}</button>` : cards.some(x => !x.o.disabled) ? `<span class="pkhint">Tocca una carta per sceglierla</span>` : ""}${others.map(({ o, i }) => `<button class="btn" data-ask="${i}"${o.disabled ? " disabled" : ""}>${esc(o.label)}</button>`).join("")}</div>
+  </div></div>`;
 }
 /* finestra generica (mulligan, conferme) */
 function showAsk(title, cards, text, buttons){
@@ -630,6 +654,7 @@ function wire(){
     }
     const mull = t.closest("[data-mull]"); if(mull){ const who = mulliganPending(); doMull(who, mull.dataset.mull === "redo"); if(tutorialActive() && who === 0) ensureHand(G, 0); render(); tick(); return; }
     const zoom = t.closest("[data-zoom]"); if(zoom){ openLens(imgUrl(zoom.dataset.zoom)); return; }
+    const pk = t.closest("[data-pick]"); if(pk && G.pending){ pickSel = { p: G.pending, i: +pk.dataset.pick }; render(); return; }
     const ask = t.closest("[data-ask]"); if(ask){ if(G.pending && G.pending.kind === "block" && human[G.pending.player]) G.tutReacted = true; res(+ask.dataset.ask); render(); tick(); return; }
     const hand = t.closest("[data-hand=\"1\"]"); if(hand){ handCard(hand, G.players[me()]); return; }
     const leg = t.closest("[data-legend]"); if(leg){ const owner = leg.closest(".bz").classList.contains("mine") ? me() : 1 - me(); legendCard(leg, owner); return; }

@@ -163,3 +163,25 @@
 #board .brow.field .bc{touch-action:pan-x pan-y}   /* le Unità in campo scorrono in orizzontale quando sono tante */
 #board .brow.hand .bc{touch-action:pan-x}
 #peek[hidden]{display:none}
+/* scelta tra carte: ricerca nel mazzo, trash, recupero, scarto */
+#simAsk.picker .box{max-width:min(860px,100%);display:flex;flex-direction:column;gap:8px;padding:10px 12px}
+#simAsk .pkhead{display:flex;gap:10px;align-items:flex-start}
+#simAsk .pkhead .pksrc{width:calc(var(--bh) * .13);min-width:44px;max-width:70px;cursor:zoom-in}
+#simAsk .pkt{flex:1;min-width:0}
+#simAsk .pkt h3{margin:0 0 2px}
+#simAsk .pkfx{font-size:12.5px;line-height:1.35;color:var(--ink2);max-height:5.4em;overflow:auto}
+#simAsk .pkinfo{font-size:12.5px;margin-top:4px;color:var(--acc2)}
+#simAsk .pkinfo span{margin-right:4px}
+#simAsk .pkrow{display:flex;gap:8px;overflow-x:auto;padding:4px 2px 6px;overscroll-behavior:contain;touch-action:pan-x}
+#simAsk .pk{position:relative;flex:0 0 auto;width:calc(var(--bh) * .34);min-width:96px;max-width:170px;display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;border-radius:8px;padding:3px;border:2px solid transparent}
+#simAsk .pk img{width:100%;aspect-ratio:733/1024;object-fit:cover;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.4);pointer-events:none}
+#simAsk .pk .nm{font-size:11.5px;font-weight:700;text-align:center;line-height:1.2;max-width:100%;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+#simAsk .pk .why{font-size:10.5px;color:var(--mute);text-transform:uppercase;letter-spacing:.05em}
+#simAsk .pk.on{border-color:var(--acc2Fill);background:color-mix(in srgb,var(--acc2Fill) 14%,transparent)}
+#simAsk .pk.off{cursor:default}
+#simAsk .pk.off img{filter:grayscale(1) brightness(.6)}
+#simAsk .pk .zm{position:absolute;top:6px;right:6px;width:28px;height:28px;border-radius:50%;border:0;background:rgba(0,0,0,.65);color:#fff;font-size:14px;line-height:28px;padding:0;cursor:zoom-in}
+#simAsk .pkhint{font-size:12.5px;color:var(--mute);align-self:center;margin-right:6px}
+@media(max-height:460px){ #simAsk.picker{padding:6px} #simAsk.picker .box{max-height:100%;border-radius:8px} #simAsk .pkfx{max-height:2.8em} }
+#simAsk.picker{background:rgba(0,0,0,.72)}
+#simAsk.picker .box{background:var(--bg2)}

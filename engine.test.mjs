@@ -414,5 +414,89 @@ import { canPay, costOf, spendCost } from "./engine.js";
     playC(P, "Sandayu Oda: Hanako's Guardian"); flush();
     ok(R.field.filter(u => u.spent).length === 2, "Sandayu Oda: 2 coppie → 2 Unità rivali spese"); }
 }
+/* --- ricerca nel mazzo: il giocatore vede tutte le carte guardate, prende solo quelle ammesse */
+{
+  const names = ["Sketchy Ripper", "Mantis Blades", "Gorilla Arms", "Floor It", "Animals Wrecker", "Pyramid Song"];
+  const legs = ["Jackie Welles: Mama's Favorite", "Kerry Eurodyne: Axe, Attitude, Audience", "Johnny Silverhand: Rocking Renegade"];
+  const d = { name: "S", legends: legs.map(n => ({ cid: byName(n).id, pid: byName(n).def.id })), cards: names.map(n => ({ cid: byName(n).id, pid: byName(n).def.id, n: 3 })) };
+  const G = createGame([d, JSON.parse(JSON.stringify(d))], byId, { seed: 5, autoPay: [true, true] });
+  mulligan(G, 0, false); mulligan(G, 1, false); while(G.pending) resolve(G, 0);
+  const P = G.players[G.active], R = G.players[1 - G.active];
+  const take = (Q, n) => { const c = [...Q.hand, ...Q.deck].find(x => x.card.dn === n); const a = Q.hand.includes(c) ? Q.hand : Q.deck; a.splice(a.indexOf(c), 1); return c; };
+  const rip = take(P, "Sketchy Ripper"); P.field.push({ ...rip, spent: false, lag: false, mod: 0, gear: [] });
+  const top = ["Floor It", "Mantis Blades", "Animals Wrecker"].map(n => take(P, n)); P.deck.unshift(...top);
+  R.gigs = [{ sides: 6, value: 3, uid: 991 }];
+  doAction(G, P.id, { t: "attack", uid: rip.uid, target: { kind: "gigs" } });
+  while(G.pending && G.pending.kind !== "pickcard") resolve(G, 0);
+  const o = G.pending ? G.pending.options : [];
+  ok(o.filter(x => x.c).length === 3, "ricerca: mostrate tutte e 3 le carte guardate (" + o.map(x => x.label).join(" / ") + ")");
+  ok(o.filter(x => x.c && !x.disabled).map(x => x.c.card.dn).join() === "Mantis Blades", "ricerca: prendibile solo il Gear");
+  ok(o.filter(x => x.disabled).length === 2 && o.every(x => !x.disabled || / · non prendibile$/.test(x.label)), "ricerca: le altre visibili ma non selezionabili");
+  const h = P.hand.length; resolve(G, o.findIndex(x => x.c && x.c.card.dn === "Floor It"));
+  ok(P.hand.length === h && !P.hand.includes(top[0]), "ricerca: una carta non ammessa non entra in mano");
+}
+{
+  // nessuna carta ammessa: le carte si vedono comunque, con «Continua»
+  const names = ["Sketchy Ripper", "Floor It", "Animals Wrecker", "Pyramid Song"];
+  const legs = ["Jackie Welles: Mama's Favorite", "Kerry Eurodyne: Axe, Attitude, Audience", "Johnny Silverhand: Rocking Renegade"];
+  const d = { name: "S", legends: legs.map(n => ({ cid: byName(n).id, pid: byName(n).def.id })), cards: names.map(n => ({ cid: byName(n).id, pid: byName(n).def.id, n: 4 })) };
+  const G = createGame([d, JSON.parse(JSON.stringify(d))], byId, { seed: 6, autoPay: [true, true] });
+  mulligan(G, 0, false); mulligan(G, 1, false); while(G.pending) resolve(G, 0);
+  const P = G.players[G.active], R = G.players[1 - G.active];
+  const c = [...P.hand, ...P.deck].find(x => x.card.dn === "Sketchy Ripper"); const a = P.hand.includes(c) ? P.hand : P.deck; a.splice(a.indexOf(c), 1);
+  P.field.push({ ...c, spent: false, lag: false, mod: 0, gear: [] }); R.gigs = [{ sides: 6, value: 3, uid: 992 }];
+  const n0 = P.deck.length;
+  doAction(G, P.id, { t: "attack", uid: c.uid, target: { kind: "gigs" } });
+  while(G.pending && G.pending.kind !== "pickcard") resolve(G, 0);
+  const o = G.pending ? G.pending.options : [];
+  ok(o.filter(x => x.c).length === 3 && o.filter(x => x.c).every(x => x.disabled) && o[o.length - 1].label === "Ok, vanno in fondo al mazzo", "ricerca senza carte ammesse: le 3 carte mostrate e solo «Ok»");
+  resolve(G, o.length - 1); while(G.pending) resolve(G, 0);
+  ok(P.deck.length === n0, "ricerca senza carte ammesse: tornano tutte nel mazzo");
+}
+/* --- Zetatech Faceplate (e Gear «quando questa Unità o Leggenda è spesa»): ogni modo di essere spesa */
+{
+  const names = ["Zetatech Faceplate", "Floor It", "Animals Wrecker", "Secondhand Bombus", "Pyramid Song"];
+  const legs = ["Jackie Welles: Mama's Favorite", "Kerry Eurodyne: Axe, Attitude, Audience", "Johnny Silverhand: Rocking Renegade"];
+  const d = { name: "Z", legends: legs.map(n => ({ cid: byName(n).id, pid: byName(n).def.id })), cards: names.map(n => ({ cid: byName(n).id, pid: byName(n).def.id, n: 4 })) };
+  const setup = (seed, autoPay) => {
+    const G = createGame([d, JSON.parse(JSON.stringify(d))], byId, { seed, autoPay: [autoPay, autoPay] });
+    mulligan(G, 0, false); mulligan(G, 1, false); while(G.pending) resolve(G, 0);
+    const P = G.players[G.active], R = G.players[1 - G.active];
+    const take = (Q, n) => { const c = [...Q.hand, ...Q.deck].find(x => x.card.dn === n); const a = Q.hand.includes(c) ? Q.hand : Q.deck; a.splice(a.indexOf(c), 1); return c; };
+    const fired = () => G.log.filter(e => /⚡ Zetatech Faceplate/.test(e.text)).length;
+    return { G, P, R, take, fired };
+  };
+  // 1) Leggenda equipaggiata spesa per pagare un costo
+  { const { G, P, take, fired } = setup(21, true);
+    const L = P.legends[2]; L.faceUp = true; L.spent = false; L.gear = [take(P, "Zetatech Faceplate")];
+    for(const l of P.legends) if(l !== L) l.spent = true; P.eddies = [];
+    P.gigs = [{ sides: 6, value: 2, uid: 801 }];
+    const c = take(P, "Floor It"); P.hand.push(c);
+    const before = fired(); doAction(G, P.id, { t: "play", uid: c.uid }); while(G.pending) resolve(G, 0);
+    ok(L.spent && fired() === before + 1, "Zetatech su una Leggenda: scatta quando la Leggenda è spesa per pagare"); }
+  // 1b) stesso caso con il pagamento manuale (si tocca la Leggenda)
+  { const { G, P, take, fired } = setup(22, false);
+    const L = P.legends[2]; L.faceUp = true; L.spent = false; L.gear = [take(P, "Zetatech Faceplate")];
+    for(const l of P.legends) if(l !== L) l.spent = true; P.eddies = [{ uid: 7700, card: { dn: "E" }, spent: false }];
+    const c = take(P, "Floor It"); P.hand.push(c);
+    const before = fired(); doAction(G, P.id, { t: "play", uid: c.uid });
+    ok(G.pending && G.pending.kind === "pay", "pagamento manuale: scelta della fonte");
+    resolve(G, G.pending.options.findIndex(o => o.l === L)); while(G.pending) resolve(G, 0);
+    ok(L.spent && fired() === before + 1, "Zetatech su una Leggenda: scatta anche con il pagamento manuale"); }
+  // 2) Unità equipaggiata che blocca
+  { const { G, P, R, take, fired } = setup(23, true);
+    const att = take(P, "Animals Wrecker"); P.field.push({ ...att, spent: false, lag: false, mod: 0, gear: [] });
+    const b = take(R, "Secondhand Bombus"); const bu = { ...b, spent: false, lag: false, mod: 0, gear: [take(R, "Zetatech Faceplate")] }; R.field.push(bu);
+    R.gigs = [{ sides: 6, value: 3, uid: 802 }];
+    const before = fired(); doAction(G, P.id, { t: "attack", uid: att.uid, target: { kind: "gigs" } });
+    let g = 0; while(G.pending && g++ < 30){ const o = G.pending.options; const bi = G.pending.kind === "block" ? o.findIndex(x => x.unit === bu || x.blocker === bu || /Bombus/.test(x.label)) : 0; resolve(G, bi >= 0 ? bi : 0); }
+    ok(bu.spent && fired() === before + 1, "Zetatech su un'Unità: scatta quando blocca"); }
+  // 3) Unità equipaggiata che attacca (era già così)
+  { const { G, P, R, take, fired } = setup(24, true);
+    const att = take(P, "Animals Wrecker"); const au = { ...att, spent: false, lag: false, mod: 0, gear: [take(P, "Zetatech Faceplate")] }; P.field.push(au);
+    R.gigs = [{ sides: 6, value: 3, uid: 803 }];
+    const before = fired(); doAction(G, P.id, { t: "attack", uid: au.uid, target: { kind: "gigs" } }); while(G.pending) resolve(G, 0);
+    ok(fired() === before + 1, "Zetatech su un'Unità: scatta quando attacca"); }
+}
 console.log(`\n${passes} controlli OK, ${fails} falliti`);
 process.exit(fails ? 1 : 0);
