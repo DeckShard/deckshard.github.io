@@ -185,3 +185,7 @@
 @media(max-height:460px){ #simAsk.picker{padding:6px} #simAsk.picker .box{max-height:100%;border-radius:8px} #simAsk .pkfx{max-height:2.8em} }
 #simAsk.picker{background:rgba(0,0,0,.72)}
 #simAsk.picker .box{background:var(--bg2)}
+/* le due metà prendono l'altezza del loro contenuto (non più una proporzione fissa 1 : 1,25):
+   lo spazio in più va alla zona del giocatore, e nessuna delle due taglia le proprie carte */
+.bz.rival{flex:0 1 auto}
+.bz.mine{flex:1 1 auto}

@@ -43,7 +43,7 @@ export async function refreshTables(){
   emit("ncd:tables");
   return tables;
 }
-export const invitesForMe = () => tables.filter(t => t.status === "waiting" && t.invited === myId() && t.host !== myId());
+export const invitesForMe = () => tables.filter(t => t.status === "waiting" && t.invited === myId() && t.host !== myId() && Date.now() - new Date(t.created_at).getTime() < 30 * 60000);
 export const activeTables = () => tables.filter(t => t.status === "active");
 export const myWaiting = () => tables.find(t => t.status === "waiting" && t.host === myId());
 
@@ -255,3 +255,6 @@ async function watchInvites(){
   refreshTables();
 }
 document.addEventListener("ncd:cloud", () => { if(cloud.status !== "sync") watchInvites().catch(() => {}); });
+/* una sfida sparisce da sola quando l'host chiude l'app o annulla: se ce n'è qualcuna in sospeso,
+   la lista si rilegge ogni 30 secondi (il database mostra solo le sfide di host ancora collegati) */
+setInterval(() => { if(signedIn() && invitesForMe().length && document.visibilityState === "visible") refreshTables(); }, 30000);

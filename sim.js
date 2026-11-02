@@ -289,6 +289,22 @@ async function lobbyClick(e){
 
 /* ------------------------------------------------------------ resa grafica */
 const me = () => gmode === "bot" ? 0 : gmode === "online" ? gSeat : G.active;   // in hot-seat la plancia è sempre dal punto di vista di chi gioca
+/* se le righe non ci stanno (browser con le barre visibili, schermi bassi) le carte si rimpiccioliscono
+   finché tutto entra: altrimenti la zona in basso taglia le proprie Unità dall'alto */
+function fitBoard(board, H){
+  for(let i = 0; i < 4; i++){
+    let need = 0;
+    for(const z of board.children){
+      const pos = getComputedStyle(z).position; if(pos === "absolute" || pos === "fixed" || z.hidden) continue;
+      if(z.classList.contains("bz")){ let off = 0, full = 0; for(const r of z.children){ if(!r.classList.contains("brow")) continue; off += r.offsetHeight; full += Math.max(r.offsetHeight, r.scrollHeight); } need += z.offsetHeight - off + full; }
+      else need += z.offsetHeight;
+    }
+    if(need <= H + 1) return;
+    const cw = parseFloat(board.style.getPropertyValue("--cw")), next = Math.max(20, cw - (need - H) / 5.6 - 0.3);
+    if(next >= cw - 0.05) return;
+    board.style.setProperty("--cw", next.toFixed(1) + "px");
+  }
+}
 /* potenza mostrata: quella che conta adesso, con gli effetti continui (es. Royce: +2 per ogni Gear nel suo turno) */
 function shownPower(x){ const P = G && G.players.find(Q => Q.field.includes(x) || Q.legends.includes(x)); return P ? powerIn(G, P, x) : power(x); }
 function cardHTML(x, cls = "", extra = ""){
@@ -327,9 +343,11 @@ function render(){
   const status = G.winner != null ? `Fine: ${esc(G.reason)}` : waitMull ? `Mulligan: in attesa di ${esc(R.name)}` : myTurn ? "Il tuo turno" : human[G.active] || gmode === "online" ? `Turno di ${esc(G.players[G.active].name)}` : "Turno del bot…";
   const last = G.log.slice(-1)[0];
   // misura delle carte dall'altezza disponibile: 2 righe rivale + campo + pile + mano (1,15×) + barra e margini
-  const H = board.clientHeight; board.style.setProperty("--bh", H + "px");
+  // altezza utile: senza i margini di sicurezza (su iPhone in orizzontale la barra della home toglie ~20px)
+  const cs = getComputedStyle(board), H = board.clientHeight - (parseFloat(cs.paddingTop) || 0) - (parseFloat(cs.paddingBottom) || 0);
+  board.style.setProperty("--bh", H + "px");
   if(drag){ drag = null; killGhosts(); }   // un ridisegno durante un trascinamento lo annulla, senza lasciare copie in giro
-  board.style.setProperty("--cw", Math.max(32, Math.min(64, (H - 110) / (1.4 * 4.15 + 0.6))).toFixed(1) + "px");
+  board.style.setProperty("--cw", Math.max(24, Math.min(64, (H - 110) / (1.4 * 4.15 + 0.6))).toFixed(1) + "px");
   board.innerHTML = `
     <div class="bz rival">
       <div class="brow">
@@ -373,6 +391,7 @@ function render(){
     ${gmode === "online" ? drawOfferHTML() : ""}
     ${peekPid ? `<div id="peek">${peekInner(peekPid)}</div>` : ""}
     ${handoff ? `<div class="handoff"><h2>Passa il dispositivo a ${esc(G.players[G.active].name)}</h2><p>Il tuo rivale non guarda, promesso.</p><button class="btn yel" id="bHand">Sono pronto</button></div>` : ""}`;
+  fitBoard(board, H);
   if(showLog){ const l = $("#simLog"); l.scrollTop = l.scrollHeight; }
   // scelta tra carte: subito la miniatura, poi l'immagine grande appena è scaricata (leggibile anche il testo)
   $$("#simAsk .pk img[data-full]").forEach(img => { const full = img.dataset.full, pre = new Image(); pre.onload = () => { if(img.isConnected) img.src = full; }; pre.src = full; });
