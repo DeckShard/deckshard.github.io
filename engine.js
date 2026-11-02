@@ -379,7 +379,7 @@ export function powerIn(G, P, u, ctx = {}){
     for(const a of [...P.field, ...P.legends.filter(l => l.faceUp && !l.removed && !l.onField)]) if(a.fx.auraAttack && a.fx.auraAttack.cls && (u.card.cls || []).some(k => k.toUpperCase() === a.fx.auraAttack.cls)) p += a.fx.auraAttack.n;
   }
   if(ctx.vsLegend && u.fx.powerVsLegend) p += u.fx.powerVsLegend;
-  if(u.isLegend && u.fx.powerPerGear && G.active === P.id) p += u.fx.powerPerGear * (u.gear || []).length;
+  if((u.isLegend || P.legends.includes(u)) && u.fx.powerPerGear && G.active === P.id) p += u.fx.powerPerGear * (u.gear || []).length;   // Royce: anche in Go Solo
   if(ctx.fightingUnit && u.fightBuffPerLegend) p += u.fightBuffPerLegend * P.legends.filter(l => l.faceUp && !l.removed).length;
   return p;
 }

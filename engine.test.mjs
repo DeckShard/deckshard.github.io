@@ -3,7 +3,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { createGame, mulligan, legalActions, doAction, resolve, summary, parseEffects, power, streetCred, endTurn } from "./engine.js";
+import { createGame, mulligan, legalActions, doAction, resolve, summary, parseEffects, power, powerIn, streetCred, endTurn } from "./engine.js";
 import { botDecide, botTurn, botStep } from "./bot.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -497,6 +497,27 @@ import { canPay, costOf, spendCost } from "./engine.js";
     R.gigs = [{ sides: 6, value: 3, uid: 803 }];
     const before = fired(); doAction(G, P.id, { t: "attack", uid: au.uid, target: { kind: "gigs" } }); while(G.pending) resolve(G, 0);
     ok(fired() === before + 1, "Zetatech su un'Unità: scatta quando attacca"); }
+}
+/* --- Royce: Psycho on the Edge, +2 potenza per ogni Gear equipaggiato nel proprio turno */
+{
+  const names = ["Zetatech Faceplate", "Floor It", "Animals Wrecker", "Pyramid Song"];
+  const legs = ["Royce: Psycho on the Edge", "Kerry Eurodyne: Axe, Attitude, Audience", "Johnny Silverhand: Rocking Renegade"];
+  const d = { name: "R", legends: legs.map(n => ({ cid: byName(n).id, pid: byName(n).def.id })), cards: names.map(n => ({ cid: byName(n).id, pid: byName(n).def.id, n: 4 })) };
+  const G = createGame([d, JSON.parse(JSON.stringify(d))], byId, { seed: 31, autoPay: [true, true] });
+  mulligan(G, 0, false); mulligan(G, 1, false); while(G.pending) resolve(G, 0);
+  const P = G.players[G.active], R = G.players[1 - G.active];
+  const roy = P.legends.find(l => l.card.dn.startsWith("Royce")); roy.faceUp = true;
+  const fp = [...P.hand, ...P.deck].find(x => x.card.dn === "Zetatech Faceplate"); (P.hand.includes(fp) ? P.hand : P.deck).splice((P.hand.includes(fp) ? P.hand : P.deck).indexOf(fp), 1); roy.gear = [fp];
+  ok(power(roy) === 8 && powerIn(G, P, roy) === 10, `Royce con Faceplate nel suo turno: 6 + 2 del Gear + 2 dell'effetto = ${powerIn(G, P, roy)}`);
+  G.active = R.id; ok(powerIn(G, P, roy) === 8, "Royce nel turno del rivale: niente bonus (8)"); G.active = P.id;
+  // Go Solo: in campo come Unità, il bonus resta e conta per i Gig rubati (10 → 2 Gig)
+  for(const l of P.legends) l.spent = false; P.eddies = Array.from({ length: 8 }, (_, i) => ({ uid: 7800 + i, card: { dn: "E" }, spent: false }));
+  doAction(G, P.id, { t: "gosolo", idx: P.legends.indexOf(roy) }); while(G.pending) resolve(G, 0);
+  const u = P.field.find(x => x.card.dn.startsWith("Royce"));
+  ok(u && powerIn(G, P, u, { attacking: true }) === 10, "Royce in Go Solo con Faceplate: attacca a 10");
+  R.gigs = [{ sides: 6, value: 3, uid: 811 }, { sides: 8, value: 4, uid: 812 }, { sides: 4, value: 2, uid: 813 }]; R.field = [];
+  const before = P.gigs.length; doAction(G, P.id, { t: "attack", uid: u.uid, target: { kind: "gigs" } }); let g = 0; while(G.pending && g++ < 30) resolve(G, 0);
+  ok(P.gigs.length - before === 2, `Royce a 10 ruba 2 Gig (rubati: ${P.gigs.length - before})`);
 }
 console.log(`\n${passes} controlli OK, ${fails} falliti`);
 process.exit(fails ? 1 : 0);

@@ -4,7 +4,7 @@
 import { DATA, imgUrl, thumbUrl } from "./data.js";
 import { S, saveDeck } from "./store.js";
 import { $, $$, esc, toast, openLens, openCard } from "./ui.js";
-import { createGame, mulligan, resolve, legalActions, doAction, applyMove, moveOf, power, ready, readyEddies, streetCred, canAttack, canPay, manual, rival, hasKw, hasSpend } from "./engine.js";
+import { createGame, mulligan, resolve, legalActions, doAction, applyMove, moveOf, power, powerIn, ready, readyEddies, streetCred, canAttack, canPay, manual, rival, hasKw, hasSpend } from "./engine.js";
 import { botDecide, botStep } from "./bot.js";
 import { starterDeck, isLegal, deckSize, openDeck } from "./deck.js";
 import { prereleaseSetupHTML, wirePrerelease } from "./prerelease.js";
@@ -289,8 +289,10 @@ async function lobbyClick(e){
 
 /* ------------------------------------------------------------ resa grafica */
 const me = () => gmode === "bot" ? 0 : gmode === "online" ? gSeat : G.active;   // in hot-seat la plancia è sempre dal punto di vista di chi gioca
+/* potenza mostrata: quella che conta adesso, con gli effetti continui (es. Royce: +2 per ogni Gear nel suo turno) */
+function shownPower(x){ const P = G && G.players.find(Q => Q.field.includes(x) || Q.legends.includes(x)); return P ? powerIn(G, P, x) : power(x); }
 function cardHTML(x, cls = "", extra = ""){
-  const pw = power(x), base = x.card.power ?? 0, c = cls + (x.spent ? " spent" : "") + (x.lag ? " lag" : "") + (sel === x.uid ? " sel" : "");
+  const pw = shownPower(x), base = x.card.power ?? 0, c = cls + (x.spent ? " spent" : "") + (x.lag ? " lag" : "") + (sel === x.uid ? " sel" : "");
   return `<div class="bc ${c}" data-uid="${x.uid}" title="${esc(x.card.dn)}">${x.pid ? `<img src="${thumbUrl(x.pid)}" alt="">` : `<div class="n">${esc(x.card.dn)}</div>`}
     ${x.card.type === "Unit" || x.isLegend ? `<span class="pw${pw !== base ? " mod" : ""}">${pw}</span>` : ""}${extra}
     ${(x.gear || []).length ? `<div class="g">${x.gear.map(g => `<img src="${thumbUrl(g.pid)}" alt="" title="${esc(g.card.dn)}">`).join("")}</div>` : ""}</div>`;
@@ -381,7 +383,7 @@ function render(){
 function askHTML(){
   const p = G.pending, P = G.players[p.player];
   const titles = { die: "Quale dado tiri dal fixer?", block: `${esc(P.name)}: come reagisci?`, steal: "Quale Gig rubi?", target: "Scegli il bersaglio", discard: "Scegli la carta da scartare", gigpick: "Quale Gig?", gigvalue: "Nuovo valore", pickcard: "Scegli la carta", choice: "Scegli un effetto", yesno: "Vuoi farlo?", pay: p.ctx && p.ctx.confirm ? `Per pagare ${p.ctx.cost} €$ devi spendere una Leggenda con abilità` : `Come paghi? ${p.ctx ? `${p.ctx.paid}/${p.ctx.cost} €$ pagati` : ""}` };
-  const ctx = p.kind === "block" && p.ctx.attacker ? `<p style="color:var(--ink2);margin:0 0 8px">${esc(p.ctx.attacker.card.dn)} (${power(p.ctx.attacker)}) attacca ${p.ctx.target ? esc(p.ctx.target.card.dn) + " (" + power(p.ctx.target) + ")" : "la tua area Gig"}. Puoi bloccare, chiamare una Leggenda o usare una carta Quick, anche più volte.</p>` : "";
+  const ctx = p.kind === "block" && p.ctx.attacker ? `<p style="color:var(--ink2);margin:0 0 8px">${esc(p.ctx.attacker.card.dn)} (${powerIn(G, G.players[G.active], p.ctx.attacker, { attacking: true })}) attacca ${p.ctx.target ? esc(p.ctx.target.card.dn) + " (" + shownPower(p.ctx.target) + ")" : "la tua area Gig"}. Puoi bloccare, chiamare una Leggenda o usare una carta Quick, anche più volte.</p>` : "";
   // in due sullo stesso dispositivo: la decisione del difensore si apre solo dopo un tocco, così l'attaccante non vede le sue carte
   if(gmode === "hot" && p.player !== G.active && reactCover !== p) return `<div id="simAsk"><div class="box"><h3>Reazione di ${esc(P.name)}</h3><p>${esc(G.players[G.active].name)}, passa il dispositivo: le opzioni del rivale compaiono solo dopo il suo tocco.</p><div class="opts"><button class="btn yel" data-react="1">Sono ${esc(P.name)}, mostra le opzioni</button></div></div></div>`;
   if((p.kind === "pickcard" || p.kind === "discard") && p.options.some(o => o.c && o.c.pid)) return pickerHTML(p, P, titles[p.kind]);
@@ -464,7 +466,8 @@ function fieldCard(el, owner){
   const items = [];
   if(mine && myTurn){
     const can = canAttack(G, M, u) && tutorialAllows("attack");
-    items.push({ label: power(u) < 1 ? "Attacca l'area Gig (potenza 0: non ruba, ma attiva gli effetti)" : `Attacca l'area Gig (${1 + Math.floor(power(u) / 10)} Gig)`, cls: "acc", disabled: !can || !rival(G, M).gigs.length || u.fx.onlyUnits, fn: () => after(act(M.id, { t: "attack", uid: u.uid, target: { kind: "gigs" } })) });
+    const apw = powerIn(G, M, u, { attacking: true });
+    items.push({ label: apw < 1 ? "Attacca l'area Gig (potenza 0: non ruba, ma attiva gli effetti)" : `Attacca l'area Gig (${1 + Math.floor(apw / 10)} Gig)`, cls: "acc", disabled: !can || !rival(G, M).gigs.length || u.fx.onlyUnits, fn: () => after(act(M.id, { t: "attack", uid: u.uid, target: { kind: "gigs" } })) });
     items.push({ label: "Attacca un'Unità spesa →", disabled: !can || !rival(G, M).field.some(x => x.spent), fn: () => { targeting = { kind: "attack", uid: u.uid }; sel = u.uid; render(); note("Tocca l'Unità rivale spesa da attaccare"); } });
     if(hasSpend(u)) items.push({ label: "Abilità {Spend}", disabled: u.spent || u.lag || !tutorialAllows("spend"), fn: () => after(act(M.id, { t: "spend", uid: u.uid })) });
   }
@@ -477,7 +480,7 @@ function fieldCard(el, owner){
   }
   items.push({ label: "Ingrandisci", fn: () => openLens(imgUrl(u.pid)) }, { label: "Scheda carta", fn: () => openCard(u.cid, u.pid) });
   for(const g of u.gear || []) items.push({ label: `Ingrandisci ${g.card.dn} (Gear)`, fn: () => openLens(imgUrl(g.pid)) });
-  openPop(el, items, `${u.card.dn} · potenza ${power(u)}`);
+  openPop(el, items, `${u.card.dn} · potenza ${shownPower(u)}`);
 }
 function legendCard(el, owner){
   const P = G.players[owner], l = P.legends.find(x => x.uid === +el.dataset.uid); if(!l) return;

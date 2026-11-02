@@ -2,7 +2,7 @@
    gioca le Unità più forti che può permettersi, attacca dove conviene,
    blocca solo quando vince lo scontro o quando sta per perdere i Gig.   */
 
-import { legalActions, doAction, power, ready, rival, streetCred, canAttack, hasKw } from "./engine.js";
+import { legalActions, doAction, power, powerIn, ready, rival, streetCred, canAttack, hasKw } from "./engine.js";
 
 const val = c => (c.card.power ?? 0) + (c.card.type === "Program" ? 2 : 0) + (c.card.type === "Gear" ? (c.card.power ?? 0) + 1 : 0);
 
@@ -12,7 +12,7 @@ export function botDecide(G, pi, kind, options, ctx){
   switch(kind){
     case "die": return options.reduce((a, b) => b.sides > a.sides ? b : a);                   // dado più grande = più Street Cred
     case "block": {
-      const att = ctx.attacker, pa = power(att);
+      const att = ctx.attacker, pa = powerIn(G, G.players[G.active], att, { attacking: true });
       const winners = options.filter(o => o.unit && power(o.unit) > pa);
       if(winners.length) return winners.reduce((a, b) => power(a.unit) < power(b.unit) ? a : b);  // vince col blocker più economico
       const ties = options.filter(o => o.unit && power(o.unit) === pa && (o.unit.card.cost ?? 0) <= (att.card.cost ?? 0));
@@ -84,7 +84,7 @@ export function botStep(G, pi){
     const bestBlock = blockers.length ? Math.max(...blockers.map(power)) : -1;
     let best = null, bestScore = 0;
     for(const a of attacks){
-      const pa = power(a.unit); let score = 0;
+      const pa = powerIn(G, P, a.unit, { attacking: true }); let score = 0;
       if(a.target.kind === "unit"){ const pt = power(a.targetObj); if(pa > pt) score = 3 + pt; else if(pa === pt && (a.unit.card.cost ?? 0) < (a.targetObj.card.cost ?? 0)) score = 1; }
       else { score = 4 + (1 + Math.floor(pa / 10)) * 3 + (R.gigs.length >= 5 ? 4 : 0); }
       if(bestBlock >= pa) score -= 4; // probabile blocco perdente
