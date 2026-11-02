@@ -401,6 +401,7 @@ begin
   select * into r from game_tables where code = upper(trim(p_code)) and status = 'waiting' for update;
   if r.id is null then raise exception 'nessun tavolo aperto con questo codice'; end if;
   if r.host = me then raise exception 'è il tuo tavolo: aspetta che entri l''avversario'; end if;
+  if r.host_seen < now() - interval '90 seconds' then raise exception 'nessun tavolo aperto con questo codice'; end if;   -- l'host ha chiuso l'app: il tavolo è saltato
   if r.invited is not null and r.invited <> me then raise exception 'questo tavolo è riservato a un altro giocatore'; end if;
   if is_blocked(me, r.host) then raise exception 'nessun tavolo aperto con questo codice'; end if;
   if r.ver <> coalesce(p_ver, '') then raise exception 'versione diversa: aggiornate entrambi l''app (%)', r.ver; end if;
@@ -437,7 +438,7 @@ declare me uuid := auth.uid(); r game_tables;
 begin
   update game_tables set host_seen = case when me = host then now() else host_seen end,
                          guest_seen = case when me = guest then now() else guest_seen end
-  where id = t and status = 'active' and me in (host, guest);
+  where id = t and status in ('waiting', 'active') and me in (host, guest);   -- anche in attesa: così si sa se l'host è ancora lì
   select * into r from game_tables where id = t and me in (host, guest, invited);
   if r.id is null then return null; end if;
   return jsonb_build_object('status', r.status, 'moves', r.moves, 'result', r.result, 'reason', r.reason,
@@ -502,7 +503,9 @@ language sql stable security definer set search_path = public as $$
   left join profiles pg on pg.id = t.guest
   left join profiles pi on pi.id = t.invited
   where auth.uid() in (t.host, t.guest, t.invited)
-    and (t.status in ('waiting', 'active') or t.finished_at > now() - interval '24 hours')
+    and (t.status = 'active' or t.finished_at > now() - interval '24 hours'
+         -- in attesa: le sfide ricevute solo finché l'host è collegato (segnale entro 90 secondi) e per al massimo 30 minuti
+         or (t.status = 'waiting' and t.created_at > now() - interval '30 minutes' and (t.host = auth.uid() or t.host_seen > now() - interval '90 seconds')))
   order by (t.status = 'active') desc, (t.status = 'waiting') desc, t.created_at desc
   limit 20
 $$;
