@@ -47,7 +47,7 @@ export function accountHTML(){
     <h3>Account</h3>
     <div class="phead" style="gap:10px">${miniAvatar({ nick: p.nick, avatar: { img: S.profile.favImg, pos: S.profile.favPos, zoom: S.profile.favZoom } }, 46)}
       <div style="min-width:0"><b style="font-size:16px">${esc(p.nick || "…")}</b><div class="sub">${esc(st.user.email || "account di prova")}</div><div class="sub${st.status === "error" ? " bad" : ""}">☁ ${status}</div></div></div>
-    <div class="field stack" style="margin-top:8px"><label for="acNick">Nick pubblico<small>Così ti trovano gli amici</small></label><div class="acrow" style="margin:0"><input class="inp" id="acNick" value="${esc(p.nick || "")}" maxlength="24" autocomplete="off"><button class="btn sm" id="acNickSave">Salva</button></div></div>
+    <div class="field fcol" style="margin-top:8px"><label for="acNick">Nick pubblico<small>Così ti trovano gli amici</small></label><div class="acrow" style="margin:0"><input class="inp" id="acNick" value="${esc(p.nick || "")}" maxlength="24" autocomplete="off"><button class="btn sm" id="acNickSave">Salva</button></div></div>
     <div class="field"><label>Collezione visibile agli amici<small>Gli amici possono sfogliare le carte che hai (non i mazzi)</small></label>
       <span class="seg" id="acShow"><button data-v="1" aria-pressed="${!!p.show_collection}">Sì</button><button data-v="0" aria-pressed="${!p.show_collection}">No</button></span></div>
     <div class="field"><label>Messaggi dagli amici<small>Solo chi hai accettato come amico può scriverti</small></label>
