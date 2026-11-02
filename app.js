@@ -8,8 +8,9 @@ import { renderDeck } from "./deck.js";
 import { renderProfile, renderSettings } from "./profile.js";
 import { renderSim } from "./sim.js";
 import { renderRules } from "./rules.js";
+import { initI18n } from "./i18n.js";
 
-export const APP_VERSION = "1.2.1";
+export const APP_VERSION = "1.3.0";
 
 const TABS = { collection: renderCollection, deck: renderDeck, profile: renderProfile, sim: renderSim, rules: renderRules, settings: renderSettings };
 
@@ -37,6 +38,8 @@ export function showTab(name, push = true){
 
 async function boot(){
   applyTheme();
+  initI18n(S.profile.lang);
+  window.NCD_I18N = { apply(l){ S.profile.lang = l; S.save("profile"); location.reload(); } };
   $$("nav.tabs button").forEach(b => b.addEventListener("click", () => showTab(b.dataset.tab)));
   window.addEventListener("hashchange", () => showTab(location.hash.slice(1), false));
   $("#btnSettings").addEventListener("click", e => { e.preventDefault(); showTab("settings"); });

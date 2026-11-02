@@ -1,6 +1,6 @@
 # Night City Deck
 
-App web gratuita (PWA) per il **Cyberpunk TCG**: collezione con prezzi Cardmarket, deckbuilder con le regole di costruzione, profilo, simulatore con motore di regole e bot, regole, prerelease e tutorial. Le impostazioni (tema e 14 palette di colori, lingua, pagamento automatico nel simulatore, origine dei prezzi, backup dei dati, versione) stanno dietro l'ingranaggio in alto a destra. Funziona su telefono e desktop, si installa dalla pagina come un'app e lavora anche offline.
+App web gratuita (PWA) per il **Cyberpunk TCG**: collezione con prezzi Cardmarket, deckbuilder con le regole di costruzione, profilo, simulatore con motore di regole e bot, regole, prerelease e tutorial. Le impostazioni (tema e 14 palette di colori, lingua italiano/inglese, pagamento automatico nel simulatore, origine dei prezzi, backup dei dati, versione) stanno dietro l'ingranaggio in alto a destra. Funziona su telefono e desktop, si installa dalla pagina come un'app e lavora anche offline.
 
 Progetto amatoriale, non affiliato a WeirdCo né a CD PROJEKT RED. *Cyberpunk*, *Cyberpunk 2077* e le immagini delle carte sono © CD PROJEKT S.A. / WeirdCo e vengono usate secondo le linee guida per i contenuti dei fan di WeirdCo: l'app deve restare **gratuita e senza pubblicità**. I dati delle carte arrivano dal database ufficiale (cyberpunktcg.com / Netdeck), i prezzi dal listino pubblico giornaliero di Cardmarket.
 
@@ -13,6 +13,7 @@ collect.py                 collector: catalogo, immagini, prezzi, regole complet
 cardmarket-expansions.json abbinamento espansioni Cardmarket → set del gioco
 index.html, theme.css, sim.css, manifest.webmanifest, sw.js, icon*   la PWA
 app.js, data.js, store.js, ui.js, collection.js, deck.js, profile.js, sim.js   le sezioni
+i18n.js                    lingua dell'interfaccia: dizionario italiano → inglese applicato sul DOM
 engine.js                  motore di regole, puro (collaudabile con Node)
 bot.js                     avversario euristico
 scanner.js                 scanner della collezione (OCR con Tesseract.js, caricato dalla CDN quando serve)
@@ -53,6 +54,10 @@ Effetti delle carte: l'interprete (`parser.js`) legge il testo e lo trasforma in
 Pagamenti: di base il giocatore sceglie cosa spendere toccando sulla plancia gli Eddies o le Leggende (con la scorciatoia «Tutto con Eddies» e «Annulla»); nel profilo si può attivare il pagamento automatico, che chiede conferma solo quando dovrebbe spendere una Leggenda scoperta con un'abilità Spend ancora utilizzabile.
 
 Nota sul Gear: il motore somma la potenza del Gear a quella dell'Unità equipaggiata.
+
+## Lingua
+
+L'app è scritta in italiano; dalle Impostazioni si passa all'inglese. La traduzione (`i18n.js`) lavora sul DOM: ogni unità di testo (un elemento con solo testo e formattazione in linea, o un singolo nodo di testo) e gli attributi placeholder/title/aria-label vengono cercati nel dizionario, prima per corrispondenza esatta e poi per schema con segnaposto (`{1} pesca {2}.` → `{1} draws {2}.`); un MutationObserver traduce ciò che viene ridisegnato, `confirm`/`prompt` passano dal dizionario, e dopo «You» il verbo perde la -s. Le carte restano nella lingua stampata; le Regole complete sono già il testo ufficiale inglese. Per aggiungere una frase basta una riga nel dizionario in fondo a `i18n.js`.
 
 ## Import delle liste
 

@@ -117,7 +117,7 @@ export function renderSettings(){
     <div class="card">
       <h3>Lingua</h3>
       <div class="field"><label>Lingua dell'app<small>Le carte restano nella lingua stampata (inglese).</small></label>
-        <span class="seg" id="pfLang">${LANGS.map(([v, t]) => `<button data-v="${v}" aria-pressed="${(p.lang || "it") === v}" ${v === "en" && !window.NCD_I18N ? 'disabled title="In arrivo nel prossimo aggiornamento"' : ""}>${t}${v === "en" && !window.NCD_I18N ? " (in arrivo)" : ""}</button>`).join("")}</span></div>
+        <span class="seg" id="pfLang">${LANGS.map(([v, t]) => `<button data-v="${v}" aria-pressed="${(p.lang || "it") === v}">${t}</button>`).join("")}</span></div>
     </div>
 
     <div class="card">

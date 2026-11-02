@@ -177,6 +177,18 @@ await page.click('#pfTheme [data-v="dark"]');
 ok((await page.evaluate(() => document.documentElement.dataset.theme)) === "dark", "tema scuro");
 await page.click('#pfTheme [data-v="light"]');
 ok(/v\d+\.\d+/.test(await page.locator("#p-settings").textContent()) && (await page.locator("#metaLine").isVisible()), "versione nelle impostazioni e catalogo visibile nell'intestazione anche sul telefono");
+/* lingua: English → tutta l'interfaccia tradotta (DOM + registro), poi si torna all'italiano */
+await page.click('#pfLang button[data-v="en"]'); await page.waitForFunction(() => document.documentElement.lang === "en" && document.querySelector("#p-settings h3")); await page.waitForTimeout(600);
+ok((await page.locator("#p-settings h3").allTextContents()).join(",").includes("Appearance") && (await page.locator("#btnSettings").getAttribute("title")) === "Settings", "English: sezioni e attributi tradotti");
+await page.click('nav.tabs button[data-tab="sim"]'); await page.waitForTimeout(300);
+ok((await page.locator("#simStart").textContent()).includes("Start the game"), "English: simulatore tradotto");
+await page.selectOption("#simDeck0", "starter:theheistretailstarterdeck"); await page.selectOption("#simDeck1", "starter:embracingpowerretailstarterdeck"); await page.click("#simStart");
+await page.waitForSelector("#simAsk"); ok((await page.locator("#simAsk h3").textContent()).includes("keep this hand"), "English: mulligan tradotto");
+await page.click('[data-mull="keep"]'); for(let i = 0; i < 40; i++){ if(await page.locator("#simAsk [data-ask]").count()) await page.click("#simAsk [data-ask] >> nth=0"); if(await page.locator("#bEnd").count()) break; await page.waitForTimeout(300); }
+ok(/Your turn/.test(await page.locator(".bstrip").textContent()) && /rolls? a d\d+ from the fixer|draws? 1\./.test(await page.locator(".bstrip").textContent()), "English: barra e registro tradotti (" + (await page.locator(".bstrip .lg").textContent()).slice(0, 60) + ")");
+await page.click("#bMenu"); await page.click('.pop button:has-text("Leave the board")');
+await page.click("#btnSettings"); await page.waitForTimeout(300); await page.click('#pfLang button[data-v="it"]'); await page.waitForFunction(() => document.documentElement.lang === "it" && document.querySelector("#p-settings h3")); await page.waitForTimeout(500);
+ok((await page.locator("#p-settings h3").allTextContents()).join(",").includes("Aspetto"), "ritorno all'italiano");
 
 /* simulatore contro il bot */
 await page.click('nav.tabs button[data-tab="sim"]');
