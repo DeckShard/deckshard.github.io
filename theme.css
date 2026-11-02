@@ -7,13 +7,13 @@
 :root{
   color-scheme: light;
   --cut:10px;
-  --bg:#efeae6; --bg2:#e6dfdb; --surf:#fbf8f6; --surf2:#f1ebe8; --surf3:#e3dad6;
-  --ink:#140c0d; --ink2:#463537; --mute:#7d6f70; --line:rgba(20,12,13,.14); --line2:rgba(20,12,13,.3);
+  --bg:#d9d3cf; --bg2:#cfc8c3; --surf:#ebe6e2; --surf2:#e2dbd6; --surf3:#d2c9c3;
+  --ink:#1a1012; --ink2:#4a3a3c; --mute:#7a6c6e; --line:rgba(26,16,18,.16); --line2:rgba(26,16,18,.32);
   /* accento 1: rosso Holophone (titoli, attivo) · accento 2: cyan (azioni) · giallo: conferme */
-  --acc:#b3202c; --accFill:#e11a3c; --accInk:#fff;
-  --acc2:#007a86; --acc2Fill:#00d5e2; --acc2Ink:#0b0b0e;
-  --yel:#fcee0a; --yelInk:#0b0b0e;
-  --glow:0 0 0 2px rgba(179,32,44,.25);
+  --acc:#a81b2a; --accFill:#c8172f; --accInk:#fff;
+  --acc2:#0a6f7a; --acc2Fill:#19c3d0; --acc2Ink:#0b0b0e;
+  --yel:#e8d900; --yelInk:#0b0b0e;
+  --glow:0 0 0 2px rgba(168,27,42,.28);
   --neon:none;
   --good:#157a2e; --warn:#a85f00; --bad:#c41230;
   --cRed:#d8323c; --cYellow:#e0bd00; --cGreen:#2f9e4f; --cBlue:#2b78d6;
@@ -21,7 +21,7 @@
   --font:"Rajdhani","Segoe UI",system-ui,sans-serif;
   --display:"Orbitron","Rajdhani",system-ui,sans-serif;
   --mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
-  --shadow:0 1px 2px rgba(0,0,0,.08), 0 8px 24px -14px rgba(0,0,0,.3);
+  --shadow:0 1px 2px rgba(0,0,0,.1), 0 8px 24px -14px rgba(0,0,0,.35);
   --headerBg:#140c0d; --headerInk:#ff5a5a; --headerLine:#ff3b3b; --navBg:#140c0d; --navInk:#9c8d8e; --navAcc:#00e5f2;
 }
 :root[data-theme="dark"]{
@@ -56,11 +56,17 @@
 :root[data-theme="dark"][data-accent="nomad"]{ --bg:#110c06; --bg2:#1a1208; --surf:rgba(36,26,14,.9); --surf2:rgba(54,38,20,.8); --surf3:rgba(76,54,28,.85);
   --ink:#f6efe4; --ink2:#d6c9b5; --mute:#9a8a72; --line:rgba(242,140,40,.14); --line2:rgba(242,140,40,.3);
   --acc:#ff9a3c; --accFill:#ff9a3c; --acc2:#8fd96b; --acc2Fill:#8fd96b; --neon:0 0 10px rgba(255,154,60,.5); --glow:0 0 0 2px rgba(255,154,60,.3), 0 0 18px rgba(255,154,60,.14) }
-:root[data-accent="maelstrom"]{ --acc:#b3202c; --accFill:#e11a3c; --accInk:#fff; --acc2:#0b0b0e; --acc2Fill:#2a2a30; --acc2Ink:#fff; --glow:0 0 0 2px rgba(179,32,44,.3);
-  --headerBg:#0b0b0e; --headerInk:#ff2e55; --headerLine:#ff2e55; --navBg:#0b0b0e; --navAcc:#ff2e55 }
+:root[data-accent="maelstrom"]{ --acc:#b3202c; --accFill:#e11a3c; --accInk:#fff; --acc2:#8a7600; --acc2Fill:#fcee0a; --acc2Ink:#0b0b0e; --glow:0 0 0 2px rgba(179,32,44,.3);
+  --headerBg:#0b0b0e; --headerInk:#ff2e55; --headerLine:#ff2e55; --navBg:#0b0b0e; --navAcc:#fcee0a }
 :root[data-theme="dark"][data-accent="maelstrom"]{ --bg:#050507; --bg2:#0b0b0e; --surf:rgba(18,18,24,.92); --surf2:rgba(30,30,38,.85); --surf3:rgba(44,44,54,.9);
   --ink:#f2f2ea; --ink2:#c9c9c0; --mute:#8a8a90; --line:rgba(255,46,85,.16); --line2:rgba(255,46,85,.34);
-  --acc:#ff2e55; --accFill:#ff2e55; --accInk:#0b0b0e; --acc2:#9aa0ff; --acc2Fill:#9aa0ff; --acc2Ink:#0b0b0e; --neon:0 0 10px rgba(255,46,85,.55); --glow:0 0 0 2px rgba(255,46,85,.3), 0 0 18px rgba(255,46,85,.16) }
+  --acc:#ff2e55; --accFill:#ff2e55; --accInk:#0b0b0e; --acc2:#fcee0a; --acc2Fill:#fcee0a; --acc2Ink:#0b0b0e; --neon:0 0 10px rgba(255,46,85,.55); --glow:0 0 0 2px rgba(255,46,85,.3), 0 0 18px rgba(255,46,85,.16) }
+/* Girlypop: Netrunner a colori invertiti, rosa shocking in primo piano e cyan di contorno */
+:root[data-accent="girlypop"]{ --acc:#b0177f; --accFill:#ff3bd4; --accInk:#0b0b0e; --acc2:#0a6f7a; --acc2Fill:#19c3d0; --acc2Ink:#0b0b0e; --glow:0 0 0 2px rgba(176,23,127,.3);
+  --headerBg:#1a0714; --headerInk:#ff3bd4; --headerLine:#ff3bd4; --navBg:#1a0714; --navAcc:#00e5f2 }
+:root[data-theme="dark"][data-accent="girlypop"]{ --bg:#120610; --bg2:#1a0a17; --surf:rgba(40,16,34,.88); --surf2:rgba(60,24,50,.8); --surf3:rgba(84,34,70,.85);
+  --ink:#f8eaf4; --ink2:#dcbfd3; --mute:#a0809a; --line:rgba(255,59,212,.16); --line2:rgba(255,59,212,.34);
+  --acc:#ff3bd4; --accFill:#ff3bd4; --accInk:#0b0b0e; --acc2:#00f0ff; --acc2Fill:#00f0ff; --neon:0 0 10px rgba(255,59,212,.55); --glow:0 0 0 2px rgba(255,59,212,.3), 0 0 18px rgba(255,59,212,.16) }
 
 *{box-sizing:border-box}
 html,body{margin:0;height:100%}
@@ -112,8 +118,8 @@ main{flex:1;max-width:1100px;width:100%;margin:0 auto;padding:14px 14px 90px}
 nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:30;display:flex;justify-content:space-around;
   background:var(--navBg);border-top:1px solid var(--headerLine);box-shadow:0 0 14px color-mix(in srgb,var(--headerLine) 35%,transparent);padding:5px 4px calc(5px + env(safe-area-inset-bottom))}
 nav.tabs button{flex:1;background:none;border:0;cursor:pointer;color:var(--navInk);font-weight:700;
-  font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;display:flex;flex-direction:column;
-  align-items:center;gap:3px;padding:4px 2px}
+  font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;display:flex;flex-direction:column;
+  align-items:center;gap:3px;padding:4px 0;min-width:0}
 nav.tabs button svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 nav.tabs button[aria-selected="true"]{color:var(--navAcc)}
 nav.tabs button[aria-selected="true"]::after{content:"";width:22px;height:3px;background:var(--navAcc);margin-top:1px;clip-path:polygon(0 0,100% 0,85% 100%,0 100%)}
@@ -143,6 +149,7 @@ nav.tabs button[aria-selected="true"]::after{content:"";width:22px;height:3px;ba
 .btn.yel{background:var(--yel);border-color:transparent;color:var(--yelInk);clip-path:polygon(0 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%)}
 .btn.ghost{background:none}
 .btn.sm{padding:5px 10px;font-size:12px}
+.btn[aria-pressed="true"]{background:var(--acc2Fill);color:var(--acc2Ink);border-color:transparent}
 .btn.icon{padding:6px 8px;min-width:36px;line-height:1}
 .chip{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
   padding:2px 8px;border-radius:2px;background:var(--surf3);color:var(--ink2)}
@@ -225,6 +232,7 @@ input.inp.wide{width:100%}
 .row .thumb{width:34px;height:47px;object-fit:cover;object-position:center 18%;border-radius:4px;flex:0 0 auto;background:var(--surf3)}
 .row .nm{flex:1;min-width:0} .row .nm>b{display:block;font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .row .nm>span{display:block;font-size:12px;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dlist .row .nm>span{white-space:normal;line-height:1.6}
 .row .pr{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap} .row .pr b{display:block;font-size:14px}
 .stat{display:inline-flex;align-items:center;gap:3px;font-size:12px;font-weight:700;padding:2px 6px;border-radius:5px;background:var(--surf3)}
 .stat.cost{color:var(--acc)} .stat.pow{color:var(--bad)}
@@ -267,7 +275,9 @@ input.inp.wide{width:100%}
 #lens .hint{position:absolute;bottom:18px;left:0;right:0;text-align:center;color:#ddd;font-size:12px;letter-spacing:.08em;text-transform:uppercase}
 
 /* ---------- deckbuilder ---------- */
-.deckhead{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center}
+.deckhead{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.deckhead>.dname{display:flex;gap:8px;align-items:center;flex:1 1 220px;min-width:0}
+.deckhead>.dacts{display:flex;gap:6px;flex-wrap:wrap;flex:0 0 auto}
 .legends{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
 .lslot{aspect-ratio:733/1024;border:2px dashed var(--line2);border-radius:3px;display:flex;align-items:center;justify-content:center;
   color:var(--mute);font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;cursor:pointer;overflow:hidden;position:relative;background:var(--surf2);line-height:0}
@@ -302,6 +312,8 @@ input.inp.wide{width:100%}
 .sw{width:34px;height:34px;border-radius:2px;clip-path:polygon(0 0,100% 0,100% 75%,75% 100%,0 100%);border:2px solid transparent;cursor:pointer;padding:0;background:linear-gradient(135deg,var(--a) 50%,var(--b) 50%)}
 .sw.sel{border-color:var(--ink);box-shadow:var(--glow)}
 
+.rulesnav{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px} .rulesnav .chip{text-decoration:none;cursor:pointer}
+.rulesec p{margin:8px 0 0;font-size:14.5px;line-height:1.55} .rulesec b{color:var(--ink)}
 footer{max-width:1100px;margin:0 auto;padding:18px 14px 110px;font-size:11.5px;color:var(--mute);line-height:1.6;border-top:1px solid var(--line)}
 @media(min-width:900px){ footer{padding-bottom:30px} }
 

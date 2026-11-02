@@ -12,7 +12,7 @@ const TESS_URL = "https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract
 const AUTO_MIN = 0.7;        // punteggio minimo per l'aggiunta automatica
 const AUTO_STABLE = 2;       // letture consecutive uguali prima di aggiungere
 const AUTO_GAP = 2;          // letture "vuote" prima di poter riaggiungere la stessa carta
-let worker = null, stream = null, busy = false, wired = false, lastHits = [];
+let worker = null, stream = null, busy = false, wired = false, lastHits = [], lastCamSig = null;
 let auto = true, loopT = null, lastGuess = null, stableN = 0, lastAdded = null, gap = AUTO_GAP, flashT = null;
 
 /* lista di sessione: resta salvata finché non la aggiungi o la svuoti */
@@ -72,6 +72,40 @@ export function matchText(text){
   return out.slice(0, 5).filter(x => x.score >= 0.35);
 }
 
+/* ------------------------------------------------------------ variante dall'illustrazione */
+/* firma 24×24 in scala di grigi della finestra dell'arte (dal 12% al 58% dell'altezza) */
+const SIG = 24, SIGS = new Map();
+function signature(src, sx, sy, sw, sh){
+  const cv = document.createElement("canvas"); cv.width = SIG; cv.height = SIG;
+  const ctx = cv.getContext("2d", { willReadFrequently: true });
+  ctx.drawImage(src, sx + sw * 0.06, sy + sh * 0.12, sw * 0.88, sh * 0.46, 0, 0, SIG, SIG);
+  const d = ctx.getImageData(0, 0, SIG, SIG).data, v = new Float32Array(SIG * SIG);
+  let mean = 0; for(let i = 0; i < v.length; i++){ v[i] = 0.3 * d[i * 4] + 0.59 * d[i * 4 + 1] + 0.11 * d[i * 4 + 2]; mean += v[i]; }
+  mean /= v.length; let sd = 0; for(let i = 0; i < v.length; i++){ v[i] -= mean; sd += v[i] * v[i]; } sd = Math.sqrt(sd / v.length) || 1;
+  for(let i = 0; i < v.length; i++) v[i] /= sd;
+  return v;
+}
+const corr = (a, b) => { let s = 0; for(let i = 0; i < a.length; i++) s += a[i] * b[i]; return s / a.length; };
+function printSignature(pid){
+  if(SIGS.has(pid)) return SIGS.get(pid);
+  const pr = new Promise(res => { const im = new Image(); im.onload = () => res(signature(im, 0, 0, im.naturalWidth, im.naturalHeight)); im.onerror = () => res(null); im.src = thumbUrl(pid); });
+  SIGS.set(pid, pr); return pr;
+}
+/* tra le stampe della carta sceglie quella con l'illustrazione più simile all'inquadratura;
+   a parità di arte (es. beta e retail) preferisce la stampa predefinita */
+async function bestVariant(card, camSig){
+  const prints = card.prints.filter(p => p.img && p.lang === "en");
+  if(prints.length < 2 || !camSig) return { pid: card.def.id, alt: false, score: 0 };
+  const sigs = await Promise.all(prints.map(p => printSignature(p.id)));
+  let best = null;
+  prints.forEach((p, i) => { if(!sigs[i]) return; const sc = corr(camSig, sigs[i]); if(!best || sc > best.sc + 1e-6) best = { p, sc, i }; });
+  if(!best) return { pid: card.def.id, alt: false, score: 0 };
+  // stesso artwork della predefinita? allora è la predefinita
+  const di = prints.indexOf(card.def);
+  if(di >= 0 && sigs[di] && corr(sigs[di], sigs[best.i]) > 0.93) return { pid: card.def.id, alt: false, score: best.sc };
+  return { pid: best.p.id, alt: true, score: best.sc };
+}
+
 /* ------------------------------------------------------------ OCR */
 async function loadTesseract(){
   if(window.Tesseract) return;
@@ -110,6 +144,7 @@ async function recognize(canvas, st){
 async function readImage(src, sw, sh, crop, st, quick){
   const r = crop ? guideRect(sw, sh) : { x: 0, y: 0, w: sw, h: sh };
   const W = quick ? 720 : 900;
+  lastCamSig = signature(src, r.x, r.y, r.w, r.h);
   const cv = prepare(src, r.x, r.y, r.w, r.h, false, W);
   $("#scanPreview").src = cv.toDataURL("image/jpeg", 0.6); $("#scanPreview").hidden = false;
   let text = await recognize(cv, st);
@@ -176,10 +211,14 @@ function onAutoResult(hits){
     if(lastGuess === top.card.id) stableN++; else { lastGuess = top.card.id; stableN = 1; }
     const same = lastAdded === top.card.id && gap < AUTO_GAP;
     if(stableN >= AUTO_STABLE && !same){
-      stageAdd(top.card, top.card.def.id, 1);
       lastAdded = top.card.id; gap = 0; stableN = 0;
-      navigator.vibrate?.([30, 40, 30]);
-      flash(`✔ ${top.card.dn} in lista (${stageCount()} carte)`);
+      const sig = lastCamSig;
+      bestVariant(top.card, sig).then(v => {
+        stageAdd(top.card, v.pid, 1);
+        navigator.vibrate?.([30, 40, 30]);
+        const p = DATA.byPrint.get(v.pid);
+        flash(`✔ ${top.card.dn}${v.alt ? ` · variante ${p.rarity}` : ""} in lista (${stageCount()} carte)`);
+      });
       $("#scanLive").textContent = ""; return;
     }
     $("#scanLive").textContent = same ? `${top.card.dn}: già aggiunta, allontana la carta per contarne un'altra copia` : `Vedo: ${top.card.dn} (${Math.round(top.score * 100)}%)…`;
@@ -197,8 +236,10 @@ async function scanOnce(src, sw, sh, crop){
   st("Leggo la carta…"); lastHits = []; renderHits();
   try{
     lastHits = await readImage(src, sw, sh, crop, st, false);
+    const sig = lastCamSig;
+    for(const h of lastHits){ h.variant = await bestVariant(h.card, sig); }
     if(!lastHits.length) st("Non ho riconosciuto il nome. Avvicinati, evita i riflessi e riprova.");
-    else if(lastHits[0].score >= AUTO_MIN){ stageAdd(lastHits[0].card, lastHits[0].card.def.id, 1); flash(`✔ ${lastHits[0].card.dn} in lista`); }
+    else if(lastHits[0].score >= AUTO_MIN){ const v = lastHits[0].variant; stageAdd(lastHits[0].card, v.pid, 1); flash(`✔ ${lastHits[0].card.dn}${v.alt ? " · variante " + DATA.byPrint.get(v.pid).rarity : ""} in lista`); }
     else st("Forse una di queste? Tocca quella giusta per metterla in lista.");
     renderHits();
   }catch(e){ st("Errore: " + e.message); }
@@ -206,8 +247,8 @@ async function scanOnce(src, sw, sh, crop){
 }
 function renderHits(){
   const box = $("#scanHits");
-  box.innerHTML = lastHits.map((h, i) => `<button class="hit${i === 0 && h.score >= AUTO_MIN ? " best" : ""}" data-hit="${i}">
-      <img src="${thumbUrl(h.card.def.id)}" alt=""><span><b>${esc(h.card.dn)}</b><small>${Math.round(h.score * 100)}% · in collezione ${h.card.prints.reduce((a, p) => a + qtyOf(p.id), 0)}</small></span><i>+1</i></button>`).join("");
+  box.innerHTML = lastHits.map((h, i) => { const pid = h.variant ? h.variant.pid : h.card.def.id, p = DATA.byPrint.get(pid); return `<button class="hit${i === 0 && h.score >= AUTO_MIN ? " best" : ""}" data-hit="${i}">
+      <img src="${thumbUrl(pid)}" alt=""><span><b>${esc(h.card.dn)}</b><small>${Math.round(h.score * 100)}%${h.variant && h.variant.alt ? ` · variante ${esc(p.rarity)}` : ""} · in collezione ${h.card.prints.reduce((a, x) => a + qtyOf(x.id), 0)}</small></span><i>+1</i></button>`; }).join("");
 }
 function renderStage(){
   const n = stageCount(), box = $("#scanList");
@@ -243,9 +284,9 @@ function wire(){
     if(e.target.closest("#scanCommit")){ commitStage(); return; }
     if(e.target.closest("#scanClear")){ if(confirm("Svuotare la lista di scansione?")){ STAGE = []; saveStage(); renderStage(); } return; }
     const hit = e.target.closest("[data-hit]"); if(hit){
-      const c = lastHits[+hit.dataset.hit].card;
-      if(e.target.closest("img")){ openCard(c.id, c.def.id, { pick: pid => stageAdd(c, pid, 1) }); return; }
-      stageAdd(c, c.def.id, 1); navigator.vibrate?.(12); flash(`✔ ${c.dn} in lista`); return;
+      const h = lastHits[+hit.dataset.hit], c = h.card, pid = h.variant ? h.variant.pid : c.def.id;
+      if(e.target.closest("img")){ openCard(c.id, pid, { pick: p2 => stageAdd(c, p2, 1) }); return; }
+      stageAdd(c, pid, 1); navigator.vibrate?.(12); flash(`✔ ${c.dn} in lista`); return;
     }
     const row = e.target.closest(".srow"); if(row){
       const i = +row.dataset.i, en = STAGE[i]; if(!en) return;

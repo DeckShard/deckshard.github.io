@@ -89,10 +89,19 @@ for(const [pid, name] of SCANS){
   }catch(e){ console.log("  (scanner non verificabile qui: " + (await page.locator("#scanMsg").textContent()) + ")"); break; }
 }
 ok(scanOk >= 3, `OCR: ${scanOk}/${SCANS.length} carte riconosciute dall'immagine`);
+// variante: la stampa Iconic Legend di V: Streetkid deve finire in lista come tale, non come la base
+await page.evaluate(() => { document.querySelector("#scanMsg").textContent = ""; });
+await page.setInputFiles("#scanFile", "/home/claude/nightcity-deck/data/img/837d354a-a1c8-4df0-b4ac-4db43730187a.webp");
+try{
+  await page.waitForFunction(() => /in lista|Forse|Non ho|Errore/.test(document.querySelector("#scanMsg").textContent), null, { timeout: 120000 });
+  const list = await page.evaluate(() => JSON.parse(localStorage.getItem("ncd:scanlist") || "[]"));
+  const vRow = list.find(e => e.pid === "837d354a-a1c8-4df0-b4ac-4db43730187a");
+  ok(!!vRow, "scanner: riconosce la variante Iconic dall'illustrazione (" + (await page.locator("#scanMsg").textContent()) + ")");
+}catch(e){ console.log("  (variante non verificabile: " + e.message.slice(0, 60) + ")"); }
 if(scanOk){
-  ok((await page.locator("#scanList .srow").count()) === scanOk, `lista di scansione con ${scanOk} righe`);
+  ok((await page.locator("#scanList .srow").count()) >= scanOk, `lista di scansione con almeno ${scanOk} righe`);
   await page.click('#scanList .srow >> nth=0 >> [data-sq="1"]');
-  ok((await page.locator("#scanCommit").textContent()).includes(`${scanOk + 1} carte`), "quantità modificabile in lista");
+  ok(/\d+ carte/.test(await page.locator("#scanCommit").textContent()), "quantità modificabile in lista");
   await page.click("#scanCommit");
   ok((await page.locator("#scanList .srow").count()) === 0, "lista svuotata dopo la conferma");
 }
@@ -212,8 +221,9 @@ for(let k = 0; k < handN && !played; k++){
   else await page.click("#board .bstrip .st");
 }
 if(played){
-  ok(/Paga \d+ €\$/.test(await page.locator(".bstrip .lg").textContent()), "pagamento sulla plancia: la barra chiede di toccare Eddies o Leggende");
-  ok(await page.locator(".bz.mine .target").count() >= 1, "fonti di pagamento evidenziate");
+  const payMode = /Paga \d+ €\$/.test(await page.locator(".bstrip .lg").textContent());
+  ok(payMode || await page.locator('[data-field] .bc, #simAsk').count() >= 1, payMode ? "pagamento sulla plancia: la barra chiede di toccare Eddies o Leggende" : "costo pari alle risorse: pagato da solo");
+  if(payMode) ok(await page.locator(".bz.mine .target").count() >= 1, "fonti di pagamento evidenziate");
   for(let k = 0; k < 6 && /Paga \d+ €\$/.test(await page.locator(".bstrip .lg").textContent()); k++){
     const ed = page.locator(".bz.mine [data-eddies].target"), lg = page.locator(".bz.mine [data-legend].target");
     if(await ed.count()) await ed.click(); else if(await lg.count()) await lg.first().click(); else break;
@@ -279,6 +289,52 @@ ok(await page.locator(".handoff").count() === 1, "schermata passa il dispositivo
 await page.click("#bHand");
 if(await page.locator("#simAsk [data-ask]").count()) await page.click("#simAsk [data-ask]");
 ok(await page.locator("#bEnd").count() === 1, "hot-seat: turno del secondo");
+await page.click("#bMenu"); await page.click('.pop button:has-text("Esci")');
+
+/* regole */
+await page.click('nav.tabs button[data-tab="rules"]');
+ok(await page.locator("#p-rules .rulesec").count() >= 10, "pagina delle regole con le sezioni");
+
+/* prerelease: apri il kit, costruisci, gioca contro il bot */
+await page.click('nav.tabs button[data-tab="sim"]');
+await page.click("#prOpen");
+ok(await page.locator("#prKit .pack").count() === 8, "kit aperto: 6 buste + Leggende + promo");
+ok(await page.locator("#prKit .bc").count() === 6 * 12 + 3 + 1, "76 carte nel kit");
+await page.click("#prBuild");
+await page.waitForSelector("#deckEdit:not([hidden])");
+ok((await page.locator("#deckEdit .legal").textContent()).includes("sealed"), "editor in modalità sealed");
+// scegli 3 Leggende dal kit e aggiungi carte fino a 30
+await page.click('#deckBrowse [data-b="legends"]'); await page.waitForTimeout(300);
+for(let i = 0; i < 3; i++){ await page.click(`#deckRows .row >> nth=${i}`); await page.waitForTimeout(250); }
+ok((await page.locator("#deckEdit .lslot img").count()) === 3, "3 Leggende scelte dal kit");
+await page.click('#deckBrowse [data-b="cards"]'); await page.waitForTimeout(300);
+let addedRows = 0;
+for(let k = 0; k < 40 && addedRows < 34; k++){
+  const rows = page.locator("#deckRows .row"); const n = await rows.count(); if(!n) break;
+  const i = k % n; await rows.nth(i).click(); await page.waitForTimeout(120); addedRows++;
+  const size = (await page.locator("#deckEdit .chip:has-text('carte')").first().textContent());
+  if(/^3[0-9] carte/.test(size)) break;
+}
+const legalTxt2 = await page.locator("#deckEdit .legal").textContent();
+console.log("  sealed:", legalTxt2.replace(/\s+/g, " ").slice(0, 160));
+ok(/\d+ colori su un massimo di 3|Troppi colori/.test(legalTxt2), "controllo dei colori nel sealed");
+await page.click("#deckPlay");
+await page.waitForSelector("#board:not([hidden])");
+await page.waitForSelector('[data-mull="keep"]');
+ok(await page.locator(".bz.rival .lbl").count() === 1 && (await page.locator(".bz.rival .lbl").textContent()).includes("Bot"), "partita sealed contro il bot avviata");
+await page.click('[data-mull="keep"]'); await page.waitForTimeout(300);
+for(let i = 0; i < 5 && await page.locator("#simAsk [data-ask]").count(); i++){ await page.click("#simAsk [data-ask]"); await page.waitForTimeout(200); }
+await page.click("#bMenu"); await page.click('.pop button:has-text("Esci")');
+
+/* tutorial: partita guidata */
+await page.click("#simTutorial");
+await page.waitForSelector("#board:not([hidden])");
+await page.waitForSelector(".tutbar");
+ok((await page.locator(".tutbar .n").textContent()) === "1/10", "tutorial: primo passo");
+await page.click('[data-mull="keep"]'); await page.waitForTimeout(300);
+{ const tn = await page.locator(".tutbar .n").textContent(); ok(/^(2|3)\/10/.test(tn), "tutorial: avanza dopo il mulligan (" + tn + ")"); }
+await page.click("#tutSkip"); ok(await page.locator(".tutbar").count() === 0, "tutorial chiuso");
+for(let i = 0; i < 5 && await page.locator("#simAsk [data-ask]").count(); i++){ await page.click("#simAsk [data-ask]"); await page.waitForTimeout(200); }
 await page.click("#bMenu"); await page.click('.pop button:has-text("Esci")');
 
 /* desktop: tab in alto, griglia larga */

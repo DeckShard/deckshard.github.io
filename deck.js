@@ -19,7 +19,18 @@ export function ramLimits(deck){
   return lim;
 }
 export function deckSize(deck){ return deck.cards.reduce((a, e) => a + e.n, 0); }
+const poolCount = (deck, cid) => deck.pool ? deck.pool.filter(e => e.cid === cid).reduce((a, e) => a + e.n, 0) : 99;
 export function validate(deck){
+  if(deck.format === "sealed"){
+    const out = [], legs = deck.legends.filter(Boolean), n = deckSize(deck);
+    out.push({ ok: legs.length === 3, t: `${legs.length}/3 Leggende (nel sealed senza vincoli di nome)` });
+    out.push({ ok: n >= 30, t: `${n} carte (nel sealed ne servono almeno 30, Leggende escluse)` });
+    const cols = new Set(deck.cards.map(e => DATA.byId.get(e.cid)?.color).filter(Boolean));
+    out.push({ ok: cols.size <= 3, t: cols.size <= 3 ? `${cols.size} colori su un massimo di 3${cols.size ? ": " + [...cols].map(c => COLOR_IT[c]).join(", ") : ""}` : `Troppi colori (${[...cols].map(c => COLOR_IT[c]).join(", ")}): massimo 3` });
+    const over = deck.cards.filter(e => e.n > poolCount(deck, e.cid)).map(e => DATA.byId.get(e.cid)?.dn);
+    out.push({ ok: !over.length, t: over.length ? `Più copie di quelle aperte: ${over.join(", ")}` : "Solo carte aperte dal kit" });
+    return out;
+  }
   const out = [], lim = ramLimits(deck), legs = deck.legends.filter(Boolean);
   out.push({ ok: legs.length === 3, t: `${legs.length}/3 Leggende` });
   const names = new Set(legs.map(l => DATA.byId.get(l.cid)?.dn));
@@ -108,14 +119,45 @@ export function parseCardLines(text){
   }
   return { entries, bad };
 }
-/* testo esportabile della collezione: codice quando c'è, altrimenti nome e set */
-export function collectionText(coll){
-  const CODE = { welcometonightcityretail: "WNC", welcometonightcitybeta: "WNC", theheistretailstarterdeck: "HEI", embracingpowerretailstarterdeck: "EBP", PRM01: "PRM01", prereleaseretail: "PRR", edgerunneropens1: "EOR", nightcitybrawls1: "NCB", boxtoppersretail: "BT" };
-  const lines = [];
+/* collezione come righe strutturate, poi resa in testo / CSV / JSON */
+const SET_CODE = { welcometonightcityretail: "WNC", welcometonightcitybeta: "WNC", theheistretailstarterdeck: "HEI", embracingpowerretailstarterdeck: "EBP", PRM01: "PRM01", prereleaseretail: "PRR", edgerunneropens1: "EOR", nightcitybrawls1: "NCB", boxtoppersretail: "BT" };
+export function collectionRows(coll){
+  const rows = [];
   for(const [pid, n] of Object.entries(coll)){ const p = DATA.byPrint.get(pid); if(!p || !n) continue;
     const num = String(p.num).replace(/^[^0-9]*/, "").replace(/[^0-9].*$/, "").padStart(3, "0");
-    lines.push(CODE[p.set] ? `${n} ${CODE[p.set]}-${num} ${p.card.dn}` : `${n} ${p.card.dn}  # ${p.set} #${p.num}`); }
-  return `# Night City Deck — collezione (${lines.length} voci)\n` + lines.sort((a, b) => a.slice(a.indexOf(" ") + 1).localeCompare(b.slice(b.indexOf(" ") + 1), "it")).join("\n");
+    rows.push({ qty: n, name: p.card.dn, code: SET_CODE[p.set] ? `${SET_CODE[p.set]}-${num}` : "", set: p.set, setName: setName(p.set), number: p.num, rarity: p.rarity, lang: p.lang, id: p.id }); }
+  return rows.sort((a, b) => a.name.localeCompare(b.name, "it") || a.set.localeCompare(b.set));
+}
+export function collectionText(coll, fmt = "txt"){
+  const rows = collectionRows(coll);
+  if(fmt === "json") return JSON.stringify({ app: "Night City Deck", game: "Cyberpunk TCG", exported: new Date().toISOString(), cards: rows }, null, 2);
+  if(fmt === "csv"){ const q = s => `"${String(s ?? "").replace(/"/g, '""')}"`; return ["quantity,name,code,set,number,rarity,language,printing_id", ...rows.map(r => [r.qty, q(r.name), r.code, r.set, r.number, r.rarity, r.lang, r.id].join(","))].join("\n"); }
+  return `# Night City Deck — collezione (${rows.length} voci)\n` + rows.map(r => r.code ? `${r.qty} ${r.code} ${r.name}` : `${r.qty} ${r.name}  # ${r.set} #${r.number}`).join("\n");
+}
+/* JSON di altre app o di questa: diventa righe "N nome/codice" (o stampe dirette quando c'è l'id) */
+export function jsonToLines(obj){
+  const lines = [], direct = [];
+  const pick = (o, keys) => { for(const k of keys) if(o[k] != null && o[k] !== "") return o[k]; return null; };
+  const handle = o => {
+    if(!o || typeof o !== "object") return;
+    const id = pick(o, ["printing_id", "printingId", "pid", "id"]); const q = +pick(o, ["qty", "quantity", "count", "n", "amount", "copies"]) || 1;
+    if(id && DATA.byPrint.has(String(id))){ direct.push({ pid: String(id), n: q }); return; }
+    const code = pick(o, ["code", "set_code", "setCode", "cardCode", "number_code"]);
+    const set = pick(o, ["set", "setCode", "set_code", "expansion"]); const num = pick(o, ["number", "num", "collector_number", "collectorNumber", "cardNumber"]);
+    const name = pick(o, ["name", "card", "cardName", "card_name", "title"]);
+    if(code) lines.push(`${q} ${code}${name ? " " + name : ""}`);
+    else if(set && num && /^[A-Za-z]{2,5}\d{0,2}$/.test(String(set))) lines.push(`${q} ${set}-${String(num).padStart(3, "0")}${name ? " " + name : ""}`);
+    else if(name) lines.push(`${q} ${name}`);
+  };
+  if(Array.isArray(obj)) obj.forEach(handle);
+  else if(obj && typeof obj === "object"){
+    if(obj.coll && typeof obj.coll === "object"){ for(const [pid, n] of Object.entries(obj.coll)) if(DATA.byPrint.has(pid)) direct.push({ pid, n: +n || 0 }); }
+    else if(Array.isArray(obj.cards)) obj.cards.forEach(handle);
+    else if(Array.isArray(obj.collection)) obj.collection.forEach(handle);
+    else if(Array.isArray(obj.items)) obj.items.forEach(handle);
+    else { for(const [k, v] of Object.entries(obj)){ if(typeof v === "number") lines.push(`${v} ${k}`); else if(v && typeof v === "object") handle({ name: k, ...v }); } }
+  }
+  return { lines: lines.join("\n"), direct };
 }
 export function importText(text){
   const deck = { id: newId(), name: "Mazzo importato", legends: [], cards: [], notes: "" };
@@ -206,7 +248,7 @@ function deckRowHTML(d){
     <span class="ci" style="background:${legs[0] ? `var(--c${legs[0].color})` : "var(--line2)"}"></span>
     <div style="display:flex;gap:2px;flex:0 0 auto">${legs.map(c => `<img class="thumb" src="${thumbUrl(c.def.id)}" alt="" style="width:30px">`).join("") || `<span class="thumb"></span>`}</div>
     <div class="nm"><b>${esc(d.name)}</b><span>${n} carte · ${legs.map(c => esc(c.name)).join(", ") || "senza Leggende"}${miss.copies ? ` · mancano ${miss.copies} copie` : " · completo in collezione"}</span></div>
-    <span class="chip ${ok ? "good" : "bad"}">${ok ? "Legale" : "Non valido"}</span>
+    ${d.format === "sealed" ? `<span class="chip">Sealed</span>` : ""}<span class="chip ${ok ? "good" : "bad"}">${ok ? "Legale" : "Non valido"}</span>
     <button class="btn sm icon" data-ddel="${d.id}" title="Elimina" aria-label="Elimina ${esc(d.name)}" style="color:var(--bad)">✕</button>
   </div>`;
 }
@@ -214,6 +256,7 @@ function deckRowHTML(d){
 /* ------------------------------------------------------------ editor */
 export function openDeck(id){
   CUR = S.decks.find(d => d.id === id) || null;
+  F.q = ""; F.owned = ""; F.ramOnly = false;   // i filtri del browser ripartono puliti a ogni mazzo
   if(CUR){ for(const e of CUR.cards) if(!e.pid || !DATA.byPrint.has(e.pid)) e.pid = DATA.byId.get(e.cid)?.def.id; }
   renderDeck();
 }
@@ -228,7 +271,7 @@ function renderEditor(){
     return c ? `<div class="lslot" data-lslot="${i}" title="${esc(c.dn)}"><img src="${thumbUrl(l.pid || c.def.id)}" alt="${esc(c.dn)}"><button class="x" data-lrm="${i}" aria-label="Togli">✕</button></div>`
              : `<div class="lslot" data-lslot="${i}">+ Leggenda</div>`;
   }).join("");
-  const ram = COLORS.map(k => `<span><i class="pip ${k}"></i>${COLOR_IT[k]} ≤ ${lim[k]}</span>`).join("");
+  const ram = d.format === "sealed" ? `<span class="chip">Sealed · max 3 colori · min 30 carte · senza RAM</span>` : COLORS.map(k => `<span><i class="pip ${k}"></i>${COLOR_IT[k]} ≤ ${lim[k]}</span>`).join("");
   const curve = [0, 1, 2, 3, 4, 5, 6, 7].map(v => { const cnt = d.cards.filter(e => { const c = DATA.byId.get(e.cid); const x = c?.cost ?? 0; return v === 7 ? x >= 7 : x === v; }).reduce((a, e) => a + e.n, 0); return cnt; });
   const mx = Math.max(1, ...curve);
   const groups = TYPES.filter(t => t !== "Legend").map(t => {
@@ -236,18 +279,18 @@ function renderEditor(){
     if(!es.length) return "";
     const cnt = es.reduce((a, e) => a + e.n, 0);
     return `<h3 style="margin:12px 0 4px">${TYPE_IT[t]} <small style="color:var(--mute)">${cnt}</small></h3><div class="rows dlist">${es.map(e => {
-      const c = DATA.byId.get(e.cid), own = cardQty(c), ramKo = (c.ramN || 0) > (lim[c.color] || 0);
+      const c = DATA.byId.get(e.cid), own = cardQty(c), ramKo = d.format !== "sealed" && (c.ramN || 0) > (lim[c.color] || 0);
       return rowHTML(c, e.pid, `<span class="qtyctl"><button data-dq="-1" data-cid="${c.id}" aria-label="meno">−</button><b>${e.n}</b><button data-dq="1" data-cid="${c.id}" aria-label="più">+</button></span>`,
-        `${ramKo ? `<span class="chip bad">RAM ${c.ramN}</span>` : `<span class="chip">RAM ${c.ramN}</span>`}${own < e.n ? `<span class="chip bad">hai ${own}</span>` : ""}`);
+        `${ramKo ? `<span class="chip bad">RAM ${c.ramN}</span>` : `<span class="chip">RAM ${c.ramN}</span>`}${d.format === "sealed" ? `<span class="chip">aperte ${poolCount(d, c.id)}</span>` : own < e.n ? `<span class="chip bad">hai ${own}</span>` : ""}`, true);
     }).join("")}</div>`;
   }).join("");
 
   ed.innerHTML = `
     <div class="card">
       <div class="deckhead">
-        <div style="display:flex;gap:8px;align-items:center;min-width:0"><button class="btn sm icon" id="deckBack" aria-label="Indietro">←</button><input class="inp wide" id="deckName" value="${esc(d.name)}" placeholder="Nome del mazzo" style="font-weight:700;font-size:16px"></div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap">
-          <button class="btn sm" id="deckPlay" title="Prova nel simulatore">▶ Gioca</button>
+        <div class="dname"><button class="btn sm icon" id="deckBack" aria-label="Indietro">←</button><input class="inp wide" id="deckName" value="${esc(d.name)}" placeholder="Nome del mazzo" style="font-weight:700;font-size:16px"></div>
+        <div class="dacts">
+          <button class="btn sm acc2" id="deckPlay" title="Prova nel simulatore">▶ Gioca</button>
           <button class="btn sm" id="deckCopy">Copia testo</button>
           <button class="btn sm" id="deckDup">Duplica</button>
           <button class="btn sm" id="deckDel" style="color:var(--bad)">Elimina</button>
@@ -269,7 +312,7 @@ function renderEditor(){
       <div class="hdr" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <span class="seg" id="deckBrowse"><button data-b="cards" aria-pressed="${browse === "cards"}">Carte</button><button data-b="legends" aria-pressed="${browse === "legends"}">Leggende</button></span>
         <span class="seg" id="deckOwned"><button data-o="" aria-pressed="${!F.owned}">Tutte</button><button data-o="yes" aria-pressed="${F.owned === "yes"}">Possedute</button><button data-o="no" aria-pressed="${F.owned === "no"}">Mancanti</button></span>
-        <button class="btn sm" id="deckRamOnly" aria-pressed="${!!F.ramOnly}">Solo entro RAM</button>
+        ${d.format === "sealed" ? "" : `<button class="btn sm" id="deckRamOnly" aria-pressed="${!!F.ramOnly}">Solo entro RAM</button>`}
         <span class="count" style="font-size:12.5px;color:var(--mute)" id="deckCount"></span>
       </div>
       <div class="search"><input class="inp" id="deckQ" type="search" placeholder="Cerca carta…" value="${esc(F.q)}" autocomplete="off"><button class="btn sm" id="deckFilt">Filtri</button></div>
@@ -281,14 +324,17 @@ function renderEditor(){
 function renderBrowser(){
   const d = CUR, lim = ramLimits(d);
   let list = DATA.cards.filter(c => browse === "legends" ? c.type === "Legend" : c.type !== "Legend").filter(c => passes(c, F));
-  if(F.ramOnly && browse === "cards") list = list.filter(c => (c.ramN || 0) <= (lim[c.color] || 0));
+  if(d.format === "sealed") list = list.filter(c => poolCount(d, c.id) > 0);
+  if(F.ramOnly && browse === "cards" && d.format !== "sealed") list = list.filter(c => (c.ramN || 0) <= (lim[c.color] || 0));
   list = sortCards(list, F.sort || "color");
   $("#deckCount").textContent = `${list.length} carte`;
   $("#deckRows").innerHTML = list.map(c => {
     const e = d.cards.find(x => x.cid === c.id), inDeck = browse === "legends" ? d.legends.some(l => l && l.cid === c.id) : (e ? e.n : 0);
-    const ramKo = browse === "cards" && (c.ramN || 0) > (lim[c.color] || 0);
+    const ramKo = browse === "cards" && d.format !== "sealed" && (c.ramN || 0) > (lim[c.color] || 0);
     const right = browse === "legends" ? `<span class="chip${inDeck ? " acc" : ""}">${inDeck ? "nel mazzo" : "+"}</span>` : `<span class="chip${inDeck ? " acc" : ""}">${inDeck ? "×" + inDeck : "+"}</span>`;
-    return rowHTML(c, null, right, `<span class="chip${ramKo ? " bad" : ""}">RAM ${c.ramN}</span>${cardQty(c) ? `<span class="chip">hai ${cardQty(c)}</span>` : ""}`);
+    const pe = d.format === "sealed" ? d.pool.find(e => e.cid === c.id) : null;
+    const extra = d.format === "sealed" ? `<span class="chip">aperte ${poolCount(d, c.id)}</span>` : `<span class="chip${ramKo ? " bad" : ""}">RAM ${c.ramN}</span>${cardQty(c) ? `<span class="chip">hai ${cardQty(c)}</span>` : ""}`;
+    return rowHTML(c, pe ? pe.pid : null, right, extra);
   }).join("") || `<div class="empty">Nessuna carta con questi filtri.</div>`;
 }
 
@@ -296,16 +342,18 @@ function renderBrowser(){
 function addCard(cid, delta){
   const c = DATA.byId.get(cid); if(!c || c.type === "Legend") return;
   let e = CUR.cards.find(x => x.cid === cid);
-  if(!e){ if(delta <= 0) return; e = { cid, pid: c.def.id, n: 0 }; CUR.cards.push(e); }
-  e.n = Math.max(0, Math.min(MAX_COPIES, e.n + delta));
-  if(e.n > MAX_COPIES) e.n = MAX_COPIES;
+  if(!e){ if(delta <= 0) return; const pe = CUR.pool && CUR.pool.find(x => x.cid === cid); e = { cid, pid: pe ? pe.pid : c.def.id, n: 0 }; CUR.cards.push(e); }
+  const cap = CUR.format === "sealed" ? poolCount(CUR, cid) : MAX_COPIES;
+  e.n = Math.max(0, Math.min(cap, e.n + delta));
+  if(e.n > cap) e.n = cap;
   if(!e.n) CUR.cards = CUR.cards.filter(x => x !== e);
   save(); renderEditor();
 }
 function setLegend(i, cid){
   const c = DATA.byId.get(cid); if(!c || c.type !== "Legend") return;
   if(CUR.legends.some((l, j) => l && j !== i && l.cid === cid)){ toast("Quella Leggenda è già nel mazzo"); return; }
-  CUR.legends[i] = { cid, pid: c.def.id }; save(); renderEditor();
+  const pe = CUR.pool && CUR.pool.find(e => e.cid === cid);
+  CUR.legends[i] = { cid, pid: pe ? pe.pid : c.def.id }; save(); renderEditor();
 }
 
 function wire(){

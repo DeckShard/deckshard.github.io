@@ -11,14 +11,15 @@ const set = (k, v) => { const s = JSON.stringify(v); try { if (OK) localStorage.
 export const storageOk = () => OK;
 
 export const DEFAULT_PROFILE = {
-  nick: "", lifepath: "", faction: "", fav: "", favImg: "", theme: "auto", accent: "holophone",
-  melee: "", cptcg: "", bio: "", v: 2, autoPay: false
+  nick: "", lifepath: "", faction: "", fav: "", favImg: "", theme: "dark", accent: "holophone",
+  melee: "", cptcg: "", bio: "", v: 3, autoPay: false
 };
 
 /* profili salvati prima della v1.1 avevano "samurai" come accento predefinito:
    il predefinito ora è "holophone"; chi vuole il giallo lo risceglie dal profilo */
 function migrateProfile(p){
   if(!p.v){ if(p.accent === "samurai") p.accent = "holophone"; p.v = 2; set("profile", p); }
+  if(p.v < 3){ if(p.theme === "auto") p.theme = "dark"; p.v = 3; set("profile", p); }
   return p;
 }
 export const S = {

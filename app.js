@@ -7,18 +7,18 @@ import { renderCollection } from "./collection.js";
 import { renderDeck } from "./deck.js";
 import { renderProfile } from "./profile.js";
 import { renderSim } from "./sim.js";
+import { renderRules } from "./rules.js";
 
 export const APP_VERSION = "1.0.0";
 
-const TABS = { collection: renderCollection, deck: renderDeck, profile: renderProfile, sim: renderSim };
+const TABS = { collection: renderCollection, deck: renderDeck, profile: renderProfile, sim: renderSim, rules: renderRules };
 
 /* tema (auto/chiaro/scuro) + accento, letti dal profilo */
 export function applyTheme(){
   const p = S.profile;
-  const dark = p.theme === "dark" || (p.theme !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+  const dark = !(p.theme === "light" || (p.theme === "auto" && !matchMedia("(prefers-color-scheme: dark)").matches));
   document.documentElement.dataset.theme = dark ? "dark" : "light";
   if(p.accent && p.accent !== "holophone") document.documentElement.dataset.accent = p.accent; else delete document.documentElement.dataset.accent;
-  const m = $("#themeBtn"); if(m) m.title = "Tema: " + (p.theme === "auto" ? "automatico" : dark ? "scuro" : "chiaro") + " (tocca per cambiare)";
 }
 matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", applyTheme);
 
@@ -33,12 +33,6 @@ export function showTab(name, push = true){
 
 async function boot(){
   applyTheme();
-  $("#themeBtn").addEventListener("click", () => {
-    const order = ["auto", "light", "dark"]; const p = S.profile;
-    p.theme = order[(order.indexOf(p.theme || "auto") + 1) % order.length]; S.save("profile"); applyTheme();
-    toast(p.theme === "auto" ? "Tema: come il sistema" : p.theme === "dark" ? "Tema scuro" : "Tema chiaro");
-    document.dispatchEvent(new CustomEvent("ncd:profile"));
-  });
   $$("nav.tabs button").forEach(b => b.addEventListener("click", () => showTab(b.dataset.tab)));
   window.addEventListener("hashchange", () => showTab(location.hash.slice(1), false));
 

@@ -20,9 +20,10 @@ export const ACCENTS = [
   { id: "holophone", n: "Holophone (rosso e cyan)", a: "#ff3b3b", b: "#00e5f2" },
   { id: "samurai", n: "Samurai (giallo e rosso)", a: "#fcee0a", b: "#e11a3c" },
   { id: "netrunner", n: "Netrunner", a: "#00e5f2", b: "#ff3bd4" },
+  { id: "girlypop", n: "Girlypop (rosa e cyan)", a: "#ff3bd4", b: "#00e5f2" },
   { id: "arasaka", n: "Arasaka", a: "#d8323c", b: "#6a6a72" },
   { id: "nomad", n: "Nomad", a: "#f28c28", b: "#6fae52" },
-  { id: "maelstrom", n: "Maelstrom", a: "#e11a3c", b: "#2a2a30" }
+  { id: "maelstrom", n: "Maelstrom", a: "#e11a3c", b: "#fcee0a" }
 ];
 
 let wired = false;
@@ -31,7 +32,7 @@ const initials = s => s.split(/\s+/).map(w => w[0]).join("").slice(0, 2).toUpper
 /* solo l'illustrazione della carta: la Leggenda ha il titolo in alto e il
    testo in basso, l'arte sta circa tra il 17% e il 60% dell'altezza */
 export function avatarHTML(p, cls = "avatar"){
-  if(p.favImg) return `<div class="${cls} art" role="img" aria-label="${esc(p.fav)}" style="background-image:url('${p.favImg}')"></div>`;
+  if(p.favImg) return `<div class="${cls} art" role="img" aria-label="${esc(p.fav)}" style="background-image:url('${p.favImg}');background-position:50% ${p.favPos ?? 34}%;background-size:${p.favZoom ?? 150}% auto"></div>`;
   return `<div class="${cls}" style="display:flex;align-items:center;justify-content:center;font-weight:800;font-size:${cls === "avatar" ? 30 : 16}px;color:var(--acc)">${esc(initials(p.fav || p.nick || "NC"))}</div>`;
 }
 
@@ -70,6 +71,9 @@ export function renderProfile(){
       <div class="field"><label>Fazione Holophone<small>${esc(FACTIONS.find(f => f.id === p.faction)?.d || "La fazione scelta nel gioco organizzato ufficiale")}</small></label>
         <span class="seg" id="pfFaction">${FACTIONS.map(f => `<button data-v="${f.id}" aria-pressed="${p.faction === f.id}">${f.id}</button>`).join("")}</span></div>
       <div class="field" style="grid-template-columns:1fr"><label>Personaggio preferito<small>Tutte le illustrazioni di Leggende e Unità dei personaggi (anche Secret, Iconic e Nova Rare), in ordine alfabetico; i personaggi senza carta usano le iniziali.</small></label>
+        ${p.favImg ? `<div style="display:grid;grid-template-columns:auto 1fr;gap:6px 10px;align-items:center;margin:8px 0 4px;font-size:12.5px;color:var(--mute)">
+          <span>Inquadratura</span><input type="range" id="pfPos" min="0" max="100" value="${p.favPos ?? 34}" aria-label="Posizione verticale del ritaglio">
+          <span>Zoom</span><input type="range" id="pfZoom" min="100" max="260" value="${p.favZoom ?? 150}" aria-label="Zoom del ritaglio"></div>` : ""}
         <input class="inp" id="pfCharQ" type="search" placeholder="Cerca personaggio…" autocomplete="off" style="margin-top:6px">
         <div class="chars" id="pfChars">${chars.map(x => `<button data-fav="${esc(x.key)}" data-img="${x.pid ? imgUrl(x.pid) : ""}" class="${p.fav === x.key ? "sel" : ""}" title="${esc(x.key)}">${x.pid ? `<div class="art" style="background-image:url('${thumbUrl(x.pid)}')"></div>` : `<div class="ph">${esc(initials(x.name))}</div>`}<span>${esc(x.name)}${x.tag ? ` <i>${esc(x.tag)}</i>` : ""}</span></button>`).join("")}</div>
       </div>
@@ -78,7 +82,7 @@ export function renderProfile(){
     <div class="card">
       <h3>Aspetto</h3>
       <div class="field"><label>Tema<small>«Auto» segue il sistema</small></label>
-        <span class="seg" id="pfTheme">${[["auto", "Auto"], ["light", "Chiaro"], ["dark", "Scuro"]].map(([v, t]) => `<button data-v="${v}" aria-pressed="${(p.theme || "auto") === v}">${t}</button>`).join("")}</span></div>
+        <span class="seg" id="pfTheme">${[["dark", "Scuro"], ["light", "Chiaro"], ["auto", "Come il sistema"]].map(([v, t]) => `<button data-v="${v}" aria-pressed="${(p.theme || "dark") === v}">${t}</button>`).join("")}</span></div>
       <div class="field"><label>Colori d'accento<small>${esc(ACCENTS.find(a => a.id === p.accent)?.n || "Holophone")}</small></label>
         <span class="swatches" id="pfAccent">${ACCENTS.map(a => `<button class="sw${(p.accent || "holophone") === a.id ? " sel" : ""}" data-v="${a.id}" title="${a.n}" aria-label="${a.n}" style="--a:${a.a};--b:${a.b}"></button>`).join("")}</span></div>
     </div>
@@ -121,6 +125,7 @@ function wire(root){
     if(t.id === "pfNick") setP("nick", t.value.trim());
     if(t.id === "pfMelee") setP("melee", t.value.trim());
     if(t.id === "pfCp") setP("cptcg", t.value.trim());
+    if(t.id === "pfPos" || t.id === "pfZoom"){ S.profile[t.id === "pfPos" ? "favPos" : "favZoom"] = +t.value; S.save("profile"); const a = $(".phead .avatar.art"); if(a){ a.style.backgroundPosition = `50% ${S.profile.favPos ?? 34}%`; a.style.backgroundSize = `${S.profile.favZoom ?? 150}% auto`; } return; }
     if(t.id === "pfCharQ"){ const q = t.value.trim().toLowerCase(); $$("#pfChars button").forEach(b => b.hidden = q && !b.dataset.fav.toLowerCase().includes(q)); }
   });
   root.addEventListener("change", e => { if(e.target.id === "pfNick") renderProfile(); });
@@ -136,7 +141,7 @@ function wire(root){
     const sw = e.target.closest("#pfAccent .sw"); if(sw){ setP("accent", sw.dataset.v); applyTheme(); renderProfile(); return; }
     const ch = e.target.closest("#pfChars button"); if(ch){
       const same = S.profile.fav === ch.dataset.fav;
-      S.profile.fav = same ? "" : ch.dataset.fav; S.profile.favImg = same ? "" : ch.dataset.img; S.save("profile");
+      S.profile.fav = same ? "" : ch.dataset.fav; S.profile.favImg = same ? "" : ch.dataset.img; S.profile.favPos = 34; S.profile.favZoom = 150; S.save("profile");
       renderProfile(); if(!same) $("#p-profile").scrollIntoView({ block: "start", behavior: "smooth" }); return;
     }
     if(e.target.closest("#pfExport")){

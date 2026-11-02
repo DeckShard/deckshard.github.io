@@ -16,13 +16,20 @@ export function toast(msg, ms = 2400){
 
 export const statsHTML = c => `
   ${c.cost != null ? `<span class="stat cost" title="Costo">€$ ${c.cost}</span>` : ""}
-  ${c.power != null ? `<span class="stat pow" title="Potenza">⚔ ${c.power}</span>` : ""}
+  ${c.power != null ? `<span class="stat pow" title="Potenza">⚡ ${c.power}</span>` : ""}
   ${c.ram != null ? `<span class="stat" title="RAM"><i class="pip ${c.color}"></i> RAM ${c.ram}</span>` : ""}
   <span class="stat">${TYPE_IT[c.type] || c.type}</span>`;
 
 /* tessera per le griglie */
+const RARITY_ORDER = { "Iconic Secret": 8, "Iconic Legend": 7, "Iconic Other": 6, "Nova Rare": 5, "Secret": 4, "Epic": 3, "Rare": 2, "Uncommon": 1, "Common": 0 };
+/* la stampa da mostrare in collezione: tra quelle possedute la più rara (Iconic Secret → Iconic → Nova → Secret → …), altrimenti quella predefinita */
+export function shownPrint(c){
+  let best = null;
+  for(const p of c.prints){ if(!qtyOf(p.id) || !p.img) continue; if(!best || (RARITY_ORDER[p.rarity] ?? 0) > (RARITY_ORDER[best.rarity] ?? 0)) best = p; }
+  return best || c.def;
+}
 export function tileHTML(c, pid, opts = {}){
-  const p = pid ? DATA.byPrint.get(pid) : c.def;
+  const p = pid ? DATA.byPrint.get(pid) : (opts.owned ? shownPrint(c) : c.def);
   const q = opts.qty != null ? opts.qty : cardQty(c);
   const pr = opts.price !== false ? (priceOf(p.id) || cardPrice(c)) : null;
   return `<div class="gc${opts.dim && !q ? " dim" : ""}" data-cid="${c.id}" data-pid="${p.id}">
@@ -32,12 +39,14 @@ export function tileHTML(c, pid, opts = {}){
     <div class="cap"><b>${pr ? eur(pr.trend) + (pr.approx ? " ~" : "") : "—"}</b>${esc(c.dn)}</div>
   </div>`;
 }
-export function rowHTML(c, pid, right = "", extra = ""){
+/* riga compatta: con `compact` le statistiche sono testo breve (€$ · ⚡ · RAM) che va a capo, mai troncato */
+export function rowHTML(c, pid, right = "", extra = "", compact = false){
   const p = pid ? DATA.byPrint.get(pid) : c.def;
+  const stats = compact ? `<span class="st">${c.cost != null ? `€$ ${c.cost}` : ""}${c.power != null ? ` · ⚡ ${c.power}` : ""} · ${TYPE_IT[c.type] || c.type}</span>` : statsHTML(c);
   return `<div class="row" data-cid="${c.id}" data-pid="${p.id}">
     <span class="ci" style="background:var(--c${c.color || "Mute"})"></span>
     ${p.img ? `<img class="thumb" src="${thumbUrl(p.id)}" alt="" loading="lazy">` : `<span class="thumb"></span>`}
-    <div class="nm"><b>${esc(c.dn)}</b><span>${statsHTML(c)} ${extra}</span></div>
+    <div class="nm"><b>${esc(c.dn)}</b><span>${stats} ${extra}</span></div>
     ${right}
   </div>`;
 }

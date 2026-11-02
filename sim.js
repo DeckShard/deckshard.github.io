@@ -6,7 +6,9 @@ import { S, saveDeck } from "./store.js";
 import { $, $$, esc, toast, openLens, openCard } from "./ui.js";
 import { createGame, mulligan, resolve, legalActions, doAction, power, ready, readyEddies, streetCred, canAttack, canPay, manual, rival, hasKw } from "./engine.js";
 import { botDecide, botStep } from "./bot.js";
-import { starterDeck, isLegal, deckSize } from "./deck.js";
+import { starterDeck, isLegal, deckSize, openDeck } from "./deck.js";
+import { prereleaseSetupHTML, wirePrerelease } from "./prerelease.js";
+import { tutorialHTML, startTutorial, tutorialStep, tutorialBarHTML, tutorialActive, stopTutorial } from "./tutorial.js";
 
 /* Strumenti manuali (spendi/prepara, ±potenza, sconfiggi, ±1 sui Gig, pesca…):
    permettono di applicare a mano gli effetti che il motore non interpreta,
@@ -49,14 +51,16 @@ export function renderSim(){
         <div><label style="font-size:12px;font-weight:700;color:var(--mute)">${mode === "bot" ? "Mazzo del bot" : "Mazzo del giocatore 2"}</label><select class="inp" id="simDeck1">${opts(S.settings.simDeck1 || "starter:embracingpowerretailstarterdeck")}</select></div>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;align-items:center">
-        <button class="btn yel" id="simStart">▶ Inizia la partita</button>
+        <button class="btn acc2" id="simStart">▶ Inizia la partita</button>
         ${G && G.winner == null ? `<button class="btn" id="simResume">Riprendi la partita in corso</button>` : ""}
         <span class="chip">${S.record.wins || 0} vittorie · ${S.record.losses || 0} sconfitte</span>
       </div>
       <div class="field" style="margin-top:8px"><label>Pagamento degli Eddies<small>Manuale: scegli ogni volta cosa spendere. Automatico: paga da solo e chiede solo se deve spendere una Leggenda con un'abilità Spend ancora utilizzabile.</small></label>
         <span class="seg" id="simPay"><button data-v="0" aria-pressed="${!S.profile.autoPay}">Manuale</button><button data-v="1" aria-pressed="${!!S.profile.autoPay}">Automatico</button></span></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><button class="btn sm" id="simTutorial">Tutorial: partita guidata</button></div>
       <p class="note" style="margin:12px 0 0"><b>Sul telefono</b> la plancia è orizzontale: ruota il dispositivo (o lascia che l'app la ruoti da sola). Tocca una carta per le azioni, <b>tieni premuto</b> per ingrandirla con lo zoom. I mazzi devono avere 3 Leggende e almeno qualche carta; per i tornei usa il deckbuilder per verificarne la legalità.</p>
-    </div>`;
+    </div>
+    ${prereleaseSetupHTML()}`;
 }
 function deckFrom(v){
   if(v.startsWith("starter:")){ const code = v.slice(8); return starterDeck(code, code.includes("heist") ? "Starter The Heist" : "Starter Embracing Power"); }
@@ -64,8 +68,9 @@ function deckFrom(v){
 }
 
 /* ------------------------------------------------------------ partita */
-function start(){
-  const d0 = deckFrom($("#simDeck0").value), d1 = deckFrom($("#simDeck1").value);
+function start(opts = {}){
+  let d0 = opts.deck0 || deckFrom($("#simDeck0").value), d1 = opts.deck1 || deckFrom($("#simDeck1").value);
+  if(d0 && d0.format === "sealed" && d0.botDeck && !opts.deck1){ d1 = d0.botDeck; mode = "bot"; }
   if(!d0 || !d1){ toast("Scegli due mazzi"); return; }
   for(const d of [d0, d1]) if(d.legends.filter(Boolean).length < 3 || deckSize(d) < 10){ toast(`«${d.name}»: servono 3 Leggende e un mazzo con carte`); return; }
   S.settings.simDeck0 = $("#simDeck0").value; S.settings.simDeck1 = $("#simDeck1").value; S.save("settings");
@@ -93,6 +98,7 @@ function openBoard(){
   try{ document.documentElement.requestFullscreen?.().then(() => screen.orientation?.lock?.("landscape").catch(() => {})).catch(() => {}); }catch(e){}
 }
 function closeBoard(){
+  stopTutorial();
   $("#board").hidden = true; document.body.style.overflow = "";
   try{ screen.orientation?.unlock?.(); if(document.fullscreenElement) document.exitFullscreen?.(); }catch(e){}
   clearTimeout(botTimer); renderSim();
@@ -196,11 +202,13 @@ function render(){
       </div>
       <div class="brow hand" data-handrow="${M.id}"><span class="lbl">mano · ${ready(M)} €$</span>${handHTML || `<span style="color:var(--mute)">mano vuota</span>`}</div>
     </div>
+    ${tutorialActive() ? tutorialBarHTML(G, me()) : ""}
     ${showLog ? `<div id="simLog"><div style="display:flex;justify-content:space-between;align-items:center"><b>Registro</b><button class="btn sm icon" id="bLogClose">✕</button></div>${G.log.slice(-80).map(e => `<div class="e ${e.kind}">${esc(e.text)}</div>`).join("")}</div>` : ""}
     ${mulliganPending() != null ? mulliganHTML() : pm ? "" : G.pending && human[G.pending.player] ? askHTML() : ""}
     ${G.winner != null ? `<div class="winbox"><div class="box"><h2>${G.winner === me() ? "VITTORIA" : mode === "hot" ? "VINCE " + esc(G.players[G.winner].name).toUpperCase() : "SCONFITTA"}</h2><p>${esc(G.reason)}</p><p style="color:var(--mute)">${G.turn} turni</p><div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><button class="btn yel" id="bAgain">Rivincita</button><button class="btn" id="bExit">Esci</button></div></div></div>` : ""}
     ${handoff ? `<div class="handoff"><h2>Passa il dispositivo a ${esc(G.players[G.active].name)}</h2><p>Il tuo rivale non guarda, promesso.</p><button class="btn yel" id="bHand">Sono pronto</button></div>` : ""}`;
   if(showLog){ const l = $("#simLog"); l.scrollTop = l.scrollHeight; }
+  if(tutorialActive() && tutorialStep(G, me())) { /* passo completato: la barra si aggiorna al prossimo ridisegno */ setTimeout(() => { if(G) render(); }, 0); }
 }
 
 /* richieste del motore (dado, blocco, furto, bersaglio…) */
@@ -210,7 +218,8 @@ function askHTML(){
   const ctx = p.kind === "block" && p.ctx.attacker ? `<p style="color:var(--ink2);margin:0 0 8px">${esc(p.ctx.attacker.card.dn)} (${power(p.ctx.attacker)}) attacca ${p.ctx.target ? esc(p.ctx.target.card.dn) + " (" + power(p.ctx.target) + ")" : "la tua area Gig"}. Puoi bloccare, chiamare una Leggenda o usare una carta Quick, anche più volte.</p>` : "";
   // in due sullo stesso dispositivo: la decisione del difensore si apre solo dopo un tocco, così l'attaccante non vede le sue carte
   if(mode === "hot" && p.player !== G.active && reactCover !== p) return `<div id="simAsk"><div class="box"><h3>Reazione di ${esc(P.name)}</h3><p>${esc(G.players[G.active].name)}, passa il dispositivo: le opzioni del rivale compaiono solo dopo il suo tocco.</p><div class="opts"><button class="btn yel" data-react="1">Sono ${esc(P.name)}, mostra le opzioni</button></div></div></div>`;
-  return `<div id="simAsk"><div class="box"><h3>${titles[p.kind] || "Scegli"}</h3>${ctx}<div class="opts">${p.options.map((o, i) => {
+  const srcLine = p.ctx && p.ctx.src && p.kind !== "die" && p.kind !== "block" && p.kind !== "steal" ? `<div class="sub" style="margin:-4px 0 8px"><b>${esc(p.ctx.src)}</b>${p.ctx.text ? ` — ${esc(p.ctx.text)}` : ""}</div>` : "";
+  return `<div id="simAsk"><div class="box"><h3>${titles[p.kind] || "Scegli"}</h3>${srcLine}${ctx}<div class="opts">${p.options.map((o, i) => {
     const pid = o.unit?.pid || o.c?.pid || o.g?.pid; return `<button class="btn${pid ? " card-opt" : ""}" data-ask="${i}">${pid ? `<img src="${thumbUrl(pid)}" alt="">` : ""}${esc(o.label)}</button>`; }).join("")}</div></div></div>`;
 }
 /* finestra generica (mulligan, conferme) */
@@ -266,7 +275,7 @@ function fieldCard(el, owner){
   const items = [];
   if(mine && myTurn){
     const can = canAttack(G, M, u);
-    items.push({ label: `Attacca l'area Gig (${1 + Math.floor(power(u) / 10)} Gig)`, cls: "acc", disabled: !can || !rival(G, M).gigs.length || power(u) < 1 || u.fx.onlyUnits, fn: () => after(doAction(G, M.id, { t: "attack", uid: u.uid, target: { kind: "gigs" } })) });
+    items.push({ label: power(u) < 1 ? "Attacca l'area Gig (potenza 0: non ruba, ma attiva gli effetti)" : `Attacca l'area Gig (${1 + Math.floor(power(u) / 10)} Gig)`, cls: "acc", disabled: !can || !rival(G, M).gigs.length || u.fx.onlyUnits, fn: () => after(doAction(G, M.id, { t: "attack", uid: u.uid, target: { kind: "gigs" } })) });
     items.push({ label: "Attacca un'Unità spesa →", disabled: !can || !rival(G, M).field.some(x => x.spent), fn: () => { targeting = { kind: "attack", uid: u.uid }; sel = u.uid; render(); note("Tocca l'Unità rivale spesa da attaccare"); } });
     if(u.fx.spend.length) items.push({ label: "Abilità {Spend}", disabled: u.spent || u.lag, fn: () => after(doAction(G, M.id, { t: "spend", uid: u.uid })) });
   }
@@ -278,6 +287,7 @@ function fieldCard(el, owner){
       { label: "Sconfiggi", cls: "danger", fn: () => { manual.defeat(G, owner, u.uid); after(); } });
   }
   items.push({ label: "Ingrandisci", fn: () => openLens(imgUrl(u.pid)) }, { label: "Scheda carta", fn: () => openCard(u.cid, u.pid) });
+  for(const g of u.gear || []) items.push({ label: `Ingrandisci ${g.card.dn} (Gear)`, fn: () => openLens(imgUrl(g.pid)) });
   openPop(el, items, `${u.card.dn} · potenza ${power(u)}`);
 }
 function legendCard(el, owner){
@@ -293,7 +303,7 @@ function legendCard(el, owner){
     if(MANUAL) items.push({ label: l.spent ? "Prepara (manuale)" : "Spendi come 1 €$ (manuale)", fn: () => { manual.toggleSpent(G, owner, l.uid); after(); } });
     if(MANUAL && !l.faceUp) items.push({ label: "Scopri senza chiamare (manuale)", fn: () => { manual.flip(G, owner, idx); after(); } });
   }
-  if(l.faceUp) items.push({ label: "Ingrandisci", fn: () => openLens(imgUrl(l.pid)) }, { label: "Scheda carta", fn: () => openCard(l.cid, l.pid) });
+  if(l.faceUp){ items.push({ label: "Ingrandisci", fn: () => openLens(imgUrl(l.pid)) }, { label: "Scheda carta", fn: () => openCard(l.cid, l.pid) }); for(const g of l.gear || []) items.push({ label: `Ingrandisci ${g.card.dn} (Gear)`, fn: () => openLens(imgUrl(g.pid)) }); }
   if(!items.length) items.push({ label: "Leggenda coperta: nessuno sa quale sia", disabled: true, fn: () => {} });
   openPop(el, items, l.faceUp ? l.card.dn : "Leggenda coperta");
 }
@@ -326,7 +336,10 @@ function wire(){
     if(e.target.closest("#simStart")){ start(); return; }
     if(e.target.closest("#simResume")){ openBoard(); render(); tick(); }
   });
-  document.addEventListener("ncd:playdeck", e => { S.settings.simDeck0 = e.detail; S.save("settings"); renderSim(); });
+  document.addEventListener("ncd:playdeck", e => { S.settings.simDeck0 = e.detail; S.save("settings"); renderSim(); const d = S.decks.find(x => x.id === e.detail); if(d && d.format === "sealed") start(); });
+  root.addEventListener("click", e => { const z = e.target.closest(".pkg [data-zoom]"); if(z) openLens(imgUrl(z.dataset.zoom)); });
+  wirePrerelease(root, id => { location.hash = "#deck"; openDeck(id); toast("Scegli 3 Leggende e almeno 30 carte, poi «Gioca»", 4000); });
+  root.addEventListener("click", e => { if(e.target.closest("#simTutorial")){ mode = "bot"; human = [true, false]; startTutorial(); start({ deck0: starterDeck("theheistretailstarterdeck", "Tutorial"), deck1: starterDeck("embracingpowerretailstarterdeck", "Bot") }); } });
 
   const board = $("#board");
   // pressione lunga: zoom
@@ -376,7 +389,7 @@ function wire(){
     if(!drag || e.pointerId !== drag.id) return;
     const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
     if(!drag.active){ if(Math.hypot(dx, dy) < 12) return; drag.active = true; lpCancel(); unpeek(); try{ drag.el.setPointerCapture(e.pointerId); }catch(err){}
-      drag.ghost = drag.el.cloneNode(true); drag.ghost.className = "bc big ghost" + (rotated() ? " rot" : ""); document.body.appendChild(drag.ghost); drag.el.classList.add("dragging");
+      drag.ghost = drag.el.cloneNode(true); drag.ghost.className = "bc ghost" + (rotated() ? " rot" : ""); drag.ghost.style.width = Math.round(drag.el.getBoundingClientRect().width * 0.8) + "px"; document.body.appendChild(drag.ghost); drag.el.classList.add("dragging");
       const M = G.players[me()];
       if(drag.legendIdx != null) markDropZones({ isLegendDrag: true }); else { const c = M.hand.find(x => x.uid === drag.uid); if(c) markDropZones(c); } }
     drag.ghost.style.left = e.clientX + "px"; drag.ghost.style.top = e.clientY + "px";
@@ -420,6 +433,8 @@ function wire(){
     if(t.closest("#bExit")){ closeBoard(); return; }
     if(t.closest("#bHand")){ handoff = false; render(); tick(); return; }
     if(t.closest("[data-react]")){ reactCover = G.pending; render(); return; }
+    if(t.closest("#tutSkip")){ stopTutorial(); render(); return; }
+    if(t.closest("#tutNext")){ tutorialStep(G, me(), true); render(); return; }
     if(payMode()){
       const pm = payMode();
       if(t.closest("#bPayCancel")){ resolve(G, payOpt(o => o.kind === "cancel")); render(); tick(); return; }

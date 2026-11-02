@@ -60,9 +60,13 @@ Nota sul Gear: il motore somma la potenza del Gear a quella dell'Unità equipagg
 
 Collezione: «Importa collezione» accetta lo stesso formato (testo incollato o file .txt/.csv) in modalità **Aggiorna** (somma alle copie possedute) o **Sostituisci** (azzera e ricarica); «Esporta testo» produce la lista con i codici, pronta da reimportare o da portare altrove.
 
+## Regole, Prerelease e tutorial
+
+La scheda **Regole** riassume in italiano le regole di base (turno, Eddies, Leggende, attacchi e reazioni, Street Cred, overtime, parole chiave, costruzione del mazzo) con i collegamenti alla guida ufficiale. Nel Simulator, **Prerelease** apre un kit come quello reale (6 buste da 12 carte con 7 comuni, 3 non comuni e 2 rare-o-meglio, un pacchetto di 3 Leggende, il promo Gorilla Arms) e crea un mazzo *sealed* nel deckbuilder: almeno 30 carte di massimo 3 colori, senza limiti di RAM né di copie, Leggende libere; «Gioca» lo fa affrontare un bot che ha aperto un kit a sua volta. Il **tutorial** è una partita guidata contro il bot con una barra che indica il passo da fare (mulligan, dado, vendita, Unità, Chiamata, fine turno, reazione, attacco) e avanza da sola quando lo completi.
+
 ## Scanner della collezione
 
-Dalla Collection, «Scanner» apre la fotocamera. In modalità continua l'app legge di continuo l'inquadratura con Tesseract.js (scaricato dalla CDN la prima volta, ≈4 MB, poi resta in memoria), abbina nome e testo di regole alle 151 carte del catalogo e, quando la stessa carta viene riconosciuta in due letture consecutive con punteggio ≥ 70%, la mette nella **lista di scansione**; per contare un'altra copia della stessa carta basta allontanarla e riavvicinarla. La lista si rivede (quantità, stampa, rimozione) e si aggiunge alla collezione in blocco; resta salvata se si chiude l'app a metà. Restano «Scatta» (una lettura con i candidati) e «Da foto». Il codice set e il numero stampati sulla carta sono in verticale e in diagonale, poco adatti all'OCR: per le varianti si passa dalla scheda.
+Dalla Collection, «Scanner» apre la fotocamera. In modalità continua l'app legge di continuo l'inquadratura con Tesseract.js (scaricato dalla CDN la prima volta, ≈4 MB, poi resta in memoria), abbina nome e testo di regole alle 151 carte del catalogo e, quando la stessa carta viene riconosciuta in due letture consecutive con punteggio ≥ 70%, la mette nella **lista di scansione**; per contare un'altra copia della stessa carta basta allontanarla e riavvicinarla. La lista si rivede (quantità, stampa, rimozione) e si aggiunge alla collezione in blocco; resta salvata se si chiude l'app a metà. Restano «Scatta» (una lettura con i candidati) e «Da foto». Le varianti (Secret, Iconic, Nova Rare) vengono riconosciute confrontando l'illustrazione inquadrata con quelle di tutte le stampe della carta; a parità di arte (beta e retail) si propone la stampa predefinita, modificabile toccando la miniatura.
 
 ## Prossimi passi possibili
 

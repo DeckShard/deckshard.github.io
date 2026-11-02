@@ -19,9 +19,9 @@
 <link rel="stylesheet" href="./theme.css">
 <link rel="stylesheet" href="./sim.css">
 <script>
-  // tema applicato prima del primo paint, per evitare il lampo
+  // tema applicato prima del primo paint, per evitare il lampo (scuro se non è stato scelto altro)
   try{ const p = JSON.parse(localStorage.getItem("ncd:profile") || "{}");
-    const t = p.theme === "dark" || (p.theme !== "light" && matchMedia("(prefers-color-scheme: dark)").matches) ? "dark" : "light";
+    const t = p.theme === "light" || (p.theme === "auto" && !matchMedia("(prefers-color-scheme: dark)").matches) ? "light" : "dark";
     document.documentElement.dataset.theme = t; if(p.accent) document.documentElement.dataset.accent = p.accent; }catch(e){}
 </script>
 </head>
@@ -31,7 +31,6 @@
   <div class="bar">
     <div class="brand"><span class="mark"></span><div><b>NIGHT CITY DECK</b><small>CYBERPUNK TCG · NON UFFICIALE</small></div></div>
     <span class="meta" id="metaLine">…</span>
-    <button class="btn sm icon" id="themeBtn" title="Tema: auto / chiaro / scuro" aria-label="Tema"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" stroke="none"/></svg></button>
   </div>
 </header>
 
@@ -46,6 +45,7 @@
     </div>
     <div class="card flush">
       <div class="search"><input class="inp" id="collQ" type="search" placeholder="Cerca per nome, testo o tratto…" autocomplete="off"><button class="btn sm" id="collFilt">Filtri</button><button class="btn sm acc2" id="collScan" title="Riconosci le carte con la fotocamera">Scanner</button></div>
+      <div class="toolbar" style="padding-top:0"><button class="btn sm" id="collImportBtn">Importa</button><button class="btn sm" id="collExportBtn">Esporta</button><span class="count"></span></div>
       <div class="filters" id="collFilters"></div>
       <div class="toolbar">
         <span class="count" id="collCount"></span>
@@ -59,10 +59,6 @@
       </div>
       <div class="grid" id="collRows"></div>
     </div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
-      <button class="btn sm" id="collImportBtn">Importa collezione</button>
-      <button class="btn sm" id="collExportBtn">Esporta testo</button>
-    </div>
     <p class="note" style="margin-top:12px"><b>Come si usa.</b> Tocca una carta per aprire la scheda e impostare le copie possedute per ogni stampa; tieni premuto su una tessera per aggiungere subito una copia. I prezzi sono il <i>trend</i> Cardmarket aggiornato ogni notte; quelli con «~» sono stimati perché il listino non distingue la variante.</p>
   </section>
 
@@ -75,6 +71,9 @@
   <!-- ============================================================ PROFILO -->
   <section class="panel" id="p-profile" data-tab="profile"></section>
 
+  <!-- ============================================================ REGOLE -->
+  <section class="panel" id="p-rules" data-tab="rules"></section>
+
   <!-- ============================================================ SIMULATOR -->
   <section class="panel" id="p-sim" data-tab="sim">
     <div id="simSetup"></div>
@@ -86,21 +85,38 @@
   <button role="tab" data-tab="deck" aria-selected="false"><svg viewBox="0 0 24 24"><rect x="5" y="3" width="12" height="16" rx="1.5"/><path d="M9 7h4M9 10h4M17 7l2 1v13l-10-1"/></svg>Deckbuilder</button>
   <button role="tab" data-tab="sim" aria-selected="false"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.4"/><circle cx="16" cy="16" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="16" cy="8" r="1.4"/><circle cx="8" cy="16" r="1.4"/></svg>Simulator</button>
   <button role="tab" data-tab="profile" aria-selected="false"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></svg>Profilo</button>
+  <button role="tab" data-tab="rules" aria-selected="false"><svg viewBox="0 0 24 24"><path d="M5 4h9l5 5v11H5z"/><path d="M14 4v5h5M8 13h8M8 17h8"/></svg>Regole</button>
 </nav>
 
 <!-- import massivo della collezione -->
 <div id="collImport" hidden>
   <div class="box">
     <h3>Importa la collezione</h3>
-    <div class="sub">Una carta per riga: <code>3 Mantis Blades</code>, <code>2 WNC-025</code>, <code>HEI-004 x1</code>. Accetta anche il testo esportato da qui e i file .txt o .csv (nome o codice nella prima colonna, quantità nella seconda).</div>
+    <div class="sub">Una carta per riga: <code>3 Mantis Blades</code>, <code>2 WNC-025</code>, <code>HEI-004 x1</code>. Accetta anche i file .txt, .csv (nome o codice nella prima colonna, quantità nella seconda) e .json (export di questa app, backup, oppure elenchi di oggetti con nome/codice e quantità come quelli di altre app).</div>
     <textarea class="inp" id="collImportText" rows="10" style="width:100%;margin-top:10px;font-family:var(--mono);font-size:13px" placeholder="3 Mantis Blades&#10;2 WNC-025&#10;1 V: Streetkid"></textarea>
     <div class="field" style="margin-top:6px"><label>Modalità<small>Aggiorna: somma alle copie che hai. Sostituisci: azzera la collezione e carica solo questa lista.</small></label>
       <span class="seg" id="collImportMode"><button data-v="add" aria-pressed="true">Aggiorna</button><button data-v="replace" aria-pressed="false">Sostituisci</button></span></div>
     <div id="collImportPreview" class="sub" style="margin-top:8px"></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
       <button class="btn yel" id="collImportGo" disabled>Importa</button>
-      <button class="btn sm" id="collImportFile">Da file…</button><input type="file" id="collImportInput" accept=".txt,.csv,text/plain,text/csv" hidden>
+      <button class="btn sm" id="collImportFile">Da file…</button><input type="file" id="collImportInput" accept=".txt,.csv,.json,text/plain,text/csv,application/json" hidden>
       <button class="btn sm" id="collImportClose">Annulla</button>
+    </div>
+  </div>
+</div>
+
+<!-- export della collezione -->
+<div id="collExport" hidden>
+  <div class="box">
+    <h3>Esporta la collezione</h3>
+    <div class="field"><label>Formato<small>Testo: una riga per carta, reimportabile qui. CSV: per fogli di calcolo. JSON: per altre app e come backup.</small></label>
+      <span class="seg" id="collExportFmt"><button data-v="txt" aria-pressed="true">Testo</button><button data-v="csv" aria-pressed="false">CSV</button><button data-v="json" aria-pressed="false">JSON</button></span></div>
+    <textarea class="inp" id="collExportText" rows="12" readonly style="width:100%;margin-top:10px;font-family:var(--mono);font-size:12.5px"></textarea>
+    <div id="collExportInfo" class="sub" style="margin-top:6px"></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+      <button class="btn acc2" id="collExportCopy">Copia</button>
+      <button class="btn sm" id="collExportDl">Scarica file</button>
+      <button class="btn sm" id="collExportClose">Chiudi</button>
     </div>
   </div>
 </div>

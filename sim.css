@@ -36,8 +36,10 @@
 .stack.target{outline:3px solid var(--acc2Fill);animation:pulse 1s ease-in-out infinite;cursor:pointer}
 .brow.hand .bc{touch-action:pan-x}
 .bc.dragging{opacity:.35}
-.bc.ghost{position:fixed;z-index:200;pointer-events:none;transform:translate(-50%,-60%) scale(1.15);box-shadow:0 12px 30px rgba(0,0,0,.6);outline:2px solid var(--acc2Fill)}
-.bc.ghost.rot{transform:translate(-50%,-60%) rotate(90deg) scale(1.15)}
+/* la copia che segue il dito: piccola, semitrasparente e spostata sopra (o a destra, con la plancia ruotata),
+   così il punto in cui la stai lasciando resta visibile */
+.bc.ghost{position:fixed;z-index:200;pointer-events:none;opacity:.8;transform:translate(-50%,-135%);box-shadow:0 10px 24px rgba(0,0,0,.55);outline:2px solid var(--acc2Fill)}
+.bc.ghost.rot{transform:translate(35%,-50%) rotate(90deg)}
 .candrop{outline:2px dashed var(--acc2Fill);outline-offset:2px;animation:pulse 1.2s ease-in-out infinite}
 .brow.field.candrop{outline-offset:-3px;background:color-mix(in srgb,var(--acc2Fill) 8%,transparent)}
 .drop{outline:3px solid #fcee0a!important;box-shadow:0 0 0 4px rgba(252,238,10,.35);animation:none}
@@ -95,8 +97,8 @@
 .rotatehint{display:none}
 
 /* ---------- import della collezione ---------- */
-#collImport{position:fixed;inset:0;z-index:55;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:12px}
-#collImport .box{background:var(--bg2);border:1px solid var(--line2);border-top:2px solid var(--acc);padding:14px;max-width:560px;width:100%;max-height:92dvh;overflow:auto}
+#collImport,#collExport{position:fixed;inset:0;z-index:55;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:12px}
+#collImport .box,#collExport .box{background:var(--bg2);border:1px solid var(--line2);border-top:2px solid var(--acc);padding:14px;max-width:560px;width:100%;max-height:92dvh;overflow:auto}
 
 /* ---------- scanner ---------- */
 #scan{position:fixed;inset:0;z-index:50;background:var(--bg);color:var(--ink);display:flex;flex-direction:column;overflow:auto;padding-top:env(safe-area-inset-top)}
@@ -130,4 +132,14 @@
 .simdecks select{width:100%}
 
 /* ---------- deckbuilder: due colonne su schermo largo ---------- */
-@media(min-width:1000px){ #deckEdit{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start} #deckEdit>.card+.card{margin-top:0} #deckBrowser{position:sticky;top:64px;max-height:calc(100dvh - 80px);overflow:auto} }
+@media(min-width:1000px){ #deckEdit{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start} #deckEdit>.card+.card{margin-top:0} #deckBrowser{order:-1;position:sticky;top:64px;max-height:calc(100dvh - 80px);overflow:auto} }
+
+/* ---------- tutorial e prerelease ---------- */
+.tutbar{position:absolute;left:50%;top:6px;transform:translateX(-50%);z-index:49;display:flex;align-items:center;gap:8px;max-width:min(680px,94%);
+  background:var(--bg2);border:1px solid var(--acc2Fill);box-shadow:0 0 0 3px color-mix(in srgb,var(--acc2Fill) 25%,transparent),var(--shadow);padding:8px 10px;font-size:13px;line-height:1.35}
+.tutbar .n{font-weight:800;color:var(--acc2);white-space:nowrap} .tutbar .tx{flex:1}
+.kit{display:flex;flex-direction:column;gap:10px;margin-top:12px}
+.pack .pkh{font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--mute);margin-bottom:4px}
+.pkg{display:flex;gap:6px;flex-wrap:wrap}
+.pkg .bc.pk{width:64px;cursor:zoom-in} .pkg .bc .rt{position:absolute;left:0;right:0;bottom:0;font-size:9px;text-align:center;background:rgba(0,0,0,.7);color:#fcee0a;padding:1px 0;letter-spacing:.04em}
+.pkg .bc .rt.Secret,.pkg .bc .rt.Epic{color:#ff3bd4} .pkg .bc .rt.Rare{color:#00e5f2}
