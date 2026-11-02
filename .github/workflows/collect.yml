@@ -29,6 +29,9 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install --quiet pillow
+      - name: Sveglia del database
+        run: |
+          curl -sS -X POST "https://uxbtwurhsujzyzvsvghm.supabase.co/rest/v1/rpc/ping" -H "apikey: sb_publishable__IATo8hKZDNZMp9_jESfAQ_Ll6PwNqF" -H "Content-Type: application/json" -d "{}" || true
       - name: Raccolta
         run: python collect.py
       - name: Commit dei dati
@@ -42,7 +45,7 @@ jobs:
         run: |
           rm -rf site && mkdir -p site/img
           cp index.html sw.js manifest.webmanifest icon.svg icon-192.png icon-512.png theme.css sim.css site/
-          cp app.js data.js store.js ui.js collection.js deck.js profile.js sim.js engine.js bot.js scanner.js parser.js rules.js prerelease.js tutorial.js i18n.js site/
+          cp app.js data.js store.js ui.js collection.js deck.js profile.js sim.js engine.js bot.js scanner.js parser.js rules.js prerelease.js tutorial.js i18n.js cloud.js social.js site/
           cp public/*.json site/
           cp -r data/img/. site/img/
           touch site/.nojekyll
