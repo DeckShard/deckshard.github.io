@@ -8,8 +8,13 @@ import { createGame, mulligan, resolve, legalActions, doAction, power, ready, re
 import { botDecide, botStep } from "./bot.js";
 import { starterDeck, isLegal, deckSize } from "./deck.js";
 
+/* Strumenti manuali (spendi/prepara, ±potenza, sconfiggi, ±1 sui Gig, pesca…):
+   permettono di applicare a mano gli effetti che il motore non interpreta,
+   ma escono dalle regole. Spenti per ora; da riattivare per una modalità
+   "tavolo libero" se servirà. */
+const MANUAL = false;
 let G = null, mode = "bot", human = [true, false], sel = null, targeting = null, pop = null, showLog = false, botTimer = null, handoff = false, wired = false;
-let lastSeen = { turn: 0, seen: 0 }, noteMsg = "", noteT = null;
+let lastSeen = { turn: 0, seen: 0 }, noteMsg = "", noteT = null, reactCover = null;
 /* avviso dentro la plancia (il toast globale non segue la rotazione) */
 function note(msg){ noteMsg = msg; clearTimeout(noteT); noteT = setTimeout(() => { noteMsg = ""; render(); }, 2600); render(); }
 const names = () => [S.profile.nick || "Tu", mode === "bot" ? "Bot" : "Giocatore 2"];
@@ -35,6 +40,8 @@ export function renderSim(){
         ${G && G.winner == null ? `<button class="btn" id="simResume">Riprendi la partita in corso</button>` : ""}
         <span class="chip">${S.record.wins || 0} vittorie · ${S.record.losses || 0} sconfitte</span>
       </div>
+      <div class="field" style="margin-top:8px"><label>Pagamento degli Eddies<small>Manuale: scegli ogni volta cosa spendere. Automatico: paga da solo e chiede solo se deve spendere una Leggenda con un'abilità Spend ancora utilizzabile.</small></label>
+        <span class="seg" id="simPay"><button data-v="0" aria-pressed="${!S.profile.autoPay}">Manuale</button><button data-v="1" aria-pressed="${!!S.profile.autoPay}">Automatico</button></span></div>
       <p class="note" style="margin:12px 0 0"><b>Sul telefono</b> la plancia è orizzontale: ruota il dispositivo (o lascia che l'app la ruoti da sola). Tocca una carta per le azioni, <b>tieni premuto</b> per ingrandirla con lo zoom. I mazzi devono avere 3 Leggende e almeno qualche carta; per i tornei usa il deckbuilder per verificarne la legalità.</p>
     </div>`;
 }
@@ -51,22 +58,22 @@ function start(){
   S.settings.simDeck0 = $("#simDeck0").value; S.settings.simDeck1 = $("#simDeck1").value; S.save("settings");
   human = mode === "bot" ? [true, false] : [true, true];
   const nm = names();
-  G = createGame([{ ...d0, name: nm[0] }, { ...d1, name: nm[1] }], DATA.byId, { bot0: !human[0], bot1: !human[1] });
+  G = createGame([{ ...d0, name: nm[0] }, { ...d1, name: nm[1] }], DATA.byId, { bot0: !human[0], bot1: !human[1], autoPay: [!!S.profile.autoPay, !!S.profile.autoPay] });
   G.decide = botDecide; G.mulliganAsked = [false, false];
   sel = null; targeting = null; pop = null; handoff = false; lastSeen = { turn: 0, seen: 0 };
   $("#board").innerHTML = ""; openBoard();
-  // mulligan: ai bot no; agli umani lo chiediamo
+  // mulligan: ai bot no; agli umani lo chiede la plancia (vedi mulliganHTML: fa parte
+  // dello stato, così un ridisegno — es. l'ingresso a schermo intero — non lo perde)
   for(const i of [0, 1]) if(!human[i]) mulligan(G, i, false);
-  askMulligan();
+  render(); tick();
 }
-function askMulligan(){
-  const i = [0, 1].find(k => human[k] && !G.players[k].mulliganed);
-  if(i == null){ render(); tick(); return; }
+const mulliganPending = () => G ? [0, 1].find(k => human[k] && !G.players[k].mulliganed) : null;
+function mulliganHTML(){
+  const i = mulliganPending(); if(i == null) return "";
   const P = G.players[i];
-  showAsk(`${P.name}: tieni questa mano?`, P.hand.map(c => ({ label: c.card.dn, pid: c.pid })), null, [
-    { label: "Tengo", cls: "yel", fn: () => { mulligan(G, i, false); askMulligan(); } },
-    { label: "Mulligan (ripesco 6)", fn: () => { mulligan(G, i, true); askMulligan(); } }
-  ]);
+  return `<div id="simAsk"><div class="box"><h3>${esc(P.name)}: tieni questa mano?</h3>
+    <div style="display:flex;gap:4px;flex-wrap:wrap;margin:8px 0">${P.hand.map(c => `<div class="bc" data-zoom="${c.pid}"><img src="${thumbUrl(c.pid)}" alt="${esc(c.card.dn)}"></div>`).join("")}</div>
+    <div class="opts"><button class="btn yel" data-mull="keep">Tengo</button><button class="btn" data-mull="redo">Mulligan (ripesco 6)</button></div></div></div>`;
 }
 function openBoard(){
   const b = $("#board"); b.hidden = false; document.body.style.overflow = "hidden";
@@ -82,6 +89,7 @@ function closeBoard(){
 function tick(){
   clearTimeout(botTimer);
   if(!G) return;
+  if(mulliganPending() != null){ render(); return; }
   if(G.winner != null){ finish(); render(); return; }
   if(G.pending){ if(human[G.pending.player]) { render(); return; } // decisione umana in attesa
     // decisione del bot (fuori dal suo turno, es. blocco): già risolta da ask()
@@ -129,7 +137,9 @@ function render(){
   const pendingTxt = G.pending ? (human[G.pending.player] ? `${G.players[G.pending.player].name} deve scegliere…` : "il bot decide…") : "";
   const status = G.winner != null ? `Fine: ${esc(G.reason)}` : myTurn ? "Il tuo turno" : human[G.active] ? `Turno di ${esc(G.players[G.active].name)}` : "Turno del bot…";
   const last = G.log.slice(-1)[0];
-  board.style.setProperty("--bh", board.clientHeight + "px");
+  // misura delle carte dall'altezza disponibile: 2 righe rivale + campo + pile + mano (1,15×) + barra e margini
+  const H = board.clientHeight; board.style.setProperty("--bh", H + "px");
+  board.style.setProperty("--cw", Math.max(32, Math.min(64, (H - 110) / (1.4 * 4.15 + 0.6))).toFixed(1) + "px");
   board.innerHTML = `
     <div class="bz rival">
       <div class="brow">
@@ -147,8 +157,7 @@ function render(){
     <div class="bstrip">
       <span class="st">T${G.turn} · ${status}</span>
       <span class="lg" id="lastLog" title="${esc(last ? last.text : "")}">${noteMsg ? `<b style="color:var(--acc2)">${esc(noteMsg)}</b> · ` : ""}${pendingTxt ? `<b>${esc(pendingTxt)}</b> · ` : ""}${esc(last ? last.text : "")}</span>
-      ${myTurn && human[M.id] ? `<button class="btn sm" id="bCall" ${canCall ? "" : "disabled"} title="Chiama una Leggenda (1 €$)">Chiama</button>
-        <button class="btn sm yel" id="bEnd">Fine turno</button>` : ""}
+      ${myTurn && human[M.id] ? `<button class="btn sm yel" id="bEnd">Fine turno</button>` : ""}
       ${targeting ? `<button class="btn sm" id="bCancel">Annulla</button>` : ""}
       <button class="btn sm icon" id="bLog" title="Registro">≡</button>
       <button class="btn sm icon" id="bMenu" title="Menù">⋯</button>
@@ -167,7 +176,7 @@ function render(){
       <div class="brow hand" data-handrow="${M.id}"><span class="lbl">mano · ${ready(M)} €$</span>${handHTML || `<span style="color:var(--mute)">mano vuota</span>`}</div>
     </div>
     ${showLog ? `<div id="simLog"><div style="display:flex;justify-content:space-between;align-items:center"><b>Registro</b><button class="btn sm icon" id="bLogClose">✕</button></div>${G.log.slice(-80).map(e => `<div class="e ${e.kind}">${esc(e.text)}</div>`).join("")}</div>` : ""}
-    ${G.pending && human[G.pending.player] ? askHTML() : ""}
+    ${mulliganPending() != null ? mulliganHTML() : G.pending && human[G.pending.player] ? askHTML() : ""}
     ${G.winner != null ? `<div class="winbox"><div class="box"><h2>${G.winner === me() ? "VITTORIA" : mode === "hot" ? "VINCE " + esc(G.players[G.winner].name).toUpperCase() : "SCONFITTA"}</h2><p>${esc(G.reason)}</p><p style="color:var(--mute)">${G.turn} turni</p><div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><button class="btn yel" id="bAgain">Rivincita</button><button class="btn" id="bExit">Esci</button></div></div></div>` : ""}
     ${handoff ? `<div class="handoff"><h2>Passa il dispositivo a ${esc(G.players[G.active].name)}</h2><p>Il tuo rivale non guarda, promesso.</p><button class="btn yel" id="bHand">Sono pronto</button></div>` : ""}`;
   if(showLog){ const l = $("#simLog"); l.scrollTop = l.scrollHeight; }
@@ -176,10 +185,12 @@ function render(){
 /* richieste del motore (dado, blocco, furto, bersaglio…) */
 function askHTML(){
   const p = G.pending, P = G.players[p.player];
-  const titles = { die: "Quale dado tiri dal fixer?", block: `${esc(P.name)}: vuoi bloccare l'attacco?`, steal: "Quale Gig rubi?", target: "Scegli il bersaglio", discard: "Scegli la carta da scartare", gigpick: "Quale Gig modifichi?", gigvalue: "Nuovo valore" };
-  const ctx = p.kind === "block" && p.ctx.attacker ? `<p style="color:var(--ink2);margin:0 0 8px">${esc(p.ctx.attacker.card.dn)} (${power(p.ctx.attacker)}) attacca ${p.ctx.target ? esc(p.ctx.target.card.dn) + " (" + power(p.ctx.target) + ")" : "la tua area Gig"}.</p>` : "";
+  const titles = { die: "Quale dado tiri dal fixer?", block: `${esc(P.name)}: come reagisci?`, steal: "Quale Gig rubi?", target: "Scegli il bersaglio", discard: "Scegli la carta da scartare", gigpick: "Quale Gig?", gigvalue: "Nuovo valore", pickcard: "Scegli la carta", choice: "Scegli un effetto", yesno: "Vuoi farlo?", pay: p.ctx && p.ctx.confirm ? `Per pagare ${p.ctx.cost} €$ devi spendere una Leggenda con abilità` : `Come paghi? ${p.ctx ? `${p.ctx.paid}/${p.ctx.cost} €$ pagati` : ""}` };
+  const ctx = p.kind === "block" && p.ctx.attacker ? `<p style="color:var(--ink2);margin:0 0 8px">${esc(p.ctx.attacker.card.dn)} (${power(p.ctx.attacker)}) attacca ${p.ctx.target ? esc(p.ctx.target.card.dn) + " (" + power(p.ctx.target) + ")" : "la tua area Gig"}. Puoi bloccare, chiamare una Leggenda o usare una carta Quick, anche più volte.</p>` : "";
+  // in due sullo stesso dispositivo: la decisione del difensore si apre solo dopo un tocco, così l'attaccante non vede le sue carte
+  if(mode === "hot" && p.player !== G.active && reactCover !== p) return `<div id="simAsk"><div class="box"><h3>Reazione di ${esc(P.name)}</h3><p>${esc(G.players[G.active].name)}, passa il dispositivo: le opzioni del rivale compaiono solo dopo il suo tocco.</p><div class="opts"><button class="btn yel" data-react="1">Sono ${esc(P.name)}, mostra le opzioni</button></div></div></div>`;
   return `<div id="simAsk"><div class="box"><h3>${titles[p.kind] || "Scegli"}</h3>${ctx}<div class="opts">${p.options.map((o, i) => {
-    const pid = o.unit?.pid || o.c?.pid; return `<button class="btn${pid ? " card-opt" : ""}" data-ask="${i}">${pid ? `<img src="${thumbUrl(pid)}" alt="">` : ""}${esc(o.label)}</button>`; }).join("")}</div></div></div>`;
+    const pid = o.unit?.pid || o.c?.pid || o.g?.pid; return `<button class="btn${pid ? " card-opt" : ""}" data-ask="${i}">${pid ? `<img src="${thumbUrl(pid)}" alt="">` : ""}${esc(o.label)}</button>`; }).join("")}</div></div></div>`;
 }
 /* finestra generica (mulligan, conferme) */
 function showAsk(title, cards, text, buttons){
@@ -216,8 +227,8 @@ function handCard(el, P){
   if(myTurn){
     if(c.card.type === "Gear") items.push({ label: `Equipaggia (${cost} €$) → scegli l'Unità`, cls: "acc", disabled: !canPay(P, cost), fn: () => { targeting = { kind: "gear", uid: c.uid }; sel = c.uid; render(); note("Tocca l'Unità o la Leggenda scoperta da equipaggiare"); } });
     else items.push({ label: `Gioca (${cost} €$)`, cls: "acc", disabled: !canPay(P, cost), fn: () => after(doAction(G, P.id, { t: "play", uid: c.uid })) });
-    items.push({ label: P.sold ? "Già venduto in questo turno" : c.card.eddiable ? "Vendi → 1 €$" : "Non vendibile", disabled: P.sold || !c.card.eddiable, fn: () => after(doAction(G, P.id, { t: "sell", uid: c.uid })) });
-    items.push({ label: "Scarta (manuale)", cls: "danger", fn: () => { manual.discard(G, P.id, c.uid); after(); } });
+    if(c.card.eddiable) items.push({ label: P.sold ? "Vendi (già venduto in questo turno)" : "Vendi → 1 €$", disabled: P.sold, fn: () => after(doAction(G, P.id, { t: "sell", uid: c.uid })) });
+    if(MANUAL) items.push({ label: "Scarta (manuale)", cls: "danger", fn: () => { manual.discard(G, P.id, c.uid); after(); } });
   }
   items.push({ label: "Ingrandisci", fn: () => openLens(imgUrl(c.pid)) }, { label: "Scheda carta", fn: () => openCard(c.cid, c.pid) });
   openPop(el, items, c.card.dn);
@@ -238,7 +249,7 @@ function fieldCard(el, owner){
     items.push({ label: "Attacca un'Unità spesa →", disabled: !can || !rival(G, M).field.some(x => x.spent), fn: () => { targeting = { kind: "attack", uid: u.uid }; sel = u.uid; render(); note("Tocca l'Unità rivale spesa da attaccare"); } });
     if(u.fx.spend.length) items.push({ label: "Abilità {Spend}", disabled: u.spent || u.lag, fn: () => after(doAction(G, M.id, { t: "spend", uid: u.uid })) });
   }
-  if(human[M.id] && G.winner == null){
+  if(MANUAL && human[M.id] && G.winner == null){
     items.push({ label: "— strumenti manuali —", disabled: true, fn: () => {} },
       { label: u.spent ? "Prepara" : "Spendi", fn: () => { manual.toggleSpent(G, owner, u.uid); after(); } },
       { label: "+1 potenza (questo turno)", fn: () => { manual.mod(G, owner, u.uid, 1); after(); } },
@@ -258,8 +269,8 @@ function legendCard(el, owner){
     if(!l.faceUp) items.push({ label: "Chiama questa Leggenda (1 €$)", cls: "acc", disabled: P.called || !canPay(P, 1), fn: () => after(doAction(G, M.id, { t: "call", idx })) });
     if((l.card.kw || []).includes("Go Solo") && l.card.cost != null) items.push({ label: `Go Solo (${l.card.cost} €$): entra come Unità pronta`, disabled: !canPay(P, l.card.cost), fn: () => after(doAction(G, M.id, { t: "gosolo", idx })) });
     if(l.faceUp && l.fx.spend.length) items.push({ label: "Abilità {Spend}", disabled: l.spent, fn: () => after(doAction(G, M.id, { t: "spend", uid: l.uid })) });
-    items.push({ label: l.spent ? "Prepara (manuale)" : "Spendi come 1 €$ (manuale)", fn: () => { manual.toggleSpent(G, owner, l.uid); after(); } });
-    if(!l.faceUp) items.push({ label: "Scopri senza chiamare (manuale)", fn: () => { manual.flip(G, owner, idx); after(); } });
+    if(MANUAL) items.push({ label: l.spent ? "Prepara (manuale)" : "Spendi come 1 €$ (manuale)", fn: () => { manual.toggleSpent(G, owner, l.uid); after(); } });
+    if(MANUAL && !l.faceUp) items.push({ label: "Scopri senza chiamare (manuale)", fn: () => { manual.flip(G, owner, idx); after(); } });
   }
   if(l.faceUp) items.push({ label: "Ingrandisci", fn: () => openLens(imgUrl(l.pid)) }, { label: "Scheda carta", fn: () => openCard(l.cid, l.pid) });
   if(!items.length) items.push({ label: "Leggenda coperta: nessuno sa quale sia", disabled: true, fn: () => {} });
@@ -268,7 +279,7 @@ function legendCard(el, owner){
 function gigChip(el, owner){
   const P = G.players[owner], g = P.gigs.find(x => x.uid === +el.dataset.gig); if(!g) return;
   const M = G.players[me()];
-  if(!human[M.id] || G.winner != null) return;
+  if(!MANUAL || !human[M.id] || G.winner != null) return;
   openPop(el, [
     { label: "+1 (manuale)", disabled: g.value >= g.sides, fn: () => { manual.gig(G, owner, g.uid, 1); after(); } },
     { label: "−1 (manuale)", disabled: g.value <= 1, fn: () => { manual.gig(G, owner, g.uid, -1); after(); } },
@@ -278,7 +289,7 @@ function gigChip(el, owner){
 function menu(el){
   const M = G.players[me()];
   openPop(el, [
-    { label: "Pesca 1 (manuale)", disabled: !human[M.id] || G.winner != null, fn: () => { manual.draw(G, M.id, 1); after(); } },
+    ...(MANUAL ? [{ label: "Pesca 1 (manuale)", disabled: !human[M.id] || G.winner != null, fn: () => { manual.draw(G, M.id, 1); after(); } }] : []),
     { label: "Registro completo", fn: () => { showLog = true; render(); } },
     { label: "Mi arrendo", cls: "danger", disabled: G.winner != null, fn: () => { manual.concede(G, M.id); after(); } },
     { label: "Esci dalla plancia", fn: () => closeBoard() }
@@ -290,6 +301,7 @@ function wire(){
   const root = $("#simSetup");
   root.addEventListener("click", e => {
     const m = e.target.closest("#simMode button"); if(m){ mode = m.dataset.v; renderSim(); return; }
+    const pb = e.target.closest("#simPay button"); if(pb){ S.profile.autoPay = pb.dataset.v === "1"; S.save("profile"); renderSim(); return; }
     if(e.target.closest("#simStart")){ start(); return; }
     if(e.target.closest("#simResume")){ openBoard(); render(); tick(); }
   });
@@ -310,8 +322,9 @@ function wire(){
     if(lpFired){ lpFired = false; return; }
     if(e.target.closest(".pop")) return;
     const t = e.target;
+    // registro aperto: un tocco fuori dal pannello lo chiude
+    if(showLog && !t.closest("#simLog")){ showLog = false; render(); return; }
     if(t.closest("#bEnd")){ after(doAction(G, me(), { t: "end" })); if(mode === "hot" && G.winner == null){ handoff = true; render(); } return; }
-    if(t.closest("#bCall")){ after(doAction(G, me(), { t: "call" })); return; }
     if(t.closest("#bCancel")){ targeting = null; sel = null; render(); return; }
     if(t.closest("#bLog")){ showLog = !showLog; render(); return; }
     if(t.closest("#bLogClose")){ showLog = false; render(); return; }
@@ -319,6 +332,9 @@ function wire(){
     if(t.closest("#bAgain")){ $("#board").hidden = true; renderSim(); start(); return; }
     if(t.closest("#bExit")){ closeBoard(); return; }
     if(t.closest("#bHand")){ handoff = false; render(); tick(); return; }
+    if(t.closest("[data-react]")){ reactCover = G.pending; render(); return; }
+    const mull = t.closest("[data-mull]"); if(mull){ mulligan(G, mulliganPending(), mull.dataset.mull === "redo"); render(); tick(); return; }
+    const zoom = t.closest("[data-zoom]"); if(zoom){ openLens(imgUrl(zoom.dataset.zoom)); return; }
     const ask = t.closest("[data-ask]"); if(ask){ resolve(G, +ask.dataset.ask); render(); tick(); return; }
     const hand = t.closest("[data-hand=\"1\"]"); if(hand){ handCard(hand, G.players[me()]); return; }
     const leg = t.closest("[data-legend]"); if(leg){ const owner = leg.closest(".bz").classList.contains("mine") ? me() : 1 - me(); legendCard(leg, owner); return; }

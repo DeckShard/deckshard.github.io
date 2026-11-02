@@ -44,19 +44,25 @@ Collaudo: `node engine.test.mjs` e, con il server acceso, `BASE=http://127.0.0.1
 
 ## Cosa fa il motore di gioco
 
-Regole di base applicate per intero: fasi del turno (prepara, pesca, Gig dal fixer con il d20 per ultimo), Eddies e vendita di una carta a turno, Chiamata di una Leggenda a turno per 1 €$, Leggende spendibili come 1 €$, Go Solo, Lag e Adrenaline, attacchi a Unità spese o all'area Gig, Blocker, furto dei Gig in base alla potenza (1 ogni 10), Street Cred, vittoria con 7 Gig all'inizio del turno, overtime dopo il 7º turno, sconfitta per mazzo vuoto, mulligan, chi inizia con 2 Leggende spese.
+Regole di base applicate per intero: fasi del turno (prepara, pesca, Gig dal fixer con il d20 per ultimo), Eddies e vendita di una carta a turno, Chiamata di una Leggenda a turno per 1 €$ (si tocca la Leggenda coperta da scoprire), Leggende spese per pagare, Go Solo, Lag e Adrenaline, attacchi a Unità spese o all'area Gig con **finestra di reazione** del difensore (Blocker, Chiamata di una Leggenda, Programmi e abilità Quick, anche in sequenza), furto dei Gig in base alla potenza (1 ogni 10), Street Cred, vittoria con 7 Gig all'inizio del turno, overtime dopo il 7º turno, sconfitta per mazzo vuoto, mulligan, chi inizia con 2 Leggende spese. In due sullo stesso dispositivo le decisioni del difensore si aprono solo dopo un suo tocco, così l'attaccante non vede le sue carte.
 
-Effetti delle carte interpretati dal testo: pesca, trash, +potenza, Gig ±N, sconfiggi/spendi Unità rivali per potenza o costo, scarti, «sconfiggi tutte le altre Unità», «spendi tutte le Unità rivali», «può attaccare solo Unità», «non può attaccare». Il resto (condizioni, ricerche nel mazzo, scambi di Gig…) viene segnalato nel registro come **effetto manuale** e si applica con gli strumenti nel menù della carta (spendi/prepara, ±potenza, sconfiggi, ±1 su un Gig, pesca). Il bot ignora gli effetti manuali.
+Effetti delle carte interpretati dal testo: pesca, trash, +potenza, Gig ±N, sconfiggi/spendi Unità rivali per potenza o costo, scarti, «sconfiggi tutte le altre Unità», «spendi tutte le Unità rivali», «può attaccare solo Unità», «non può attaccare», «scegli un effetto: A // B», ricerca nelle prime N carte del mazzo, recupero dal trash (anche tra le carte appena trashate), «puoi sconfiggere un Gear: se lo fai pesca…», Chiamata gratis, gioca un Gear/Unità dalla mano gratis, scambio di Gig, «imposta un Gig al valore di un altro», prepara Unità/Leggende, Adrenaline a un'altra Unità, «spendi e non si prepara». Il resto (condizioni «se/quando», conteggi, effetti a fine turno) viene segnalato nel registro come **effetto manuale** e, per restare nelle regole, non si applica: gli strumenti manuali esistono nel codice (`MANUAL` in `sim.js`) ma sono spenti. Il bot ignora gli effetti manuali.
+
+Pagamenti: di base il giocatore sceglie cosa spendere (Eddies o Leggende, una fonte alla volta, con la scorciatoia «tutto con Eddies»); nel profilo si può attivare il pagamento automatico, che chiede conferma solo quando dovrebbe spendere una Leggenda scoperta con un'abilità Spend ancora utilizzabile.
 
 Nota sul Gear: il motore somma la potenza del Gear a quella dell'Unità equipaggiata.
 
+## Import delle liste
+
+«Importa testo» accetta una carta per riga, per nome (`3 Mantis Blades`, `2x Japantown Jonin`, `Legend: V: Streetkid`) o per codice stampato sulla carta (`3 WNC-025`, `MS01 025`, `SD01-004 x2`, `EBP-001`, oppure il solo numero, riferito al set principale). Codici riconosciuti: WNC/MS01 (Welcome to Night City), HEI/SD01 (starter The Heist), EBP/SD02 (starter Embracing Power), PRM01, PRR/PRR02 (prerelease), EOR/EOR01 (Edgerunner Open), NCB/NCB01 (Night City Brawl), BT (box topper). Le righe non riconosciute vengono mostrate nell'editor del mazzo.
+
 ## Scanner della collezione
 
-Dalla Collection, «Scanner» apre la fotocamera (o accetta una foto). L'app legge il testo della carta con Tesseract.js, che viene scaricato dalla CDN la prima volta (≈4 MB) e poi resta in memoria, e abbina nome e testo di regole alle 151 carte del catalogo: propone fino a 5 candidati con una percentuale, un tocco aggiunge una copia della stampa predefinita, un tocco sull'immagine apre la scheda per scegliere set e variante. Il codice set e il numero stampati sulla carta sono in verticale e in diagonale, poco adatti all'OCR: per le varianti si passa dalla scheda.
+Dalla Collection, «Scanner» apre la fotocamera. In modalità continua l'app legge di continuo l'inquadratura con Tesseract.js (scaricato dalla CDN la prima volta, ≈4 MB, poi resta in memoria), abbina nome e testo di regole alle 151 carte del catalogo e, quando la stessa carta viene riconosciuta in due letture consecutive con punteggio ≥ 70%, la mette nella **lista di scansione**; per contare un'altra copia della stessa carta basta allontanarla e riavvicinarla. La lista si rivede (quantità, stampa, rimozione) e si aggiunge alla collezione in blocco; resta salvata se si chiude l'app a metà. Restano «Scatta» (una lettura con i candidati) e «Da foto». Il codice set e il numero stampati sulla carta sono in verticale e in diagonale, poco adatti all'OCR: per le varianti si passa dalla scheda.
 
 ## Prossimi passi possibili
 
 - Scanner: riconoscimento della variante (set + numero) e inquadratura continua senza premere «Scatta».
 - Account e sincronizzazione (Supabase) per avere collezione e mazzi su più dispositivi.
-- Mazzi meta: appena un sito esporrà le liste dei tornei in formato leggibile.
+- Mazzi meta: appena un sito esporrà le liste dei tornei in formato leggibile (oggi: link a ExBurst, Ripperdeck e Choom.gg e importazione del testo).
 - Immagini dall'API ufficiale Netdeck quando l'accesso sarà aperto (lista d'attesa).

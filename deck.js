@@ -61,22 +61,64 @@ export function exportText(deck){
     .map(e => `${e.n} ${DATA.byId.get(e.cid).dn}`);
   return [`# ${deck.name}`, ...L, "", "# Units", ...byType("Unit"), "", "# Programs", ...byType("Program"), "", "# Gear", ...byType("Gear")].join("\n");
 }
-const norm = s => s.toLowerCase().replace(/[’']/g, "'").replace(/\s+/g, " ").trim();
+const norm = s => s.toLowerCase().replace(/[’']/g, "'").replace(/\s+[-–—]\s+/g, ": ").replace(/\s*:\s*/g, ": ").replace(/\s+/g, " ").trim();
+/* codici stampati sulle carte ("MS01 - WNC [A]", "SD01 - HEI", "PRR02 - WNC"…) → set del catalogo */
+const SET_CODES = {
+  WNC: ["welcometonightcityretail", "welcometonightcitybeta"], MS01: ["welcometonightcityretail", "welcometonightcitybeta"],
+  HEI: ["theheistretailstarterdeck", "theheistbetastarterdeck"], SD01: ["theheistretailstarterdeck", "theheistbetastarterdeck"],
+  EBP: ["embracingpowerretailstarterdeck", "embracingpowerbetastarterdeck"], SD02: ["embracingpowerretailstarterdeck", "embracingpowerbetastarterdeck"],
+  PRM01: ["PRM01"], PRM: ["PRM01", "boxtoppersretail"], PRR: ["prereleaseretail", "prereleasebeta"], PRR02: ["prereleaseretail"], PRR01: ["prereleasebeta"],
+  EOR: ["edgerunneropens1"], EOR01: ["edgerunneropens1"], NCB: ["nightcitybrawls1"], NCB01: ["nightcitybrawls1"], BT: ["boxtoppersretail", "boxtoppersbeta"]
+};
+let PRINT_IDX = null;
+function printIndex(){
+  if(PRINT_IDX) return PRINT_IDX;
+  PRINT_IDX = new Map();
+  for(const c of DATA.cards) for(const p of c.prints){
+    const n = String(p.num).replace(/^[^0-9]*/, "").replace(/[^0-9].*$/, "").padStart(3, "0");
+    const k = p.set + "|" + n; if(!PRINT_IDX.has(k) || p.lang === "en") PRINT_IDX.set(k, p);
+  }
+  return PRINT_IDX;
+}
+/* "WNC-025", "3x MS01 025", "025" → stampa; con il solo numero si assume il set principale */
+export function printByCode(code, num){
+  const idx = printIndex(), n = String(num).padStart(3, "0");
+  const sets = code ? (SET_CODES[code.toUpperCase()] || []) : ["welcometonightcityretail", "welcometonightcitybeta"];
+  for(const sset of sets){ const p = idx.get(sset + "|" + n); if(p) return p; }
+  if(!code){ const all = [...idx.entries()].filter(([k]) => k.endsWith("|" + n)).map(([, p]) => p); if(all.length === 1) return all[0]; }
+  return null;
+}
 export function importText(text){
   const deck = { id: newId(), name: "Mazzo importato", legends: [], cards: [], notes: "" };
   const byName = new Map(DATA.cards.map(c => [norm(c.dn), c]));
+  const addPrint = (p, n, line) => {
+    const c = p.card;
+    if(c.type === "Legend"){ if(deck.legends.length < 3) deck.legends.push({ cid: c.id, pid: p.id }); else bad.push(`${line} (quarta Leggenda: ne servono 3)`); return; }
+    const e = deck.cards.find(x => x.cid === c.id); if(e){ e.n += n; e.pid = p.id; } else deck.cards.push({ cid: c.id, pid: p.id, n });
+  };
   const find = s => { s = norm(s); if(byName.has(s)) return byName.get(s);
     const base = s.split(":")[0].trim(); return DATA.cards.find(c => norm(c.dn).startsWith(s)) || DATA.cards.find(c => norm(c.name) === base && c.type === "Legend") || null; };
   const bad = [];
   for(let raw of text.split(/\r?\n/)){
     let line = raw.trim(); if(!line) continue;
     if(line.startsWith("#")){ const t = line.slice(1).trim(); if(t && !/^(units?|programs?|gears?|legends?|deck|main)$/i.test(t)) deck.name = t; continue; }
+    // intestazioni di sezione ("Legends:", "Main deck", "Units") e righe di soli trattini
+    if(/^(legends?|main( deck)?|deck|units?|programs?|gears?|sideboard|cards?)\s*:?\s*(\(\d+\))?$/i.test(line) || /^[-=_*]+$/.test(line)) continue;
     let m = line.match(/^legend:?\s*(.+)$/i);
-    if(m){ const c = find(m[1]); if(c && c.type === "Legend") deck.legends.push({ cid: c.id, pid: c.def.id }); else bad.push(line); continue; }
+    if(m){
+      const cm = m[1].trim().match(/^(?:(\d+)\s*[x×]?\s+)?(?:([A-Za-z]{2,4}\d{0,2})\s*[-–\s]\s*)?#?(\d{1,3})$/);
+      const p = cm ? printByCode(cm[2] || "", cm[3]) : null;
+      if(p && p.card.type === "Legend"){ addPrint(p, 1, line); continue; }
+      const c = find(m[1].replace(/^\d+\s*[x×]?\s+/, ""));
+      if(c && c.type === "Legend") addPrint(c.def, 1, line); else bad.push(line); continue;
+    }
     m = line.match(/^(\d+)\s*[x×]?\s+(.+)$/i) || line.match(/^(.+?)\s*[x×]\s*(\d+)$/i);
     let n = 1, name = line; if(m){ if(/^\d+$/.test(m[1])){ n = +m[1]; name = m[2]; } else { n = +m[2]; name = m[1]; } }
+    // riga con codice e numero: "WNC-025", "MS01 025", "SD01-001 V: Corporate Exile", oppure solo "025"
+    const cm = name.match(/^(?:([A-Za-z]{2,4}\d{0,2})\s*[-–\s]\s*)?#?(\d{1,3})(?:\s+(.*))?$/) ;
+    if(cm){ const p = printByCode(cm[1] || "", cm[2]); if(p){ addPrint(p, n, line); continue; } if(!cm[3]){ bad.push(line); continue; } name = cm[3]; }
     const c = find(name); if(!c){ bad.push(line); continue; }
-    if(c.type === "Legend"){ if(deck.legends.length < 3) deck.legends.push({ cid: c.id, pid: c.def.id }); continue; }
+    if(c.type === "Legend"){ addPrint(c.def, 1, line); continue; }
     const e = deck.cards.find(x => x.cid === c.id); if(e) e.n += n; else deck.cards.push({ cid: c.id, pid: c.def.id, n });
   }
   while(deck.legends.length < 3) deck.legends.push(null);
@@ -136,6 +178,7 @@ function deckRowHTML(d){
     <div style="display:flex;gap:2px;flex:0 0 auto">${legs.map(c => `<img class="thumb" src="${thumbUrl(c.def.id)}" alt="" style="width:30px">`).join("") || `<span class="thumb"></span>`}</div>
     <div class="nm"><b>${esc(d.name)}</b><span>${n} carte · ${legs.map(c => esc(c.name)).join(", ") || "senza Leggende"}${miss.copies ? ` · mancano ${miss.copies} copie` : " · completo in collezione"}</span></div>
     <span class="chip ${ok ? "good" : "bad"}">${ok ? "Legale" : "Non valido"}</span>
+    <button class="btn sm icon" data-ddel="${d.id}" title="Elimina" aria-label="Elimina ${esc(d.name)}" style="color:var(--bad)">✕</button>
   </div>`;
 }
 
@@ -181,6 +224,7 @@ function renderEditor(){
           <button class="btn sm" id="deckDel" style="color:var(--bad)">Elimina</button>
         </div>
       </div>
+      ${d.importErrors && d.importErrors.length ? `<div class="note" id="deckErrors" style="margin-top:12px;border-left-color:var(--bad)"><b>Righe non riconosciute (${d.importErrors.length})</b> — controlla nome o codice e aggiungile a mano:<br>${d.importErrors.map(l => `<code>${esc(l)}</code>`).join("<br>")}<div style="margin-top:8px"><button class="btn sm" id="deckErrorsOk">Ho capito</button></div></div>` : ""}
       <div class="legends">${legsHTML}</div>
       <div class="ram">${ram}</div>
       <ul class="legal" style="list-style:none;padding:0">${checks.map(v => `<li class="${v.ok ? "ok" : "ko"}">${v.ok ? "✔" : "✘"} ${esc(v.t)}</li>`).join("")}</ul>
@@ -241,10 +285,12 @@ function wire(){
     if(e.target.closest("#deckNew")){ const d = { id: newId(), name: "Nuovo mazzo", legends: [null, null, null], cards: [], notes: "" }; saveDeck(d); CUR = d; browse = "legends"; renderDeck(); return; }
     if(e.target.closest("#deckImport")){ promptImport(); return; }
     const st = e.target.closest("[data-starter]"); if(st){ const d = starterDeck(st.dataset.starter, st.dataset.name); saveDeck(d); CUR = d; browse = "cards"; renderDeck(); toast("Bozza creata: controlla le quantità"); return; }
+    const del = e.target.closest("[data-ddel]"); if(del){ e.stopPropagation(); const d = S.decks.find(x => x.id === del.dataset.ddel); if(d && confirm(`Eliminare «${d.name}»?`)){ deleteDeck(d.id); renderDeck(); toast("Mazzo eliminato"); } return; }
     const r = e.target.closest("[data-deck]"); if(r){ browse = "cards"; openDeck(r.dataset.deck); }
   });
   ed.addEventListener("click", e => {
     if(e.target.closest("#deckBack")){ closeEditor(); return; }
+    if(e.target.closest("#deckErrorsOk")){ delete CUR.importErrors; save(); renderEditor(); return; }
     if(e.target.closest("#deckCopy")){ const t = exportText(CUR); (navigator.clipboard?.writeText(t) || Promise.reject()).then(() => toast("Lista copiata negli appunti")).catch(() => prompt("Copia la lista:", t)); return; }
     if(e.target.closest("#deckDup")){ const d = JSON.parse(JSON.stringify(CUR)); d.id = newId(); d.name += " (copia)"; saveDeck(d); CUR = d; renderEditor(); toast("Mazzo duplicato"); return; }
     if(e.target.closest("#deckDel")){ if(confirm(`Eliminare «${CUR.name}»?`)){ deleteDeck(CUR.id); closeEditor(); } return; }
@@ -291,7 +337,8 @@ function promptImport(){
   if(!t) return;
   const { deck, bad } = importText(t);
   if(!deck.cards.length && !deck.legends.some(Boolean)){ toast("Nessuna carta riconosciuta"); return; }
+  deck.importErrors = bad;
   saveDeck(deck); CUR = deck; renderDeck();
-  toast(bad.length ? `Importato; ${bad.length} righe non riconosciute: ${bad.slice(0, 2).join(" · ")}` : "Mazzo importato", 4000);
+  toast(bad.length ? `Importato con ${bad.length} righe non riconosciute` : "Mazzo importato", 3000);
 }
 export const currentDeck = () => CUR;

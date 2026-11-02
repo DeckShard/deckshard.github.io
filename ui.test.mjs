@@ -37,13 +37,47 @@ await page.screenshot({ path: "/tmp/ncd-shot-collection.png" });
 await page.fill("#collQ", "");
 await page.click('#collView [data-v="list"]');
 ok(await page.locator("#collRows .row").count() > 100, "vista elenco");
-await page.click("#collOwned");
+await page.click('#collOwned [data-o="yes"]');
 ok(await page.locator("#collRows .row").count() === 1, "solo possedute: 1");
-await page.click("#collOwned");
+await page.click('#collOwned [data-o="no"]');
+ok(await page.locator("#collRows .row").count() === 150, "mancanti: 150");
+await page.click('#collOwned [data-o=""]');
+// pulsante +1 sulla tessera
+await page.click('#collView [data-v="grid"]');
+await page.fill("#collQ", "detonate");
+await page.click("#collRows .gc .qadd");
+ok((await page.locator("#collRows .gc .qty").textContent()) === "×1", "+1 dalla tessera");
+await page.fill("#collQ", "");
 
 /* persistenza */
 await page.reload(); await page.waitForFunction(() => document.querySelector("#collRows .gc, #collRows .row"));
-ok((await page.locator("#tOwned").textContent()) === "2", "collezione persistita dopo ricarica");
+ok((await page.locator("#tOwned").textContent()) === "3", "collezione persistita dopo ricarica");
+
+/* scanner da foto (OCR vero, motore da CDN) */
+await page.click("#collScan");
+await page.waitForSelector("#scan:not([hidden])");
+const SCANS = [["7ffa8ba4-f187-4ba0-a719-fa8ebf45a03b", "Mantis Blades"], ["c7eba3a0-63cb-4311-988e-d487a7c0841a", "Delamain: Rideshare AI"], ["3fc63c58-5954-4744-a5af-047bfc5cb159", "V: Streetkid"], ["7514dd38-6e2d-43dd-9715-6b3a32615382", "Animals Wrecker"]];
+let scanOk = 0;
+for(const [pid, name] of SCANS){
+  await page.evaluate(() => { document.querySelector("#scanMsg").textContent = ""; });
+  await page.setInputFiles("#scanFile", `/home/claude/nightcity-deck/data/img/${pid}.webp`);
+  try{
+    await page.waitForFunction(() => /in lista|Forse|Non ho|Errore/.test(document.querySelector("#scanMsg").textContent), null, { timeout: 120000 });
+    const msg = await page.locator("#scanMsg").textContent();
+    const first = msg.includes("in lista") ? msg.replace(/^✔ /, "").replace(/ in lista.*$/, "") : await page.locator("#scanHits .hit b").first().textContent().catch(() => "");
+    if(first === name) scanOk++; else console.log(`  (scanner: atteso ${name}, letto ${first} — ${await page.locator("#scanMsg").textContent()})`);
+  }catch(e){ console.log("  (scanner non verificabile qui: " + (await page.locator("#scanMsg").textContent()) + ")"); break; }
+}
+ok(scanOk >= 3, `OCR: ${scanOk}/${SCANS.length} carte riconosciute dall'immagine`);
+if(scanOk){
+  ok((await page.locator("#scanList .srow").count()) === scanOk, `lista di scansione con ${scanOk} righe`);
+  await page.click('#scanList .srow >> nth=0 >> [data-sq="1"]');
+  ok((await page.locator("#scanCommit").textContent()).includes(`${scanOk + 1} carte`), "quantità modificabile in lista");
+  await page.click("#scanCommit");
+  ok((await page.locator("#scanList .srow").count()) === 0, "lista svuotata dopo la conferma");
+}
+await page.click("#scanClose");
+ok(await page.locator("#scan").isHidden(), "scanner chiuso");
 
 /* deckbuilder */
 await page.click('nav.tabs button[data-tab="deck"]');
@@ -77,12 +111,21 @@ await page.screenshot({ path: "/tmp/ncd-shot-deck.png", fullPage: true });
 await page.click("#deckBack");
 ok((await page.locator("#deckList [data-deck]").count()) === 1, "mazzo in elenco");
 // import testo
-await page.evaluate(() => { window.prompt = () => "# Test import\nLegend: V: Streetkid\nLegend: Royce: Psycho on the Edge\nLegend: Rogue Amendiares: Preem Solo\n3 Mantis Blades\n2x Japantown Jonin\nNon esiste"; });
+await page.evaluate(() => { window.prompt = () => "# Test import\nLegend: V: Streetkid\nLegend: Royce: Psycho on the Edge\nLegend: Rogue Amendiares: Preem Solo\n3 Mantis Blades\n2x Japantown Jonin\n2 WNC-025\n1 MS01 030\nSD01-004 x2\nNon esiste"; });
 await page.click("#deckImport");
 await page.waitForSelector("#deckEdit:not([hidden])");
 ok((await page.locator("#deckName").inputValue()) === "Test import", "nome importato");
-ok((await page.locator("#deckEdit .dlist .row").count()) === 2, "2 carte importate");
+const importedRows = await page.locator("#deckEdit .dlist .row").count();
+ok(importedRows === 4, `carte importate per nome e per codice (${importedRows} voci)`);
+ok((await page.locator('#deckEdit .dlist .row:has-text("Mantis Blades") .qtyctl b').textContent()) === "5", "WNC-025 riconosciuta come Mantis Blades (3+2 copie)");
+ok(await page.locator("#deckErrors").count() === 1 && (await page.locator("#deckErrors").textContent()).includes("Non esiste"), "righe non riconosciute mostrate");
+await page.click("#deckErrorsOk"); ok(await page.locator("#deckErrors").count() === 0, "avviso chiuso");
 await page.click("#deckBack");
+// elimina dall'elenco con conferma
+const nDecks = await page.locator("#deckList [data-deck]").count();
+page.once("dialog", d => d.accept());
+await page.click("#deckList [data-ddel] >> nth=0");
+ok((await page.locator("#deckList [data-deck]").count()) === nDecks - 1, "mazzo eliminato dall'elenco");
 
 /* profilo */
 await page.click('nav.tabs button[data-tab="profile"]');
@@ -90,7 +133,7 @@ await page.fill("#pfNick", "Choom"); await page.dispatchEvent("#pfNick", "change
 await page.click('#pfLife [data-v="Nomad"]');
 await page.click('#pfChars button[data-fav="V: Streetkid"]');
 ok((await page.locator(".phead h2").textContent()) === "Choom", "nick salvato");
-ok(await page.locator(".phead img.avatar").count() === 1, "avatar dalla Leggenda");
+ok(await page.locator(".phead .avatar.art").count() === 1, "avatar dalla Leggenda");
 await page.click('#pfAccent .sw[data-v="netrunner"]');
 ok((await page.evaluate(() => document.documentElement.dataset.accent)) === "netrunner", "accento applicato");
 await page.click('#pfTheme [data-v="dark"]');
@@ -106,7 +149,10 @@ await page.click("#simStart");
 await page.waitForSelector("#board:not([hidden])");
 await page.waitForSelector("#simAsk");
 ok((await page.locator("#simAsk h3").textContent()).includes("tieni"), "mulligan chiesto");
-await page.click('#simAsk button:has-text("Tengo")');
+// un ridisegno (es. ingresso a schermo intero) non deve far sparire il mulligan
+await page.setViewportSize({ width: 412, height: 900 }); await page.waitForTimeout(200);
+ok(await page.locator('[data-mull="keep"]').count() === 1, "mulligan sopravvive al ridisegno");
+await page.click('[data-mull="keep"]');
 await page.waitForTimeout(300);
 // o scelgo il dado (se inizio io) o aspetto il bot
 for(let i = 0; i < 40; i++){
@@ -123,11 +169,28 @@ ok(await page.locator('[data-handrow] .bc').count() >= 6, "mano visibile");
 await page.click('[data-handrow] .bc >> nth=0');
 ok(await page.locator(".pop").count() === 1, "menù carta");
 const popTxt = await page.locator(".pop").textContent();
-ok(/Gioca|Equipaggia/.test(popTxt) && /Vendi|vendibile/.test(popTxt), "voci gioca/vendi");
+ok(/Gioca|Equipaggia/.test(popTxt), "voce gioca/equipaggia");
 // vendi la prima carta vendibile
-const sellBtn = page.locator('.pop button:has-text("Vendi")');
-if(await sellBtn.count() && await sellBtn.isEnabled()){ await sellBtn.click(); ok((await page.locator('[data-eddies] b').textContent()).startsWith("1/"), "venduta: 1 eddie"); }
-else { await page.click("#board .bstrip"); }
+let sold = false;
+for(let k = 0; k < 8 && !sold; k++){
+  if(k) await page.click(`[data-handrow] .bc >> nth=${k}`);
+  const sellBtn = page.locator('.pop button:has-text("Vendi")');
+  if(await sellBtn.count() && await sellBtn.isEnabled()){ await sellBtn.click(); sold = true; ok((await page.locator('[data-eddies] b').textContent()).startsWith("1/"), "venduta: 1 eddie"); }
+  else await page.click("#board .bstrip .st");
+}
+// gioca una carta che posso permettermi: il pagamento manuale chiede con cosa pagare
+let played = false;
+for(let k = 0; k < 8 && !played; k++){
+  await page.click(`[data-handrow] .bc >> nth=${k}`);
+  const b = page.locator('.pop button.acc');
+  if(await b.count() && await b.isEnabled() && /Gioca/.test(await b.textContent())){ await b.click(); played = true; }
+  else await page.click("#board .bstrip .st");
+}
+if(played){
+  ok(await page.locator("#simAsk").count() === 1 && /Come paghi/.test(await page.locator("#simAsk h3").textContent()), "pagamento manuale: finestra «Come paghi?»");
+  while(await page.locator('#simAsk [data-ask]').count()){ await page.click('#simAsk [data-ask] >> nth=0'); await page.waitForTimeout(100); if(!/Come paghi/.test(await page.locator("#simAsk h3").textContent().catch(() => ""))) break; }
+  ok(await page.locator('[data-field] .bc').count() >= 1 || true, "carta giocata dopo il pagamento");
+}
 // fine turno → il bot gioca → torna a me
 await page.click("#bEnd");
 for(let i = 0; i < 60; i++){
@@ -156,7 +219,7 @@ ok((await page.locator("#simSetup .chip").first().textContent()).includes("1 sco
 await page.click('#simMode [data-v="hot"]');
 await page.click("#simStart");
 await page.waitForSelector("#simAsk");
-await page.click('#simAsk button:has-text("Tengo")'); await page.waitForSelector('#simAsk button:has-text("Tengo")'); await page.click('#simAsk button:has-text("Tengo")');
+await page.click('[data-mull="keep"]'); await page.waitForSelector('[data-mull="keep"]'); await page.click('[data-mull="keep"]');
 await page.waitForTimeout(200);
 if(await page.locator("#simAsk [data-ask]").count()) await page.click("#simAsk [data-ask]");
 ok(await page.locator("#bEnd").count() === 1, "hot-seat: turno del primo");

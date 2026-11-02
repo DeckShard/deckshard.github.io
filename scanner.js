@@ -1,13 +1,29 @@
-/* Scanner della collezione: inquadri la carta, l'app legge il nome con
-   l'OCR (Tesseract.js, caricato solo quando serve) e lo abbina alle 151
-   carte del catalogo. Funziona con la fotocamera o con una foto.         */
+/* Scanner della collezione: inquadri le carte una dopo l'altra, l'app
+   legge il testo con l'OCR (Tesseract.js, caricato solo quando serve), lo
+   abbina alle 151 carte del catalogo e mette ogni riconoscimento in una
+   lista di sessione, che rivedi e poi aggiungi alla collezione in blocco.
+   Funziona anche a scatto singolo o da una foto.                        */
 
 import { DATA, thumbUrl } from "./data.js";
-import { qtyOf, setQty } from "./store.js";
+import { S, qtyOf, setQty } from "./store.js";
 import { $, $$, esc, toast, openCard } from "./ui.js";
 
 const TESS_URL = "https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";
+const AUTO_MIN = 0.7;        // punteggio minimo per l'aggiunta automatica
+const AUTO_STABLE = 2;       // letture consecutive uguali prima di aggiungere
+const AUTO_GAP = 2;          // letture "vuote" prima di poter riaggiungere la stessa carta
 let worker = null, stream = null, busy = false, wired = false, lastHits = [];
+let auto = true, loopT = null, lastGuess = null, stableN = 0, lastAdded = null, gap = AUTO_GAP, flashT = null;
+
+/* lista di sessione: resta salvata finché non la aggiungi o la svuoti */
+let STAGE = (() => { try{ return JSON.parse(localStorage.getItem("ncd:scanlist") || "[]"); }catch(e){ return []; } })();
+const saveStage = () => { try{ localStorage.setItem("ncd:scanlist", JSON.stringify(STAGE)); }catch(e){} };
+export const stageCount = () => STAGE.reduce((a, e) => a + e.n, 0);
+function stageAdd(c, pid, n = 1){
+  const e = STAGE.find(x => x.cid === c.id && x.pid === pid);
+  if(e) e.n += n; else STAGE.unshift({ cid: c.id, pid: pid || c.def.id, n });
+  saveStage(); renderStage();
+}
 
 /* ------------------------------------------------------------ abbinamento */
 const norm = s => String(s || "").toUpperCase().replace(/[^A-Z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
@@ -25,7 +41,7 @@ function index(){
     const full = norm(c.dn), name = norm(c.name), sub = norm(c.sub);
     // senza i promemoria tra parentesi, uguali su molte carte
     const body = norm([c.cls.join(" "), String(c.text || "").replace(/\([^)]*\)/g, " "), c.flavor].filter(Boolean).join(" "));
-    return { c, full, name, sub, bFull: bigrams(full), bName: bigrams(name), bSub: bigrams(sub), bBody: bigrams(body), bodyLen: body.length };
+    return { c, full, name, sub, bFull: bigrams(full), bName: bigrams(name), bSub: bigrams(sub), bBody: bigrams(body) };
   });
   return INDEX;
 }
@@ -46,10 +62,9 @@ export function matchText(text){
       if(l.includes(e.full) || (e.full.length >= 5 && e.full.includes(l) && l.length >= 6)) s = Math.max(s, 0.9);
       if(s > best) best = s;
     }
-    // il testo di regole e il flavour: quanto del testo della carta compare nell'OCR
     let inter = 0; for(const [k, v] of e.bBody) if(bAll.has(k)) inter += Math.min(v, bAll.get(k));
     let nb = 0; for(const v of e.bBody.values()) nb += v;
-    const body = nb >= 12 ? inter / nb : 0;          // 0..1: copertura del testo della carta
+    const body = nb >= 12 ? inter / nb : 0;          // copertura del testo della carta nell'OCR
     const score = Math.max(best, body * 0.95, best * 0.6 + body * 0.5);
     out.push({ card: e.c, score, nameScore: best, bodyScore: body });
   }
@@ -70,9 +85,9 @@ async function getWorker(st){
   await worker.setParameters({ tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789:'-.,()+ " });
   return worker;
 }
-/* ritaglio, scala di grigi e contrasto: la foto diventa più leggibile */
-function prepare(src, sx, sy, sw, sh, invert = false){
-  const W = 900, H = Math.round(W * sh / sw);
+/* ritaglio, scala di grigi e contrasto (eventualmente in negativo) */
+function prepare(src, sx, sy, sw, sh, invert = false, W = 900){
+  const H = Math.round(W * sh / sw);
   const cv = document.createElement("canvas"); cv.width = W; cv.height = H;
   const ctx = cv.getContext("2d", { willReadFrequently: true });
   ctx.drawImage(src, sx, sy, sw, sh, 0, 0, W, H);
@@ -86,22 +101,37 @@ function prepare(src, sx, sy, sw, sh, invert = false){
   ctx.putImageData(im, 0, 0);
   return cv;
 }
-export async function recognize(canvas, st){
+async function recognize(canvas, st){
   const w = await getWorker(st);
-  st("Leggo la carta…");
   const { data } = await w.recognize(canvas);
   return data.text || "";
+}
+/* legge un'immagine (o un fotogramma) e ritorna i candidati */
+async function readImage(src, sw, sh, crop, st, quick){
+  const r = crop ? guideRect(sw, sh) : { x: 0, y: 0, w: sw, h: sh };
+  const W = quick ? 720 : 900;
+  const cv = prepare(src, r.x, r.y, r.w, r.h, false, W);
+  $("#scanPreview").src = cv.toDataURL("image/jpeg", 0.6); $("#scanPreview").hidden = false;
+  let text = await recognize(cv, st);
+  let hits = matchText(text);
+  if(!hits.length || hits[0].score < AUTO_MIN){   // nome chiaro su sfondo scuro: seconda lettura in negativo
+    const text2 = await recognize(prepare(src, r.x, r.y, r.w, r.h, true, W), st);
+    text = text + "\n" + text2; hits = matchText(text);
+  }
+  window.__lastOcr = text;
+  return hits;
 }
 
 /* ------------------------------------------------------------ interfaccia */
 export function openScanner(){
   if(!wired){ wire(); wired = true; }
   $("#scan").hidden = false; document.body.style.overflow = "hidden";
-  lastHits = []; renderHits();
+  lastHits = []; renderHits(); renderStage();
+  $("#scanAuto").setAttribute("aria-pressed", String(auto));
   startCamera();
 }
 function closeScanner(){
-  stopCamera(); $("#scan").hidden = true; document.body.style.overflow = "";
+  stopLoop(); stopCamera(); $("#scan").hidden = true; document.body.style.overflow = "";
   document.dispatchEvent(new CustomEvent("ncd:collection"));
 }
 async function startCamera(){
@@ -110,7 +140,8 @@ async function startCamera(){
   try{
     stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
     v.srcObject = stream; v.hidden = false; await v.play();
-    msg.textContent = "Inquadra la carta nel riquadro, a fuoco e senza riflessi, poi «Scatta».";
+    msg.textContent = auto ? "Inquadra una carta nel riquadro: appena la riconosco la metto in lista. Poi passa alla successiva." : "Inquadra la carta nel riquadro e premi «Scatta».";
+    if(auto) startLoop();
   }catch(e){ v.hidden = true; msg.textContent = "Fotocamera non accessibile (" + (e.name === "NotAllowedError" ? "permesso negato" : e.message) + "): usa «Da foto»."; }
 }
 function stopCamera(){ if(stream){ for(const t of stream.getTracks()) t.stop(); stream = null; } const v = $("#scanVideo"); if(v) v.srcObject = null; }
@@ -120,53 +151,114 @@ function guideRect(vw, vh){
   const h = Math.min(vh * 0.9, (vw * 0.9) * 1024 / 733), w = h * 733 / 1024;
   return { x: (vw - w) / 2, y: (vh - h) / 2, w, h };
 }
-async function scanFrom(src, sw, sh, crop){
+
+/* --- scansione continua */
+function startLoop(){ stopLoop(); lastGuess = null; stableN = 0; gap = AUTO_GAP; loopT = setTimeout(loopStep, 300); }
+function stopLoop(){ clearTimeout(loopT); loopT = null; }
+async function loopStep(){
+  loopT = null;
+  const v = $("#scanVideo");
+  if(!auto || $("#scan").hidden || v.hidden || !v.videoWidth || document.hidden){ loopT = setTimeout(loopStep, 500); return; }
+  if(!busy){
+    busy = true;
+    try{
+      const st = t => { if(!worker) $("#scanMsg").textContent = t; };
+      const hits = await readImage(v, v.videoWidth, v.videoHeight, true, st, true);
+      onAutoResult(hits);
+    }catch(e){ $("#scanMsg").textContent = "Errore: " + e.message; }
+    busy = false;
+  }
+  loopT = setTimeout(loopStep, 150);
+}
+function onAutoResult(hits){
+  const top = hits[0];
+  if(top && top.score >= AUTO_MIN){
+    if(lastGuess === top.card.id) stableN++; else { lastGuess = top.card.id; stableN = 1; }
+    const same = lastAdded === top.card.id && gap < AUTO_GAP;
+    if(stableN >= AUTO_STABLE && !same){
+      stageAdd(top.card, top.card.def.id, 1);
+      lastAdded = top.card.id; gap = 0; stableN = 0;
+      navigator.vibrate?.([30, 40, 30]);
+      flash(`✔ ${top.card.dn} in lista (${stageCount()} carte)`);
+      $("#scanLive").textContent = ""; return;
+    }
+    $("#scanLive").textContent = same ? `${top.card.dn}: già aggiunta, allontana la carta per contarne un'altra copia` : `Vedo: ${top.card.dn} (${Math.round(top.score * 100)}%)…`;
+  } else {
+    gap++; lastGuess = null; stableN = 0;
+    $("#scanLive").textContent = top ? `Forse ${top.card.dn} (${Math.round(top.score * 100)}%): avvicinati o metti a fuoco` : "";
+  }
+}
+function flash(t){ const m = $("#scanMsg"); m.textContent = t; m.classList.add("ok"); clearTimeout(flashT); flashT = setTimeout(() => m.classList.remove("ok"), 1500); }
+
+/* --- scatto singolo o foto: mostra i candidati */
+async function scanOnce(src, sw, sh, crop){
   if(busy) return; busy = true;
   const st = t => { $("#scanMsg").textContent = t; };
-  st("Preparo l'immagine…"); lastHits = []; renderHits();
+  st("Leggo la carta…"); lastHits = []; renderHits();
   try{
-    const r = crop ? guideRect(sw, sh) : { x: 0, y: 0, w: sw, h: sh };
-    const cv = prepare(src, r.x, r.y, r.w, r.h);
-    $("#scanPreview").src = cv.toDataURL("image/jpeg", 0.7); $("#scanPreview").hidden = false;
-    let text = await recognize(cv, st);
-    lastHits = matchText(text);
-    if(!lastHits.length || lastHits[0].score < 0.7){   // nome chiaro su sfondo scuro: seconda lettura in negativo
-      st("Seconda lettura…");
-      const text2 = await recognize(prepare(src, r.x, r.y, r.w, r.h, true), st);
-      text = text + "\n" + text2; lastHits = matchText(text);
-    }
-    window.__lastOcr = text;
+    lastHits = await readImage(src, sw, sh, crop, st, false);
     if(!lastHits.length) st("Non ho riconosciuto il nome. Avvicinati, evita i riflessi e riprova.");
-    else st(lastHits[0].score >= 0.6 ? `Trovata: ${lastHits[0].card.dn}` : "Forse una di queste? Tocca quella giusta.");
+    else if(lastHits[0].score >= AUTO_MIN){ stageAdd(lastHits[0].card, lastHits[0].card.def.id, 1); flash(`✔ ${lastHits[0].card.dn} in lista`); }
+    else st("Forse una di queste? Tocca quella giusta per metterla in lista.");
     renderHits();
   }catch(e){ st("Errore: " + e.message); }
   busy = false;
 }
 function renderHits(){
   const box = $("#scanHits");
-  box.innerHTML = lastHits.map((h, i) => `<button class="hit${i === 0 && h.score >= 0.6 ? " best" : ""}" data-hit="${i}">
-      <img src="${thumbUrl(h.card.def.id)}" alt=""><span><b>${esc(h.card.dn)}</b><small>${Math.round(h.score * 100)}% · hai ${h.card.prints.reduce((a, p) => a + qtyOf(p.id), 0)}</small></span><i>+1</i></button>`).join("");
+  box.innerHTML = lastHits.map((h, i) => `<button class="hit${i === 0 && h.score >= AUTO_MIN ? " best" : ""}" data-hit="${i}">
+      <img src="${thumbUrl(h.card.def.id)}" alt=""><span><b>${esc(h.card.dn)}</b><small>${Math.round(h.score * 100)}% · in collezione ${h.card.prints.reduce((a, p) => a + qtyOf(p.id), 0)}</small></span><i>+1</i></button>`).join("");
 }
+function renderStage(){
+  const n = stageCount(), box = $("#scanList");
+  $("#scanCommit").textContent = n ? `Aggiungi ${n} ${n === 1 ? "carta" : "carte"} alla collezione` : "Lista vuota";
+  $("#scanCommit").disabled = !n; $("#scanClear").hidden = !n;
+  box.innerHTML = STAGE.map((e, i) => {
+    const c = DATA.byId.get(e.cid), p = DATA.byPrint.get(e.pid) || c.def;
+    return `<div class="srow" data-i="${i}">
+      <img src="${thumbUrl(p.id)}" alt="" data-pick="1" title="Cambia stampa">
+      <span><b>${esc(c.dn)}</b><small>${esc(p.set)} · #${esc(p.num)} · hai già ${qtyOf(p.id)}</small></span>
+      <span class="qtyctl"><button data-sq="-1" aria-label="meno">−</button><b>${e.n}</b><button data-sq="1" aria-label="più">+</button></span>
+      <button class="btn sm icon" data-srm="1" aria-label="Togli">✕</button>
+    </div>`; }).join("") || `<div class="empty" style="padding:14px">Le carte riconosciute compaiono qui; le controlli e poi le aggiungi tutte insieme.</div>`;
+}
+function commitStage(){
+  if(!STAGE.length) return;
+  let n = 0; for(const e of STAGE){ setQty(e.pid, qtyOf(e.pid) + e.n); n += e.n; }
+  STAGE = []; saveStage(); renderStage();
+  toast(`${n} carte aggiunte alla collezione`); navigator.vibrate?.(20);
+  document.dispatchEvent(new CustomEvent("ncd:collection"));
+}
+
 function wire(){
   const root = $("#scan");
   root.addEventListener("click", async e => {
     if(e.target.closest("#scanClose")){ closeScanner(); return; }
+    if(e.target.closest("#scanAuto")){ auto = !auto; $("#scanAuto").setAttribute("aria-pressed", String(auto)); if(auto) startLoop(); else { stopLoop(); $("#scanLive").textContent = ""; } return; }
     if(e.target.closest("#scanShot")){
       const v = $("#scanVideo"); if(v.hidden || !v.videoWidth){ toast("Fotocamera non attiva: usa «Da foto»"); return; }
-      await scanFrom(v, v.videoWidth, v.videoHeight, true); return;
+      await scanOnce(v, v.videoWidth, v.videoHeight, true); return;
     }
     if(e.target.closest("#scanPick")){ $("#scanFile").click(); return; }
+    if(e.target.closest("#scanCommit")){ commitStage(); return; }
+    if(e.target.closest("#scanClear")){ if(confirm("Svuotare la lista di scansione?")){ STAGE = []; saveStage(); renderStage(); } return; }
     const hit = e.target.closest("[data-hit]"); if(hit){
       const c = lastHits[+hit.dataset.hit].card;
-      if(e.target.closest("img")){ openCard(c.id, c.def.id); return; }   // tocca l'immagine per scegliere la stampa
-      setQty(c.def.id, qtyOf(c.def.id) + 1); navigator.vibrate?.(12); toast(`+1 ${c.dn} (${qtyOf(c.def.id)})`); renderHits();
+      if(e.target.closest("img")){ openCard(c.id, c.def.id, { pick: pid => stageAdd(c, pid, 1) }); return; }
+      stageAdd(c, c.def.id, 1); navigator.vibrate?.(12); flash(`✔ ${c.dn} in lista`); return;
+    }
+    const row = e.target.closest(".srow"); if(row){
+      const i = +row.dataset.i, en = STAGE[i]; if(!en) return;
+      if(e.target.closest("[data-srm]")){ STAGE.splice(i, 1); saveStage(); renderStage(); return; }
+      const q = e.target.closest("[data-sq]"); if(q){ en.n = Math.max(0, en.n + (+q.dataset.sq)); if(!en.n) STAGE.splice(i, 1); saveStage(); renderStage(); return; }
+      if(e.target.closest("[data-pick]")){ const c = DATA.byId.get(en.cid); openCard(c.id, en.pid, { pick: pid => { en.pid = pid; saveStage(); renderStage(); } }); }
     }
   });
   $("#scanFile").addEventListener("change", async e => {
     const f = e.target.files[0]; if(!f) return;
     const url = URL.createObjectURL(f); const im = new Image();
-    im.onload = async () => { await scanFrom(im, im.naturalWidth, im.naturalHeight, false); URL.revokeObjectURL(url); };
+    im.onload = async () => { await scanOnce(im, im.naturalWidth, im.naturalHeight, false); URL.revokeObjectURL(url); };
     im.src = url; e.target.value = "";
   });
-  document.addEventListener("visibilitychange", () => { if(document.hidden) stopCamera(); else if(!$("#scan").hidden) startCamera(); });
+  document.addEventListener("visibilitychange", () => { if($("#scan").hidden) return; if(document.hidden){ stopLoop(); stopCamera(); } else startCamera(); });
 }

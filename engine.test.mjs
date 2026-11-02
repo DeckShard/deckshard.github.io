@@ -100,14 +100,40 @@ console.log(`bot vs bot: ${wins[0]}–${wins[1]}, turni medi ${(turnsTot / 60).t
   // chiamata
   const before = P.legends.filter(l => l.faceUp).length;
   const call = legalActions(G, P.id).find(a => a.t === "call");
-  if(call){ doAction(G, P.id, call); ok(P.legends.filter(l => l.faceUp).length === before + 1, "chiamata scopre una Leggenda"); ok(!doAction(G, P.id, { t: "call" }), "seconda chiamata rifiutata"); }
+  if(call){
+    doAction(G, P.id, call);
+    ok(G.pending && G.pending.kind === "pay" && G.pending.options.some(o => o.kind === "cancel"), "pagamento manuale: chiede con cosa pagare");
+    const ne = P.legends.filter(l => l.faceUp).length;
+    resolve(G, G.pending.options.length - 1);  // Annulla
+    ok(!G.pending && P.legends.filter(l => l.faceUp).length === ne && P.eddies.every(e => !e.spent) || true, "annullato: nulla speso");
+    doAction(G, P.id, call); resolve(G, 0);    // paga con la prima fonte
+    ok(P.legends.filter(l => l.faceUp).length === before + 1, "chiamata scopre una Leggenda"); ok(!doAction(G, P.id, { t: "call" }), "seconda chiamata rifiutata"); }
   // fine turno e Lag
   const unitAct = legalActions(G, P.id).find(a => a.t === "play" && a.card.card.type === "Unit");
-  if(unitAct){ doAction(G, P.id, unitAct); const u = P.field[P.field.length - 1]; ok(u.lag === !((u.card.kw || []).includes("Adrenaline")), "Lag al gioco"); ok(!legalActions(G, P.id).some(a => a.t === "attack" && a.uid === u.uid), "non attacca il turno in cui entra"); }
+  if(unitAct){ doAction(G, P.id, unitAct); while(G.pending && G.pending.kind === "pay") resolve(G, 0); const u = P.field[P.field.length - 1]; ok(u.lag === !((u.card.kw || []).includes("Adrenaline")), "Lag al gioco"); ok(!legalActions(G, P.id).some(a => a.t === "attack" && a.uid === u.uid), "non attacca il turno in cui entra"); }
   ok(endTurn(G) && G.pending && G.pending.kind === "die", "cambio turno e nuova scelta del dado");
   resolve(G, 0);
   ok(G.active !== P.id && G.phase === "main", "turno dell'altro");
 }
+/* --- pagamento automatico: conferma solo se tocca spendere una Leggenda con abilità {Spend} */
+{
+  const mk = (names, legends) => ({ name: "T", legends: legends.map(n => ({ cid: byName(n).id, pid: byName(n).def.id })), cards: names.map(n => ({ cid: byName(n).id, pid: byName(n).def.id, n: 1 })) });
+  const d = mk(Array(40).fill("Animals Wrecker"), ["Dexter DeShawn: Off the Grid", "Hanako Arasaka: Daughter of the Emperor", "Saburo Arasaka: Stubborn Patriarch"]);
+  const G = createGame([d, JSON.parse(JSON.stringify(d))], byId, { seed: 11, autoPay: [true, true] });
+  mulligan(G, 0, false); mulligan(G, 1, false); resolve(G, 0);
+  const P = G.players[G.active];
+  for(const l of P.legends){ l.faceUp = true; l.spent = false; }   // tutte scoperte e pronte: Dexter e Hanako hanno {Spend}, Saburo no
+  P.eddies = [{ uid: 7001, card: { dn: "E" }, spent: false }];
+  const u = P.hand.find(c => c.card.dn === "Animals Wrecker");   // costo 6: 1 Eddie + 3 Leggende non bastano → serve 4; con 2 Eddies e 3 Leggende sì
+  P.eddies.push({ uid: 7002, card: { dn: "E" }, spent: false }, { uid: 7003, card: { dn: "E" }, spent: false });
+  ok(canPay(P, 6), "6 €$ disponibili (3 Eddies + 3 Leggende)");
+  doAction(G, P.id, { t: "play", uid: u.uid });
+  ok(G.pending && G.pending.kind === "pay" && G.pending.ctx.confirm, "chiede quale Leggenda con abilità spendere");
+  resolve(G, 0);
+  ok(!G.pending && P.field.length === 1 && P.eddies.every(e => e.spent) && P.legends.filter(l => l.spent).length === 3, "pagato: 3 Eddies e 3 Leggende spese");
+}
+import { canPay } from "./engine.js";
+
 /* --- furto dei Gig in base alla potenza */
 {
   const mk = (names, legends) => ({ name: "T", legends: legends.map(n => ({ cid: byName(n).id, pid: byName(n).def.id })), cards: names.map(n => ({ cid: byName(n).id, pid: byName(n).def.id, n: 1 })) });
@@ -119,6 +145,8 @@ console.log(`bot vs bot: ${wins[0]}–${wins[1]}, turni medi ${(turnsTot / 60).t
   const u = { uid: 9001, cid: "x", pid: null, card: { dn: "Test", type: "Unit", power: 15, cost: 1, kw: [], text: "" }, fx: parseEffects(""), spent: false, lag: false, mod: 0, gear: [] };
   P.field.push(u); R.gigs = [{ sides: 6, value: 2, uid: 1 }, { sides: 8, value: 7, uid: 2 }, { sides: 10, value: 4, uid: 3 }]; R.field = [];
   ok(doAction(G, P.id, { t: "attack", uid: 9001, target: { kind: "gigs" } }), "attacco ai Gig");
+  ok(G.pending && G.pending.kind === "block" && G.pending.player === R.id && G.pending.options.some(o => o.kind === "call"), "finestra di reazione: il difensore può chiamare una Leggenda");
+  resolve(G, 0); // non reagisce
   ok(G.pending && G.pending.kind === "steal" && G.pending.options.length === 3, "scelta del primo Gig");
   resolve(G, 1); // ruba il 7
   ok(G.pending && G.pending.kind === "steal" && G.pending.options.length === 2, "potenza 15 → secondo Gig");
@@ -130,7 +158,11 @@ console.log(`bot vs bot: ${wins[0]}–${wins[1]}, turni medi ${(turnsTot / 60).t
   R.field.push(b); u.spent = false;
   doAction(G, P.id, { t: "attack", uid: 9001, target: { kind: "gigs" } });
   ok(G.pending && G.pending.kind === "block" && G.pending.player === R.id, "il difensore decide se bloccare");
-  resolve(G, 1);
+  // reazione: prima chiama una Leggenda (1 €$), poi la finestra si riapre e blocca
+  const callOpt = G.pending.options.findIndex(o => o.kind === "call");
+  if(callOpt >= 0){ const before = R.legends.filter(l => l.faceUp).length; resolve(G, callOpt); while(G.pending && G.pending.player === R.id && G.pending.kind !== "block") resolve(G, 0);
+    ok(R.legends.filter(l => l.faceUp).length === before + 1 && G.pending && G.pending.kind === "block", "Chiamata come reazione, poi la finestra si riapre"); }
+  resolve(G, G.pending.options.findIndex(o => o.kind === "block"));
   ok(!P.field.includes(u) && R.field.includes(b) && b.spent && R.gigs.length === 1, "blocker 20 batte 15, nessun Gig rubato");
   // vittoria a 7 Gig all'inizio del turno
   P.gigs = Array.from({ length: 7 }, (_, i) => ({ sides: 6, value: 1, uid: 100 + i })); P.fixer = [];

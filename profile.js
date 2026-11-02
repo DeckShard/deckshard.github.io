@@ -73,6 +73,12 @@ export function renderProfile(){
     </div>
 
     <div class="card">
+      <h3>Simulatore</h3>
+      <div class="field"><label>Pagamento degli Eddies<small>Manuale: scegli ogni volta cosa spendere. Automatico: paga da solo e chiede solo quando dovrebbe spendere una Leggenda con un'abilità Spend ancora utilizzabile.</small></label>
+        <span class="seg" id="pfPay"><button data-v="0" aria-pressed="${!p.autoPay}">Manuale</button><button data-v="1" aria-pressed="${!!p.autoPay}">Automatico</button></span></div>
+    </div>
+
+    <div class="card">
       <h3>Gioco organizzato</h3>
       <div class="field"><label for="pfMelee">Nome utente Melee.gg<small>Solo un promemoria: resta sul dispositivo e viene mostrato nel profilo</small></label><input class="inp" id="pfMelee" value="${esc(p.melee)}" placeholder="nome utente" autocomplete="off"></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
@@ -115,6 +121,7 @@ function wire(root){
       if(k === "theme") applyTheme();
       renderProfile(); return;
     }
+    const pb = e.target.closest("#pfPay button"); if(pb){ setP("autoPay", pb.dataset.v === "1"); renderProfile(); return; }
     const sw = e.target.closest("#pfAccent .sw"); if(sw){ setP("accent", sw.dataset.v); applyTheme(); renderProfile(); return; }
     const ch = e.target.closest("#pfChars button"); if(ch){
       const same = S.profile.fav === ch.dataset.fav;

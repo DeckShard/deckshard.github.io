@@ -32,6 +32,15 @@ export function botDecide(G, pi, kind, options, ctx){
       return options[0];
     }
     case "gigpick": return options.reduce((a, b) => (b.gig.sides - b.gig.value) > (a.gig.sides - a.gig.value) ? b : a);
+    case "pickcard": {   // carte da prendere in mano / Gear da sacrificare: la più utile; "Nessuna" solo se non c'è altro
+      const withCard = options.filter(o => o.c);
+      if(withCard.length) return withCard.reduce((a, b) => val(b.c) > val(a.c) ? b : a);
+      const withGear = options.filter(o => o.g);
+      if(withGear.length) return withGear.reduce((a, b) => (a.g.card.cost ?? 0) <= (b.g.card.cost ?? 0) ? a : b);
+      return options[options.length - 1];
+    }
+    case "choice": return options.reduce((a, b) => b.alt.ops.filter(o => o.op === "manual").length < a.alt.ops.filter(o => o.op === "manual").length ? b : a);
+    case "yesno": return options[0];
     case "gigvalue": return options.reduce((a, b) => b.v > a.v ? b : a);
     default: return options[0];
   }

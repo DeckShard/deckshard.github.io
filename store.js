@@ -12,13 +12,19 @@ export const storageOk = () => OK;
 
 export const DEFAULT_PROFILE = {
   nick: "", lifepath: "", faction: "", fav: "", favImg: "", theme: "auto", accent: "holophone",
-  melee: "", cptcg: "", bio: ""
+  melee: "", cptcg: "", bio: "", v: 2, autoPay: false
 };
 
+/* profili salvati prima della v1.1 avevano "samurai" come accento predefinito:
+   il predefinito ora è "holophone"; chi vuole il giallo lo risceglie dal profilo */
+function migrateProfile(p){
+  if(!p.v){ if(p.accent === "samurai") p.accent = "holophone"; p.v = 2; set("profile", p); }
+  return p;
+}
 export const S = {
   coll: get("coll", {}),          // { printingId: qty }
   decks: get("decks", []),        // [{ id, name, legends:[cardId], cards:[{cid,pid,n}], updated }]
-  profile: Object.assign({}, DEFAULT_PROFILE, get("profile", {})),
+  profile: migrateProfile(Object.assign({}, DEFAULT_PROFILE, get("profile", {}))),
   settings: Object.assign({ view: "grid", sort: "name", ownedOnly: false }, get("settings", {})),
   record: Object.assign({ wins: 0, losses: 0, games: [] }, get("record", {})),
   recent: get("recent", []),
