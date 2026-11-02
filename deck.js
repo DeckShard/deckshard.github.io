@@ -279,7 +279,7 @@ function renderEditor(){
   const d = CUR, lim = ramLimits(d), checks = validate(d), n = deckSize(d), miss = missing(d);
   const legsHTML = [0, 1, 2].map(i => {
     const l = d.legends[i], c = l && DATA.byId.get(l.cid);
-    return c ? `<div class="lslot" data-lslot="${i}" title="${esc(c.dn)}"><img src="${thumbUrl(l.pid || c.def.id)}" alt="${esc(c.dn)}"><button class="x" data-lrm="${i}" aria-label="Togli">✕</button></div>`
+    return c ? `<div class="lslot${d.format !== "sealed" && !cardQty(c) ? " unowned" : ""}" data-lslot="${i}" title="${esc(c.dn)}${d.format !== "sealed" && !cardQty(c) ? " (non in collezione)" : ""}"><img src="${thumbUrl(l.pid || c.def.id)}" alt="${esc(c.dn)}"><button class="x" data-lrm="${i}" aria-label="Togli">✕</button></div>`
              : `<div class="lslot" data-lslot="${i}">+ Leggenda</div>`;
   }).join("");
   const ram = d.format === "sealed" ? `<span class="chip">Sealed · max 3 colori · min 30 carte · senza RAM</span>` : COLORS.map(k => `<span><i class="pip ${k}"></i>${COLOR_IT[k]} ≤ ${lim[k]}</span>`).join("");
@@ -291,8 +291,10 @@ function renderEditor(){
     const cnt = es.reduce((a, e) => a + e.n, 0);
     return `<h3 style="margin:12px 0 4px">${TYPE_IT[t]} <small style="color:var(--mute)">${cnt}</small></h3><div class="rows dlist">${es.map(e => {
       const c = DATA.byId.get(e.cid), own = cardQty(c), ramKo = d.format !== "sealed" && (c.ramN || 0) > (lim[c.color] || 0);
-      return rowHTML(c, e.pid, `<span class="qtyctl"><button data-dq="-1" data-cid="${c.id}" aria-label="meno">−</button><b>${e.n}</b><button data-dq="1" data-cid="${c.id}" aria-label="più">+</button></span>`,
+      const html = rowHTML(c, e.pid, `<span class="qtyctl"><button data-dq="-1" data-cid="${c.id}" aria-label="meno">−</button><b>${e.n}</b><button data-dq="1" data-cid="${c.id}" aria-label="più">+</button></span>`,
         `${ramKo ? `<span class="chip bad">RAM ${c.ramN}</span>` : `<span class="chip">RAM ${c.ramN}</span>`}${d.format === "sealed" ? "" : own < e.n ? `<span class="chip bad">hai ${own}</span>` : ""}`, true, d.format === "sealed" ? `${e.n}/${poolCount(d, c.id)}x` : "");
+      // copie che non possiedi: miniatura in bianco e nero (a colori nella scheda e nello zoom), così si vede se il mazzo è giocabile dal vivo
+      return d.format !== "sealed" && own < e.n ? html.replace('class="row"', `class="row unowned" title="Ne possiedi ${own} su ${e.n}"`) : html;
     }).join("")}</div>`;
   }).join("");
 

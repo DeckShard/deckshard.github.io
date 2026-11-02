@@ -1,6 +1,6 @@
 # Night City Deck
 
-App web gratuita (PWA) per il **Cyberpunk TCG**: collezione con prezzi Cardmarket, deckbuilder con le regole di costruzione, profilo, simulatore con motore di regole e bot, regole, prerelease e tutorial. Le impostazioni (tema e colori, lingua, pagamento automatico nel simulatore, origine dei prezzi, backup dei dati, versione) stanno dietro l'ingranaggio in alto a destra. Funziona su telefono e desktop, si installa dalla pagina come un'app e lavora anche offline.
+App web gratuita (PWA) per il **Cyberpunk TCG**: collezione con prezzi Cardmarket, deckbuilder con le regole di costruzione, profilo, simulatore con motore di regole e bot, regole, prerelease e tutorial. Le impostazioni (tema e 14 palette di colori, lingua, pagamento automatico nel simulatore, origine dei prezzi, backup dei dati, versione) stanno dietro l'ingranaggio in alto a destra. Funziona su telefono e desktop, si installa dalla pagina come un'app e lavora anche offline.
 
 Progetto amatoriale, non affiliato a WeirdCo né a CD PROJEKT RED. *Cyberpunk*, *Cyberpunk 2077* e le immagini delle carte sono © CD PROJEKT S.A. / WeirdCo e vengono usate secondo le linee guida per i contenuti dei fan di WeirdCo: l'app deve restare **gratuita e senza pubblicità**. I dati delle carte arrivano dal database ufficiale (cyberpunktcg.com / Netdeck), i prezzi dal listino pubblico giornaliero di Cardmarket.
 
@@ -9,7 +9,7 @@ Progetto amatoriale, non affiliato a WeirdCo né a CD PROJEKT RED. *Cyberpunk*, 
 Tutto nella radice del repository (così si carica anche dalla pagina web di GitHub, che non conserva le cartelle):
 
 ```
-collect.py                 collector: catalogo, immagini, prezzi → public/ e data/img/
+collect.py                 collector: catalogo, immagini, prezzi, regole complete → public/ e data/img/
 cardmarket-expansions.json abbinamento espansioni Cardmarket → set del gioco
 index.html, theme.css, sim.css, manifest.webmanifest, sw.js, icon*   la PWA
 app.js, data.js, store.js, ui.js, collection.js, deck.js, profile.js, sim.js   le sezioni
@@ -60,11 +60,13 @@ Nota sul Gear: il motore somma la potenza del Gear a quella dell'Unità equipagg
 
 Collezione: «Importa collezione» accetta lo stesso formato (testo incollato o file .txt/.csv/.json) in modalità **Aggiorna** (somma alle copie possedute) o **Sostituisci** (azzera e ricarica); «Esporta testo» produce la lista con i codici, pronta da reimportare o da portare altrove. Il JSON esportato da **Deckrunners** (`entries` con `printingId` tipo `MS01-025` e `copies`) viene letto direttamente, sia per la collezione sia incollato in «Importa testo» del deckbuilder; in generale vanno bene array o oggetti con `entries`/`cards`/`collection`/`items`, quantità in `copies`/`qty`/`quantity`/`count` e carta identificata da codice, set + numero o nome.
 
+Nel deckbuilder le carte di cui non possiedi abbastanza copie hanno la miniatura in bianco e nero (a colori nella scheda e nello zoom) e il chip «hai N», così si vede subito se il mazzo è giocabile dal vivo.
+
 Nel Simulator si scelgono solo i mazzi in regola (3 Leggende, 40–50 carte entro i limiti RAM, oppure le regole del sealed): le bozze restano nel deckbuilder, dove il pulsante «Gioca» si attiva quando il mazzo è completo.
 
 ## Regole, Prerelease e tutorial
 
-La scheda **Regole** ha due viste: «In breve» (quello che serve per la prima partita) ed «Estensive» (tutto il regolamento in 14 sezioni, riscritto, con in coda le letture che il simulatore applica dove la guida non entra nel dettaglio), più i collegamenti alla guida ufficiale. Nel Simulator, **Prerelease** apre un kit come quello reale (6 buste da 12 carte con 7 comuni, 3 non comuni e 2 rare-o-meglio, un pacchetto di 3 Leggende, il promo Gorilla Arms) e crea un mazzo *sealed* nel deckbuilder: almeno 30 carte di massimo 3 colori, senza limiti di RAM né di copie, Leggende libere; «Gioca» lo fa affrontare un bot che ha aperto un kit a sua volta. Il **tutorial** è una partita guidata contro il bot, con seme fisso e mano iniziale garantita (una carta vendibile e un'Unità da ≤2 €$, anche dopo il mulligan): la barra indica il passo da fare e nei passi «fai X» le altre azioni sono disabilitate, così non ci si può bloccare; non si chiude finché non si arriva all'ultimo passo. Scegliendo un mazzo Prerelease nel simulatore l'avversario è sempre il bot con il kit abbinato a quel mazzo.
+La scheda **Regole** ha due viste: «In breve» (quello che serve per la prima partita, in italiano, con costruzione del mazzo, Prerelease e le letture che il simulatore applica) e «Complete (ufficiali)»: le **Comprehensive Rules** di WeirdCo nel testo originale inglese (quello che fa fede nelle dispute), 680 regole numerate in 11 sezioni più i crediti, con ricerca, sezioni apribili, rimandi interni cliccabili ed evidenza delle regole aggiunte o modificate nell'ultima revisione. Il collector le scarica ogni notte dalla stessa API della pagina ufficiale (`public/rules.json`), quindi restano aggiornate da sole. Nel Simulator, **Prerelease** apre un kit come quello reale (6 buste da 12 carte con 7 comuni, 3 non comuni e 2 rare-o-meglio, un pacchetto di 3 Leggende, il promo Gorilla Arms) e crea un mazzo *sealed* nel deckbuilder: almeno 30 carte di massimo 3 colori, senza limiti di RAM né di copie, Leggende libere; «Gioca» lo fa affrontare un bot che ha aperto un kit a sua volta. Il **tutorial** è una partita guidata contro il bot, con seme fisso e mano iniziale garantita (una carta vendibile e un'Unità da ≤2 €$, anche dopo il mulligan): la barra indica il passo da fare e nei passi «fai X» le altre azioni sono disabilitate, così non ci si può bloccare; non si chiude finché non si arriva all'ultimo passo. Scegliendo un mazzo Prerelease nel simulatore l'avversario è sempre il bot con il kit abbinato a quel mazzo.
 
 ## Scanner della collezione
 

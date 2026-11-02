@@ -23,7 +23,14 @@ export const ACCENTS = [
   { id: "girlypop", n: "Girlypop (rosa e cyan)", a: "#ff3bd4", b: "#00e5f2" },
   { id: "arasaka", n: "Arasaka", a: "#d8323c", b: "#6a6a72" },
   { id: "nomad", n: "Nomad", a: "#f28c28", b: "#6fae52" },
-  { id: "maelstrom", n: "Maelstrom", a: "#e11a3c", b: "#fcee0a" }
+  { id: "maelstrom", n: "Maelstrom", a: "#e11a3c", b: "#fcee0a" },
+  { id: "voodoo", n: "Voodoo Boys (viola e lime)", a: "#a855f7", b: "#c6ff00" },
+  { id: "tyger", n: "Tyger Claws (magenta e giada)", a: "#ff2bd6", b: "#2bd9a3" },
+  { id: "militech", n: "Militech (verde acido e arancio)", a: "#b8e000", b: "#ff6a00" },
+  { id: "trauma", n: "Trauma Team (arancio e ghiaccio)", a: "#ff7a00", b: "#bfe9ff" },
+  { id: "afterlife", n: "Afterlife (verde neon e rosso)", a: "#39ff14", b: "#ff1744" },
+  { id: "kangtao", n: "Kang Tao (oro e giada)", a: "#ffcc33", b: "#00c48c" },
+  { id: "blackwall", n: "Blackwall (rosso e viola)", a: "#ff1e3c", b: "#8a2be2" }
 ];
 
 const wired = new Set();

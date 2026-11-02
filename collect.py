@@ -10,7 +10,10 @@ Cosa fa, in ordine:
      minuti: senza una copia locale un'app non potrebbe mostrare nulla;
   3. scarica il listino pubblico giornaliero di Cardmarket (prezzi Trend,
      From, medie) e lo incrocia con le stampe;
-  4. pubblica in public/: cards.json, prices.json, meta.json e le immagini.
+  4. scarica le Regole Complete ufficiali (Comprehensive Rules) dalla stessa
+     API che le pubblica su cyberpunktcg.com/comprehensive-rules;
+  5. pubblica in public/: cards.json, prices.json, rules.json, meta.json e le
+     immagini.
 
 Nessuna dipendenza oltre a Pillow (per le miniature).
 
@@ -43,6 +46,7 @@ PUBLIC = ROOT / "public"
 
 UA = "NightCityDeck/0.1 (collector; non-commercial fan tool)"
 NETDECK = os.environ.get("NCD_NETDECK", "https://api.netdeck.gg/api/cards/cyberpunk")
+RULES_URL = os.environ.get("NCD_RULES", "https://api.netdeck.gg/api/cyberpunk/comprehensive-rules")
 CM_BASE = os.environ.get("NCD_CM_BASE", "https://downloads.s3.cardmarket.com/productCatalog")
 CM_GAME = os.environ.get("NCD_CM_GAME", "23")   # 23 = Cyberpunk TCG nel catalogo Cardmarket
 THUMB_W = int(os.environ.get("NCD_THUMB_W", "244"))
@@ -353,6 +357,23 @@ def join_prices(guide, products, cards, mapping):
 
 
 # ---------------------------------------------------------------- main
+def fetch_rules():
+    """Regole Complete ufficiali: l'API restituisce l'albero di sezioni e regole
+    numerate (lo stesso della pagina ufficiale). Si tiene l'essenziale."""
+    raw = get(RULES_URL) or {}
+    items = []
+    for it in raw.get("items", []):
+        items.append({
+            "id": it["id"], "parent": it.get("parent_id"), "kind": it.get("node_type"),
+            "num": it.get("display_number") or "", "title": it.get("title") or "",
+            "body": it.get("body_markdown") or "", "depth": it.get("depth", 0),
+            "anchor": it.get("stable_anchor") or "", "toc": bool(it.get("include_in_toc", True)),
+            "changed": (it.get("recent_change") or {}).get("kind"),
+        })
+    return {"updatedAt": raw.get("updated_at"), "source": "cyberpunktcg.com/comprehensive-rules (WeirdCo)",
+            "url": "https://cyberpunktcg.com/comprehensive-rules", "items": items}
+
+
 def main():
     print("Night City Deck · collector")
     items = fetch_catalogue()
@@ -389,6 +410,12 @@ def main():
             p.pop("_img", None)
 
     PUBLIC.mkdir(parents=True, exist_ok=True)
+    try:
+        rules = fetch_rules()
+        (PUBLIC / "rules.json").write_text(json.dumps(rules, separators=(",", ":"), ensure_ascii=False), encoding="utf-8")
+        print(f"Regole Complete: {len(rules['items'])} voci (aggiornate {rules['updatedAt']})")
+    except Exception as e:
+        print(f"Regole Complete non disponibili oggi: {e} (resta la versione precedente, se c'è)", file=sys.stderr)
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     (PUBLIC / "cards.json").write_text(json.dumps(
         {"generated": now, "source": "netdeck.gg (catalogo ufficiale WeirdCo)",
@@ -404,7 +431,8 @@ def main():
          "priced": len(prices), "images": sum(1 for c in cards for p in c["prints"] if p["img"])},
         separators=(",", ":")), encoding="utf-8")
     kb = lambda p: (PUBLIC / p).stat().st_size // 1024
-    print(f"Pubblicati: cards.json {kb('cards.json')} KB · prices.json {kb('prices.json')} KB")
+    print(f"Pubblicati: cards.json {kb('cards.json')} KB · prices.json {kb('prices.json')} KB"
+          + (f" · rules.json {kb('rules.json')} KB" if (PUBLIC / 'rules.json').exists() else ""))
     return 0
 
 

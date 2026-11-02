@@ -298,6 +298,12 @@ await page.click("#bMenu"); await page.click('.pop button:has-text("Esci")');
 /* regole */
 await page.click('nav.tabs button[data-tab="rules"]');
 ok(await page.locator("#p-rules .rulesec").count() >= 10, "pagina delle regole con le sezioni");
+await page.click('#rulesMode button[data-v="1"]'); await page.waitForSelector("details.rfull", { timeout: 8000 });
+ok(await page.locator(".rule").count() > 600 && (await page.locator("#p-rules").textContent()).includes("Comprehensive Rules"), "regole complete ufficiali caricate da rules.json");
+await page.fill("#rulesQ", "blocker"); await page.waitForTimeout(500);
+ok(await page.locator(".rule.hit").count() >= 5, "ricerca nelle regole complete");
+await page.fill("#rulesQ", ""); await page.waitForTimeout(400);
+await page.click('#rulesMode button[data-v="0"]');
 
 /* prerelease: apri il kit, costruisci, gioca contro il bot */
 await page.click('nav.tabs button[data-tab="sim"]');

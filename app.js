@@ -9,7 +9,7 @@ import { renderProfile, renderSettings } from "./profile.js";
 import { renderSim } from "./sim.js";
 import { renderRules } from "./rules.js";
 
-export const APP_VERSION = "1.1.0";
+export const APP_VERSION = "1.2.0";
 
 const TABS = { collection: renderCollection, deck: renderDeck, profile: renderProfile, sim: renderSim, rules: renderRules, settings: renderSettings };
 
@@ -19,6 +19,9 @@ export function applyTheme(){
   const dark = !(p.theme === "light" || (p.theme === "auto" && !matchMedia("(prefers-color-scheme: dark)").matches));
   document.documentElement.dataset.theme = dark ? "dark" : "light";
   if(p.accent && p.accent !== "holophone") document.documentElement.dataset.accent = p.accent; else delete document.documentElement.dataset.accent;
+  // barre di sistema del telefono (stato e gesti): seguono la barra di navigazione dell'app, non un giallo fisso
+  const nav = getComputedStyle(document.documentElement).getPropertyValue("--navBg").trim() || (dark ? "#0b0b0e" : "#f3efe2");
+  const meta = $("#themeColor"); if(meta) meta.content = nav;
 }
 matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", applyTheme);
 
