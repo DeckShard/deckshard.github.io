@@ -16,7 +16,7 @@ const MANUAL = false;
 let G = null, mode = "bot", human = [true, false], sel = null, targeting = null, pop = null, showLog = false, botTimer = null, handoff = false, wired = false;
 let lastSeen = { turn: 0, seen: 0 }, noteMsg = "", noteT = null, reactCover = null;
 /* avviso dentro la plancia (il toast globale non segue la rotazione) */
-function note(msg){ noteMsg = msg; clearTimeout(noteT); noteT = setTimeout(() => { noteMsg = ""; render(); }, 2600); render(); }
+function note(msg){ noteMsg = msg; clearTimeout(noteT); noteT = setTimeout(() => { noteMsg = ""; const n = $("#noteMsg"); if(n) n.remove(); }, 2600); render(); }
 const names = () => [S.profile.nick || "Tu", mode === "bot" ? "Bot" : "Giocatore 2"];
 
 /* ------------------------------------------------------------ setup (pagina) */
@@ -116,17 +116,23 @@ function cardHTML(x, cls = "", extra = ""){
     ${x.card.type === "Unit" || x.isLegend ? `<span class="pw${pw !== base ? " mod" : ""}">${pw}</span>` : ""}${extra}
     ${(x.gear || []).length ? `<div class="g">${x.gear.map(g => `<img src="${thumbUrl(g.pid)}" alt="" title="${esc(g.card.dn)}">`).join("")}</div>` : ""}</div>`;
 }
+/* pagamento sulla plancia: quando il motore chiede «con cosa paghi?», si toccano
+   direttamente gli Eddies o le Leggende invece di scegliere da una finestra */
+const payMode = () => G && G.pending && G.pending.kind === "pay" && !G.pending.ctx.confirm && human[G.pending.player] ? G.pending : null;
+const payOpt = pred => { const p = payMode(); if(!p) return -1; return p.options.findIndex(pred); };
 function legendHTML(l, mine){
+  const pm = payMode(), payable = pm && pm.player === (mine ? me() : 1 - me()) && pm.options.some(o => o.l === l);
+  const cls = payable ? " target" : "";
   if(l.removed) return `<div class="bc back" data-uid="${l.uid}" style="opacity:.35">✕</div>`;
   if(l.onField) return `<div class="bc back up" data-uid="${l.uid}" style="opacity:.5"><div class="n">in campo</div></div>`;
-  if(!l.faceUp) return `<div class="bc back${l.spent ? " spent" : ""}" data-uid="${l.uid}" data-legend="1">?</div>`;
-  return cardHTML(l, "", "").replace('class="bc ', 'class="bc leg ').replace(`data-uid="${l.uid}"`, `data-uid="${l.uid}" data-legend="1"`);
+  if(!l.faceUp) return `<div class="bc back${l.spent ? " spent" : ""}${cls}" data-uid="${l.uid}" data-legend="1">?</div>`;
+  return cardHTML(l, cls, "").replace('class="bc ', 'class="bc leg ').replace(`data-uid="${l.uid}"`, `data-uid="${l.uid}" data-legend="1"`);
 }
 const dieHTML = (g, cls = "") => `<span class="die d${g.sides} ${cls}" data-gig="${g.uid || ""}"><small>d${g.sides}</small>${g.value ?? ""}</span>`;
 
 function render(){
   if(!G) return;
-  const M = G.players[me()], R = rival(G, M), board = $("#board");
+  const M = G.players[me()], R = rival(G, M), board = $("#board"), pm = payMode();
   const myTurn = G.active === M.id && G.phase === "main" && !G.pending && G.winner == null;
   const acts = myTurn && human[M.id] ? legalActions(G, M.id) : [];
   const canSell = acts.some(a => a.t === "sell"), canCall = acts.some(a => a.t === "call");
@@ -134,7 +140,8 @@ function render(){
     const cost = c.card.cost ?? 0, afford = canPay(M, cost);
     return `<div class="bc big${sel === c.uid ? " sel" : ""}" data-uid="${c.uid}" data-hand="1" title="${esc(c.card.dn)}"><img src="${thumbUrl(c.pid)}" alt=""><span class="co${afford ? "" : " no"}">${cost}</span>${c.card.eddiable ? `<span class="ed" title="Vendibile per 1 €$">€$</span>` : ""}</div>`;
   }).join("");
-  const pendingTxt = G.pending ? (human[G.pending.player] ? `${G.players[G.pending.player].name} deve scegliere…` : "il bot decide…") : "";
+  const pendingTxt = pm ? "" : G.pending ? (human[G.pending.player] ? `${G.players[G.pending.player].name} deve scegliere…` : "il bot decide…") : "";
+  const payTxt = pm ? `<b style="color:var(--acc2)">Paga ${pm.ctx.cost} €$ (${pm.ctx.paid}/${pm.ctx.cost}): tocca un Eddie o una Leggenda</b>` : "";
   const status = G.winner != null ? `Fine: ${esc(G.reason)}` : myTurn ? "Il tuo turno" : human[G.active] ? `Turno di ${esc(G.players[G.active].name)}` : "Turno del bot…";
   const last = G.log.slice(-1)[0];
   // misura delle carte dall'altezza disponibile: 2 righe rivale + campo + pile + mano (1,15×) + barra e margini
@@ -145,7 +152,7 @@ function render(){
       <div class="brow">
         <div class="stack" title="Mazzo"><b>${R.deck.length}</b><small>mazzo</small></div>
         <div class="stack" title="Mano"><b>${R.hand.length}</b><small>mano</small></div>
-        <div class="stack ed${readyEddies(R) ? "" : " lo"}" title="Eddies"><b>${readyEddies(R)}/${R.eddies.length}</b><small>€$</small></div>
+        <div class="stack ed${readyEddies(R) ? "" : " lo"}${pm && pm.player === R.id && payOpt(o => o.kind === "eddie") >= 0 ? " target" : ""}" data-eddies="${R.id}" title="Eddies"><b>${readyEddies(R)}/${R.eddies.length}</b><small>€$</small></div>
         <div class="stack" data-trash="${R.id}" title="Trash"><b>${R.trash.length}</b><small>trash</small></div>
         <div style="display:flex;gap:3px">${R.legends.map(l => legendHTML(l, false)).join("")}</div>
         <div style="flex:1"></div>
@@ -156,9 +163,9 @@ function render(){
 
     <div class="bstrip">
       <span class="st">T${G.turn} · ${status}</span>
-      <span class="lg" id="lastLog" title="${esc(last ? last.text : "")}">${noteMsg ? `<b style="color:var(--acc2)">${esc(noteMsg)}</b> · ` : ""}${pendingTxt ? `<b>${esc(pendingTxt)}</b> · ` : ""}${esc(last ? last.text : "")}</span>
+      <span class="lg" id="lastLog" title="${esc(last ? last.text : "")}">${payTxt ? payTxt + " · " : ""}${noteMsg ? `<b id="noteMsg" style="color:var(--acc2)">${esc(noteMsg)} · </b>` : ""}${pendingTxt ? `<b>${esc(pendingTxt)}</b> · ` : ""}${esc(last ? last.text : "")}</span>
       ${myTurn && human[M.id] ? `<button class="btn sm yel" id="bEnd">Fine turno</button>` : ""}
-      ${targeting ? `<button class="btn sm" id="bCancel">Annulla</button>` : ""}
+      ${pm ? `${payOpt(o => o.kind === "alleddies") >= 0 ? `<button class="btn sm acc2" id="bPayAll">Tutto con Eddies</button>` : ""}<button class="btn sm" id="bPayCancel">Annulla</button>` : targeting ? `<button class="btn sm" id="bCancel">Annulla</button>` : ""}
       <button class="btn sm icon" id="bLog" title="Registro">≡</button>
       <button class="btn sm icon" id="bMenu" title="Menù">⋯</button>
     </div>
@@ -167,7 +174,7 @@ function render(){
       <div class="brow field" data-field="${M.id}"><span class="lbl">${esc(M.name)}</span>${M.field.map(u => cardHTML(u, targeting && targeting.kind === "gear" ? "target" : "")).join("") || `<span style="color:var(--mute)">nessuna Unità in campo</span>`}</div>
       <div class="brow">
         <div class="stack" title="Mazzo"><b>${M.deck.length}</b><small>mazzo</small></div>
-        <div class="stack ed${readyEddies(M) ? "" : " lo"}" data-eddies="${M.id}" title="Eddies: pronti/totali"><b>${readyEddies(M)}/${M.eddies.length}</b><small>€$</small></div>
+        <div class="stack ed${readyEddies(M) ? "" : " lo"}${pm && pm.player === M.id && payOpt(o => o.kind === "eddie") >= 0 ? " target" : ""}" data-eddies="${M.id}" title="Eddies: pronti/totali"><b>${readyEddies(M)}/${M.eddies.length}</b><small>€$</small></div>
         <div class="stack" data-trash="${M.id}" title="Trash"><b>${M.trash.length}</b><small>trash</small></div>
         <div style="display:flex;gap:3px">${M.legends.map(l => legendHTML(l, true)).join("")}</div>
         <div style="flex:1"></div>
@@ -176,7 +183,7 @@ function render(){
       <div class="brow hand" data-handrow="${M.id}"><span class="lbl">mano · ${ready(M)} €$</span>${handHTML || `<span style="color:var(--mute)">mano vuota</span>`}</div>
     </div>
     ${showLog ? `<div id="simLog"><div style="display:flex;justify-content:space-between;align-items:center"><b>Registro</b><button class="btn sm icon" id="bLogClose">✕</button></div>${G.log.slice(-80).map(e => `<div class="e ${e.kind}">${esc(e.text)}</div>`).join("")}</div>` : ""}
-    ${mulliganPending() != null ? mulliganHTML() : G.pending && human[G.pending.player] ? askHTML() : ""}
+    ${mulliganPending() != null ? mulliganHTML() : pm ? "" : G.pending && human[G.pending.player] ? askHTML() : ""}
     ${G.winner != null ? `<div class="winbox"><div class="box"><h2>${G.winner === me() ? "VITTORIA" : mode === "hot" ? "VINCE " + esc(G.players[G.winner].name).toUpperCase() : "SCONFITTA"}</h2><p>${esc(G.reason)}</p><p style="color:var(--mute)">${G.turn} turni</p><div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><button class="btn yel" id="bAgain">Rivincita</button><button class="btn" id="bExit">Esci</button></div></div></div>` : ""}
     ${handoff ? `<div class="handoff"><h2>Passa il dispositivo a ${esc(G.players[G.active].name)}</h2><p>Il tuo rivale non guarda, promesso.</p><button class="btn yel" id="bHand">Sono pronto</button></div>` : ""}`;
   if(showLog){ const l = $("#simLog"); l.scrollTop = l.scrollHeight; }
@@ -317,6 +324,43 @@ function wire(){
   });
   board.addEventListener("contextmenu", e => e.preventDefault());
   const lpCancel = () => clearTimeout(lp);
+  // trascinamento dalla mano: sulla plancia per giocare, su un'Unità/Leggenda per equipaggiare un Gear
+  let drag = null;
+  const rotated = () => matchMedia("(orientation: portrait) and (max-width: 760px)").matches;
+  const clearDrop = () => $$("#board .drop").forEach(x => x.classList.remove("drop"));
+  const dropTarget = (x, y) => {
+    const M = G.players[me()], el = document.elementFromPoint(x, y); if(!el) return null;
+    const bc = el.closest(".bc");
+    if(bc && bc.closest(`[data-field="${M.id}"]`)) return { kind: "unit", el: bc, uid: +bc.dataset.uid };
+    if(bc && bc.dataset.legend && bc.closest(".bz.mine")){ const l = M.legends.find(l => l.uid === +bc.dataset.uid); if(l && l.faceUp && !l.onField && !l.removed) return { kind: "legend", el: bc, uid: l.uid }; }
+    const zone = el.closest(".bz.mine"); if(zone && !el.closest("[data-handrow]")) return { kind: "field", el: zone.querySelector(`[data-field="${M.id}"]`) };
+    return null;
+  };
+  board.addEventListener("pointerdown", e => {
+    const el = e.target.closest("[data-handrow] .bc"); if(!el || !G || G.winner != null) return;
+    const M = G.players[me()]; if(G.active !== M.id || G.phase !== "main" || G.pending || !human[M.id]) return;
+    drag = { uid: +el.dataset.uid, el, x: e.clientX, y: e.clientY, active: false, ghost: null };
+  });
+  board.addEventListener("pointermove", e => {
+    if(!drag) return;
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if(!drag.active){ if(Math.hypot(dx, dy) < 12) return; drag.active = true; lpCancel(); try{ drag.el.setPointerCapture(e.pointerId); }catch(err){}
+      drag.ghost = drag.el.cloneNode(true); drag.ghost.className = "bc big ghost" + (rotated() ? " rot" : ""); document.body.appendChild(drag.ghost); drag.el.classList.add("dragging"); }
+    drag.ghost.style.left = e.clientX + "px"; drag.ghost.style.top = e.clientY + "px";
+    clearDrop(); const t = dropTarget(e.clientX, e.clientY); if(t && t.el) t.el.classList.add("drop");
+  });
+  const endDrag = e => {
+    if(!drag) return;
+    const d = drag; drag = null;
+    if(!d.active) return;
+    d.ghost && d.ghost.remove(); d.el.classList.remove("dragging"); clearDrop(); lpFired = true;   // il click che segue va ignorato
+    const M = G.players[me()], c = M.hand.find(x => x.uid === d.uid); if(!c) return;
+    const t = e.type === "pointercancel" ? null : dropTarget(e.clientX, e.clientY);
+    if(!t) return;
+    if(c.card.type === "Gear"){ if(t.kind === "unit" || t.kind === "legend") after(doAction(G, M.id, { t: "play", uid: c.uid, target: t.uid })); else note("Trascina il Gear su un'Unità o una Leggenda scoperta"); return; }
+    if(t.kind === "field" || t.kind === "unit") after(doAction(G, M.id, { t: "play", uid: c.uid }));
+  };
+  board.addEventListener("pointerup", endDrag); board.addEventListener("pointercancel", endDrag);
   board.addEventListener("pointerup", lpCancel); board.addEventListener("pointercancel", lpCancel); board.addEventListener("pointermove", e => { if(e.movementX || e.movementY) lpCancel(); });
   board.addEventListener("click", e => {
     if(lpFired){ lpFired = false; return; }
@@ -333,6 +377,15 @@ function wire(){
     if(t.closest("#bExit")){ closeBoard(); return; }
     if(t.closest("#bHand")){ handoff = false; render(); tick(); return; }
     if(t.closest("[data-react]")){ reactCover = G.pending; render(); return; }
+    if(payMode()){
+      const pm = payMode();
+      if(t.closest("#bPayCancel")){ resolve(G, payOpt(o => o.kind === "cancel")); render(); tick(); return; }
+      if(t.closest("#bPayAll")){ resolve(G, payOpt(o => o.kind === "alleddies")); render(); tick(); return; }
+      const ed = t.closest("[data-eddies]"); if(ed && +ed.dataset.eddies === pm.player){ const i = payOpt(o => o.kind === "eddie"); if(i >= 0){ resolve(G, i); render(); tick(); } else note("Nessun Eddie pronto"); return; }
+      const lg = t.closest("[data-legend]"); if(lg){ const i = payOpt(o => o.l && o.l.uid === +lg.dataset.uid); if(i >= 0){ resolve(G, i); render(); tick(); } else note("Questa Leggenda non può pagare"); return; }
+      if(!t.closest(".bstrip, .pop, #simLog")) note("Tocca un Eddie o una Leggenda, oppure Annulla");
+      return;
+    }
     const mull = t.closest("[data-mull]"); if(mull){ mulligan(G, mulliganPending(), mull.dataset.mull === "redo"); render(); tick(); return; }
     const zoom = t.closest("[data-zoom]"); if(zoom){ openLens(imgUrl(zoom.dataset.zoom)); return; }
     const ask = t.closest("[data-ask]"); if(ask){ resolve(G, +ask.dataset.ask); render(); tick(); return; }

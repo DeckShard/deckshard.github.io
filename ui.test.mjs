@@ -175,7 +175,7 @@ let sold = false;
 for(let k = 0; k < 8 && !sold; k++){
   if(k) await page.click(`[data-handrow] .bc >> nth=${k}`);
   const sellBtn = page.locator('.pop button:has-text("Vendi")');
-  if(await sellBtn.count() && await sellBtn.isEnabled()){ await sellBtn.click(); sold = true; ok((await page.locator('[data-eddies] b').textContent()).startsWith("1/"), "venduta: 1 eddie"); }
+  if(await sellBtn.count() && await sellBtn.isEnabled()){ await sellBtn.click(); sold = true; ok((await page.locator('.bz.mine [data-eddies] b').textContent()).startsWith("1/"), "venduta: 1 eddie"); }
   else await page.click("#board .bstrip .st");
 }
 // gioca una carta che posso permettermi: il pagamento manuale chiede con cosa pagare
@@ -187,11 +187,32 @@ for(let k = 0; k < 8 && !played; k++){
   else await page.click("#board .bstrip .st");
 }
 if(played){
-  ok(await page.locator("#simAsk").count() === 1 && /Come paghi/.test(await page.locator("#simAsk h3").textContent()), "pagamento manuale: finestra «Come paghi?»");
-  while(await page.locator('#simAsk [data-ask]').count()){ await page.click('#simAsk [data-ask] >> nth=0'); await page.waitForTimeout(100); if(!/Come paghi/.test(await page.locator("#simAsk h3").textContent().catch(() => ""))) break; }
-  ok(await page.locator('[data-field] .bc').count() >= 1 || true, "carta giocata dopo il pagamento");
+  ok(/Paga \d+ €\$/.test(await page.locator(".bstrip .lg").textContent()), "pagamento sulla plancia: la barra chiede di toccare Eddies o Leggende");
+  ok(await page.locator(".bz.mine .target").count() >= 1, "fonti di pagamento evidenziate");
+  for(let k = 0; k < 6 && /Paga \d+ €\$/.test(await page.locator(".bstrip .lg").textContent()); k++){
+    const ed = page.locator(".bz.mine [data-eddies].target"), lg = page.locator(".bz.mine [data-legend].target");
+    if(await ed.count()) await ed.click(); else if(await lg.count()) await lg.first().click(); else break;
+    await page.waitForTimeout(100);
+  }
+  ok(!/Paga \d+ €\$/.test(await page.locator(".bstrip .lg").textContent()), "pagamento completato toccando le fonti");
+}
+// trascinamento: una carta giocabile dalla mano sulla plancia
+{
+  const M0 = await page.evaluate(() => null);
+  const hand = page.locator('[data-handrow] .bc'); const n = await hand.count(); let dragged = false;
+  for(let k = 0; k < n && !dragged; k++){
+    const card = hand.nth(k); const box = await card.boundingBox(); const field = await page.locator('.bz.mine [data-field]').boundingBox();
+    const afford = (await card.locator(".co").getAttribute("class")).indexOf("no") < 0;
+    if(!afford || !box || !field) continue;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.down();
+    await page.mouse.move(box.x + 20, box.y - 40, { steps: 4 }); await page.mouse.move(field.x + field.width / 2, field.y + field.height / 2, { steps: 6 });
+    await page.mouse.up(); await page.waitForTimeout(150);
+    dragged = /Paga \d+ €\$/.test(await page.locator(".bstrip .lg").textContent()) || (await page.locator(".bstrip .lg").textContent()).includes("Trascina");
+  }
+  if(dragged){ ok(true, "trascinamento dalla mano avvia il gioco della carta"); if(await page.locator("#bPayCancel").count()) await page.click("#bPayCancel"); }
 }
 // fine turno → il bot gioca → torna a me
+if(await page.locator("#bPayCancel").count()) await page.click("#bPayCancel");
 await page.click("#bEnd");
 for(let i = 0; i < 60; i++){
   if(await page.locator("#simAsk").count()){ await page.click("#simAsk [data-ask]"); }

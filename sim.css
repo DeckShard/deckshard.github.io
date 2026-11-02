@@ -33,6 +33,13 @@
 .bc.lag::after{content:"LAG";position:absolute;left:0;right:0;top:40%;text-align:center;background:rgba(0,0,0,.65);color:#ffd21f;font-weight:800;font-size:10px;letter-spacing:.1em;padding:2px 0}
 .bc.sel{outline:3px solid var(--accFill);box-shadow:var(--glow);transform:translateY(-4px)}
 .bc.target{outline:3px solid var(--acc2Fill);animation:pulse 1s ease-in-out infinite}
+.stack.target{outline:3px solid var(--acc2Fill);animation:pulse 1s ease-in-out infinite;cursor:pointer}
+.brow.hand .bc{touch-action:pan-x}
+.bc.dragging{opacity:.35}
+.bc.ghost{position:fixed;z-index:200;pointer-events:none;transform:translate(-50%,-60%) scale(1.15);box-shadow:0 12px 30px rgba(0,0,0,.6);outline:2px solid var(--acc2Fill)}
+.bc.ghost.rot{transform:translate(-50%,-60%) rotate(90deg) scale(1.15)}
+.drop{outline:3px solid #fcee0a!important;box-shadow:0 0 0 4px rgba(252,238,10,.35)}
+.brow.field.drop{outline-offset:-3px;background:rgba(252,238,10,.08)}
 .bc.ok{outline:2px solid var(--good)}
 .bc .pw{position:absolute;right:2px;bottom:2px;background:rgba(0,0,0,.78);color:#fff;font-weight:800;font-size:11px;padding:1px 5px;border-radius:5px;line-height:1.2}
 .bc .pw.mod{color:#ffd21f}

@@ -118,7 +118,8 @@ nav.tabs button svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-
 nav.tabs button[aria-selected="true"]{color:var(--navAcc)}
 nav.tabs button[aria-selected="true"]::after{content:"";width:22px;height:3px;background:var(--navAcc);margin-top:1px;clip-path:polygon(0 0,100% 0,85% 100%,0 100%)}
 @media(min-width:900px){
-  nav.tabs{position:static;border:0;background:none;justify-content:flex-start;gap:2px;max-width:1100px;margin:0 auto;padding:10px 14px 4px}
+  nav.tabs{position:static;border:0;background:none;box-shadow:none;justify-content:flex-start;gap:2px;max-width:1100px;margin:0 auto;padding:10px 14px 4px;order:1;width:100%}
+  main{order:2} footer{order:3}
   nav.tabs button{flex:0 0 auto;flex-direction:row;font-size:12.5px;padding:7px 14px;gap:7px;color:var(--mute);border-bottom:2px solid transparent}
   nav.tabs button[aria-selected="true"]{color:var(--acc);border-bottom-color:var(--acc);text-shadow:var(--neon)}
   nav.tabs button[aria-selected="true"]::after{display:none}

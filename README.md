@@ -48,7 +48,7 @@ Regole di base applicate per intero: fasi del turno (prepara, pesca, Gig dal fix
 
 Effetti delle carte interpretati dal testo: pesca, trash, +potenza, Gig ±N, sconfiggi/spendi Unità rivali per potenza o costo, scarti, «sconfiggi tutte le altre Unità», «spendi tutte le Unità rivali», «può attaccare solo Unità», «non può attaccare», «scegli un effetto: A // B», ricerca nelle prime N carte del mazzo, recupero dal trash (anche tra le carte appena trashate), «puoi sconfiggere un Gear: se lo fai pesca…», Chiamata gratis, gioca un Gear/Unità dalla mano gratis, scambio di Gig, «imposta un Gig al valore di un altro», prepara Unità/Leggende, Adrenaline a un'altra Unità, «spendi e non si prepara». Il resto (condizioni «se/quando», conteggi, effetti a fine turno) viene segnalato nel registro come **effetto manuale** e, per restare nelle regole, non si applica: gli strumenti manuali esistono nel codice (`MANUAL` in `sim.js`) ma sono spenti. Il bot ignora gli effetti manuali.
 
-Pagamenti: di base il giocatore sceglie cosa spendere (Eddies o Leggende, una fonte alla volta, con la scorciatoia «tutto con Eddies»); nel profilo si può attivare il pagamento automatico, che chiede conferma solo quando dovrebbe spendere una Leggenda scoperta con un'abilità Spend ancora utilizzabile.
+Pagamenti: di base il giocatore sceglie cosa spendere toccando sulla plancia gli Eddies o le Leggende (con la scorciatoia «Tutto con Eddies» e «Annulla»); nel profilo si può attivare il pagamento automatico, che chiede conferma solo quando dovrebbe spendere una Leggenda scoperta con un'abilità Spend ancora utilizzabile.
 
 Nota sul Gear: il motore somma la potenza del Gear a quella dell'Unità equipaggiata.
 
