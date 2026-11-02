@@ -129,6 +129,15 @@ export function renderSettings(){
     </div>
 
     <div class="card">
+      <h3>Collection</h3>
+      <div class="field"><label>Voci della collezione<small>Una per carta (151), una per illustrazione (ogni arte diversa conta a sé) o una per edizione (ogni stampa: set, lingua, variante). Il completamento segue la stessa scelta.</small></label>
+        <span class="seg" id="pfCollView">${[["card", "Per carta"], ["art", "Per illustrazione"], ["print", "Per edizione"]].map(([v, t]) => `<button data-v="${v}" aria-pressed="${(S.settings.collView || "card") === v}">${t}</button>`).join("")}</span></div>
+      ${(S.settings.collView || "card") === "card" ? `<div class="field"><label>Illustrazione mostrata<small>Tra le stampe che possiedi di ogni carta. Nella scheda di una carta puoi fissarne una con «☆ Mostra in Collection»: vince su questa regola.</small></label>
+        <span class="seg" id="pfCollPick">${[["rarest", "La più rara"], ["common", "La meno rara"], ["newest", "La più recente"]].map(([v, t]) => `<button data-v="${v}" aria-pressed="${(S.settings.collPick || "rarest") === v}">${t}</button>`).join("")}</span></div>
+      ${Object.keys(S.settings.favPrints || {}).length ? `<div class="sub" style="margin-top:6px">${Object.keys(S.settings.favPrints).length} carte con illustrazione fissata · <a href="#" id="pfFavClear">togli tutte</a></div>` : ""}` : ""}
+    </div>
+
+    <div class="card">
       <h3>Simulatore</h3>
       <div class="field"><label>Pagamento degli Eddies<small>Manuale: scegli ogni volta cosa spendere. Automatico: paga da solo e chiede solo quando dovrebbe spendere una Leggenda con un'abilità Spend ancora utilizzabile.</small></label>
         <span class="seg" id="pfPay"><button data-v="0" aria-pressed="${!p.autoPay}">Manuale</button><button data-v="1" aria-pressed="${!!p.autoPay}">Automatico</button></span></div>
@@ -185,6 +194,9 @@ function wire(root){
       rerender(); return;
     }
     const pb = e.target.closest("#pfPay button"); if(pb){ setP("autoPay", pb.dataset.v === "1"); rerender(); return; }
+    const cv = e.target.closest("#pfCollView button"); if(cv){ S.settings.collView = cv.dataset.v; S.save("settings"); document.dispatchEvent(new CustomEvent("ncd:collection")); rerender(); return; }
+    const cp = e.target.closest("#pfCollPick button"); if(cp){ S.settings.collPick = cp.dataset.v; S.save("settings"); document.dispatchEvent(new CustomEvent("ncd:collection")); rerender(); return; }
+    if(e.target.closest("#pfFavClear")){ e.preventDefault(); S.settings.favPrints = {}; S.save("settings"); document.dispatchEvent(new CustomEvent("ncd:collection")); rerender(); return; }
     const sw = e.target.closest("#pfAccent .sw"); if(sw){ setP("accent", sw.dataset.v); applyTheme(); rerender(); return; }
     const ch = e.target.closest("#pfChars button"); if(ch){
       const same = S.profile.fav === ch.dataset.fav;

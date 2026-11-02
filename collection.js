@@ -2,7 +2,7 @@
 
 import { DATA, priceOf, cardPrice, eur, COLORS, COLOR_IT } from "./data.js";
 import { S, qtyOf, setQty, cardQty } from "./store.js";
-import { $, $$, esc, toast, tileHTML, rowHTML, shownPrint, makeFilters, filtersHTML, passes, bindFilters, sortCards, openCard } from "./ui.js";
+import { $, $$, esc, toast, tileHTML, rowHTML, shownPrint, printLabel, makeFilters, filtersHTML, passes, bindFilters, sortCards, openCard } from "./ui.js";
 import { openScanner } from "./scanner.js";
 import { parseCardLines, collectionText, jsonToLines } from "./deck.js";
 
@@ -17,38 +17,43 @@ export function renderCollection(){
   $$("#collOwned button").forEach(b => b.setAttribute("aria-pressed", String((F.owned || "") === b.dataset.o)));
   $("#collView button").forEach?.call($$("#collView button"), b => b.setAttribute("aria-pressed", String(b.dataset.v === (S.settings.view || "grid"))));
 
-  // tessere di riepilogo
-  let owned = 0, distinct = 0, value = 0, priced = 0;
+  // voci della collezione: una per carta, per illustrazione o per edizione (impostazioni)
+  const mode = S.settings.collView || "card";
+  const entries = [];   // { c, prints: stampe conteggiate, show: stampa mostrata, sub: etichetta, key }
   for(const c of DATA.cards){
-    let any = false;
-    for(const p of c.prints){
-      const q = qtyOf(p.id); if(!q) continue;
-      owned += q; any = true;
-      const pr = priceOf(p.id) || cardPrice(c);
-      if(pr){ value += pr.trend * q; priced += q; }
-    }
-    if(any) distinct++;
+    if(mode === "card") entries.push({ c, prints: c.prints, show: shownPrint(c), sub: "", key: c.id });
+    else if(mode === "art") for(const a of c.arts){ const owned = a.prints.filter(p => qtyOf(p.id)); const show = shownPrint(c, owned.length ? owned : a.prints); entries.push({ c, prints: a.prints, show, sub: printLabel(show, false) + (a.prints.length > 1 ? ` · ${a.prints.length} ed.` : ""), key: c.id + ":" + a.key }); }
+    else for(const p of c.prints) entries.push({ c, prints: [p], show: p, sub: printLabel(p), key: p.id });
   }
-  $("#tOwned").textContent = owned; $("#tOwnedN").textContent = `${distinct} di ${DATA.cards.length} totali`;
+  const qtyOfEntry = e => e.prints.reduce((a, p) => a + qtyOf(p.id), 0);
+  // tessere di riepilogo
+  let owned = 0, have = 0, value = 0, priced = 0;
+  for(const c of DATA.cards) for(const p of c.prints){ const q = qtyOf(p.id); if(!q) continue; owned += q; const pr = priceOf(p.id) || cardPrice(c); if(pr){ value += pr.trend * q; priced += q; } }
+  for(const e of entries) if(qtyOfEntry(e)) have++;
+  const unit = mode === "card" ? "carte" : mode === "art" ? "illustrazioni" : "edizioni";
+  $("#tOwned").textContent = owned; $("#tOwnedN").textContent = `${have} di ${entries.length} ${unit}`;
   $("#tValue").textContent = eur(value); $("#tValueN").textContent = priced < owned ? `${owned - priced} copie senza prezzo` : "trend Cardmarket";
-  const pct = Math.round(distinct / DATA.cards.length * 100);
-  $("#tSet").textContent = pct + "%"; $("#tSetN").textContent = "del catalogo";
+  const pct = Math.round(have / entries.length * 100);
+  $("#tSet").textContent = pct + "%"; $("#tSetN").textContent = mode === "card" ? "del catalogo" : mode === "art" ? "delle illustrazioni" : "delle edizioni";
   $("#tPrices").textContent = "Cardmarket";
   $("#tPricesN").textContent = DATA.pricesAt ? `aggiornati il ${new Date(DATA.pricesAt).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric" })}` : "listino non ancora scaricato";
 
-  let list = DATA.cards.filter(c => passes(c, F));
-  list = sortCards(list, S.settings.sort);
-  $("#collCount").textContent = `${list.length} carte`;
+  const cardsOk = new Set(sortCards(DATA.cards.filter(c => passes(c, { ...F, owned: "" })), S.settings.sort).map(c => c.id));
+  const order = [...cardsOk]; const pos = new Map(order.map((id, i) => [id, i]));
+  let list = entries.filter(e => cardsOk.has(e.c.id));
+  if(F.owned === "yes") list = list.filter(e => qtyOfEntry(e)); else if(F.owned === "no") list = list.filter(e => !qtyOfEntry(e));
+  list.sort((a, b) => pos.get(a.c.id) - pos.get(b.c.id) || a.c.prints.indexOf(a.show) - b.c.prints.indexOf(b.show));
+  $("#collCount").textContent = `${list.length} ${unit}`;
   const box = $("#collRows");
   if(!list.length){ box.className = "rows"; box.innerHTML = `<div class="empty">Nessuna carta con questi filtri.</div>`; return; }
   if((S.settings.view || "grid") === "grid"){
     box.className = "grid";
-    box.innerHTML = list.map(c => tileHTML(c, null, { dim: true, owned: true })).join("");
+    box.innerHTML = list.map(e => tileHTML(e.c, e.show.id, { dim: true, qty: qtyOfEntry(e), sub: e.sub })).join("");
   } else {
     box.className = "rows";
-    box.innerHTML = list.map(c => {
-      const q = cardQty(c), pr = cardPrice(c);
-      return rowHTML(c, shownPrint(c).id, `<div class="pr"><b>${pr ? eur(pr.trend) + (pr.approx ? " ~" : "") : "—"}</b><span class="chip${q ? " acc" : ""}">${q ? "×" + q : "0"}</span></div>`);
+    box.innerHTML = list.map(e => {
+      const q = qtyOfEntry(e), pr = mode === "card" ? cardPrice(e.c) : (priceOf(e.show.id) || cardPrice(e.c));
+      return rowHTML(e.c, e.show.id, `<div class="pr"><b>${pr ? eur(pr.trend) + (pr.approx ? " ~" : "") : "—"}</b><span class="chip${q ? " acc" : ""}">${q ? "×" + q : "0"}</span></div>`, e.sub ? `<span class="chip">${esc(e.sub)}</span>` : "");
     }).join("");
   }
 }
@@ -72,7 +77,7 @@ function wire(root){
   $("#collRows").addEventListener("pointerdown", e => {
     const t = e.target.closest(".gc"); if(!t) return;
     fired = false;
-    timer = setTimeout(() => { fired = true; const c = DATA.byId.get(t.dataset.cid); setQty(c.def.id, qtyOf(c.def.id) + 1); navigator.vibrate?.(12); toast(`+1 ${c.dn}`); renderCollection(); }, 480);
+    timer = setTimeout(() => { fired = true; const c = DATA.byId.get(t.dataset.cid); const pid = (S.settings.collView || "card") === "card" ? c.def.id : t.dataset.pid; setQty(pid, qtyOf(pid) + 1); navigator.vibrate?.(12); toast(`+1 ${c.dn}`); renderCollection(); }, 480);
   });
   const cancel = () => { clearTimeout(timer); };
   $("#collRows").addEventListener("pointerup", cancel); $("#collRows").addEventListener("pointercancel", cancel); $("#collRows").addEventListener("pointerleave", cancel);

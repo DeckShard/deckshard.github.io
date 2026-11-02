@@ -285,9 +285,12 @@ def join_prices(guide, products, cards, mapping):
     """
     Abbina ogni prodotto Cardmarket a una stampa. Quando nello stesso set un
     nome compare due volte (versione base e variante Iconic) il listino non
-    distingue le due: si abbina il prodotto piu' caro alla stampa piu' rara e
-    si segna il prezzo come stimato.
+    distingue le due per nome, ma Cardmarket ha creato i prodotti nell'ordine
+    dei numeri di collezione (verificato: nessuna inversione su tutto il set):
+    si abbinano quindi in ordine di idProduct ↔ numero. Restano stimati solo
+    gli abbinamenti per solo nome delle espansioni "jolly".
     """
+    natkey = lambda s: [int(t) if t.isdigit() else t for t in re.split(r"(\d+)", s or "")]
     by_id = {g["idProduct"]: g for g in guide.get("priceGuides", [])}
     unresolved_wild = []
     pins = {}
@@ -329,10 +332,10 @@ def join_prices(guide, products, cards, mapping):
         if not cands:
             unresolved.append({"product": plist[0]["name"], "set": key[0], "why": "nessuna stampa con questo nome"})
             continue
-        # ordina: prodotti per prezzo crescente, stampe per rarita' crescente
-        plist = sorted(plist, key=lambda p: ((by_id.get(p["idProduct"]) or {}).get("trend") or 0))
-        cands = sorted(cands, key=lambda cp: RARITY_RANK.get(cp[1]["rarity"], 0))
-        ambiguous = len(plist) > 1 or len(cands) > 1
+        # ordina: prodotti per idProduct crescente, stampe per numero di collezione crescente
+        plist = sorted(plist, key=lambda p: p["idProduct"])
+        cands = sorted(cands, key=lambda cp: natkey(cp[1]["num"]))
+        ambiguous = len(plist) != len(cands)
         for i, p in enumerate(plist):
             pid = str(p["idProduct"])
             if pid in pins:
@@ -354,6 +357,57 @@ def join_prices(guide, products, cards, mapping):
                 approx += 1
             prices[target[1]["id"]] = row
     return prices, unresolved, approx
+
+
+# ---------------------------------------------------------------- illustrazioni
+def assign_artworks(cards):
+    """Raggruppa le stampe di ogni carta per illustrazione: la zona dell'arte
+    (sotto il titolo, sopra il testo) ridotta a 24×24 toni di grigio e
+    confrontata per correlazione; beta/retail/lingue hanno la stessa arte,
+    Iconic e Nova Rare no. Scrive p["art"] (0, 1, 2…) in ordine di apparizione."""
+    try:
+        from PIL import Image
+    except ImportError:
+        return
+    def sig(pid):
+        f = IMG_DIR / f"{pid}.webp"
+        if not f.exists():
+            return None
+        try:
+            im = Image.open(f).convert("L")
+        except Exception:
+            return None
+        w, h = im.size
+        im = im.crop((int(w * .08), int(h * .14), int(w * .92), int(h * .60))).resize((24, 24), Image.BILINEAR)
+        v = list(im.getdata()); n = len(v)
+        m = sum(v) / n
+        sd = (sum((x - m) ** 2 for x in v) / n) ** .5 or 1
+        return [(x - m) / sd for x in v]
+    corr = lambda a, b: sum(x * y for x, y in zip(a, b)) / len(a)
+    natkey = lambda s: [int(t) if t.isdigit() else t for t in re.split(r"(\d+)", s or "")]
+    groups_total = 0
+    for c in cards:
+        prints = c["prints"]   # nell'ordine del catalogo: la prima è la stampa predefinita, quindi arte 0
+        sigs = {p["id"]: sig(p["id"]) for p in prints}
+        reps = []   # [(signature, art index)]
+        for p in prints:
+            s = sigs[p["id"]]
+            if s is None:   # senza immagine: stessa arte di una stampa con lo stesso illustratore e rarità, altrimenti gruppo nuovo
+                twin = next((q for q in prints if q["id"] != p["id"] and q.get("art") is not None and q.get("artist") == p.get("artist") and q["rarity"] == p["rarity"]), None)
+                p["art"] = twin["art"] if twin else len(reps); 
+                if not twin: reps.append((None, p["art"]))
+                continue
+            best, bi = -1, None
+            for rs, idx in reps:
+                if rs is None: continue
+                cv = corr(s, rs)
+                if cv > best: best, bi = cv, idx
+            if bi is not None and best >= 0.6:
+                p["art"] = bi
+            else:
+                p["art"] = len(reps); reps.append((s, p["art"]))
+        groups_total += len(reps)
+    print(f"  illustrazioni: {groups_total} distinte su {sum(len(c['prints']) for c in cards)} stampe")
 
 
 # ---------------------------------------------------------------- main
@@ -405,6 +459,7 @@ def main():
         print(f"Cardmarket non disponibile oggi: {e} (si pubblica senza prezzi)", file=sys.stderr)
         cm_created = None
 
+    assign_artworks(cards)
     for c in cards:
         for p in c["prints"]:
             p.pop("_img", None)

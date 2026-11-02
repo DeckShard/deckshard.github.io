@@ -177,6 +177,26 @@ await page.click('#pfTheme [data-v="dark"]');
 ok((await page.evaluate(() => document.documentElement.dataset.theme)) === "dark", "tema scuro");
 await page.click('#pfTheme [data-v="light"]');
 ok(/v\d+\.\d+/.test(await page.locator("#p-settings").textContent()) && (await page.locator("#metaLine").isVisible()), "versione nelle impostazioni e catalogo visibile nell'intestazione anche sul telefono");
+/* collezione: voci per carta / illustrazione / edizione e illustrazione fissata */
+{
+  await page.click('#pfCollView button[data-v="art"]'); await page.waitForTimeout(200);
+  await page.click('nav.tabs button[data-tab="collection"]'); await page.waitForTimeout(400);
+  const nArt = await page.locator("#collRows .gc").count();
+  ok(nArt > 151 && /illustrazioni/.test(await page.locator("#tOwnedN").textContent()), `collezione per illustrazione: ${nArt} voci`);
+  await page.click("#btnSettings"); await page.waitForTimeout(200); await page.click('#pfCollView button[data-v="print"]'); await page.waitForTimeout(200);
+  await page.click('nav.tabs button[data-tab="collection"]'); await page.waitForTimeout(600);
+  ok(await page.locator("#collRows .gc").count() === 860 && /860 edizioni/.test(await page.locator("#tOwnedN").textContent()), "collezione per edizione: 860 voci");
+  await page.click("#btnSettings"); await page.waitForTimeout(200); await page.click('#pfCollView button[data-v="card"]'); await page.waitForTimeout(200);
+  ok(await page.locator("#pfCollPick").count() === 1, "regola dell'illustrazione mostrata solo in modalità per carta");
+  await page.click('nav.tabs button[data-tab="collection"]'); await page.waitForTimeout(400);
+  await page.click("#collRows .gc >> nth=0"); await page.waitForTimeout(300); await page.click("#sheetBox .pt >> nth=1"); await page.waitForTimeout(150); await page.click("#favBtn"); await page.waitForTimeout(300);
+  const favPid = await page.evaluate(() => Object.values(JSON.parse(localStorage.getItem("ncd:settings")).favPrints || {})[0]);
+  await page.click("#closeSheet"); await page.waitForTimeout(300);
+  ok(!!favPid && (await page.locator("#collRows .gc >> nth=0").getAttribute("data-pid")) === favPid, "illustrazione fissata dalla scheda mostrata in collezione");
+  await page.evaluate(() => { const s = JSON.parse(localStorage.getItem("ncd:settings")); s.favPrints = {}; localStorage.setItem("ncd:settings", JSON.stringify(s)); });
+  await page.click("#btnSettings"); await page.waitForTimeout(300);
+}
+
 /* lingua: English → tutta l'interfaccia tradotta (DOM + registro), poi si torna all'italiano */
 await page.click('#pfLang button[data-v="en"]'); await page.waitForFunction(() => document.documentElement.lang === "en" && document.querySelector("#p-settings h3")); await page.waitForTimeout(600);
 ok((await page.locator("#p-settings h3").allTextContents()).join(",").includes("Appearance") && (await page.locator("#btnSettings").getAttribute("title")) === "Settings", "English: sezioni e attributi tradotti");

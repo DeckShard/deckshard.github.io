@@ -49,11 +49,20 @@ export async function loadData(base = "./"){
     c.def = c.prints.find(p => p.img && p.lang === "en") || c.prints.find(p => p.img) || c.prints[0];
     c.ramN = c.ram ?? 0;
     for(const p of c.prints){ p.card = c; DATA.byPrint.set(p.id, p); }
+    // illustrazioni distinte (p.art dal collector; senza, illustratore + rarità alternativa)
+    const ALT = new Set(["Secret", "Iconic Other", "Iconic Legend", "Iconic Secret", "Nova Rare"]);
+    const groups = new Map();
+    for(const p of c.prints){ const k = p.art != null ? "a" + p.art : (p.artist || "") + "|" + (ALT.has(p.rarity) ? p.rarity : ""); if(!groups.has(k)) groups.set(k, { key: k, prints: [] }); groups.get(k).prints.push(p); }
+    c.arts = [...groups.values()];
   }
   DATA.prices = (prices && prices.prices) || {};
   DATA.pricesAt = prices ? (prices.cardmarketCreatedAt || prices.generated) : null;
   return DATA;
 }
+/* ordine di uscita dei set (dal più vecchio): per «artwork più recente» */
+export const SET_ORDER = ["welcometonightcitybeta", "theheistbetastarterdeck", "embracingpowerbetastarterdeck", "boxtoppersbeta", "prereleasebeta", "PRM01", "mercdemodeck", "arasakademodeck", "judgepromos", "edgerunneropens1", "nightcityshowdowns1", "nightcitybrawls1",
+  "welcometonightcityretail", "theheistretailstarterdeck", "embracingpowerretailstarterdeck", "boxtoppersretail", "prereleaseretail", "welcometonightcityretail-fr", "theheistretailstarterdeck-fr", "embracingpowerretailstarterde-fr", "boxtoppersretail-fr", "prereleaseretail-FR", "nightcityshowdowns1-FR", "nightcitybrawls1-FR"];
+export const setRank = code => { const i = SET_ORDER.indexOf(code); return i < 0 ? SET_ORDER.length : i; };
 function prefRank(p){
   const i = SET_PREF.indexOf(p.set);
   return (p.lang === "en" ? 0 : 100) + (i < 0 ? 50 : i) + (RARITY_RANK[p.rarity] || 0) * 0.01;

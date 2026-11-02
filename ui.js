@@ -2,7 +2,7 @@
    trascinamento), lente con zoom, tessere e righe, filtri.               */
 
 import { DATA, COLORS, COLOR_IT, TYPES, TYPE_IT, RARITY_IT, setName, imgUrl, thumbUrl,
-         priceOf, cardPrice, eur, cardmarketUrl, rulesHTML, classificationsOf } from "./data.js";
+         priceOf, cardPrice, eur, cardmarketUrl, rulesHTML, classificationsOf, setRank } from "./data.js";
 import { S, qtyOf, setQty, cardQty } from "./store.js";
 
 export const $ = s => document.querySelector(s);
@@ -22,11 +22,17 @@ export const statsHTML = c => `
 
 /* tessera per le griglie */
 const RARITY_ORDER = { "Iconic Secret": 8, "Iconic Legend": 7, "Iconic Other": 6, "Nova Rare": 5, "Secret": 4, "Epic": 3, "Rare": 2, "Uncommon": 1, "Common": 0 };
-/* la stampa da mostrare in collezione: tra quelle possedute la più rara (Iconic Secret → Iconic → Nova → Secret → …), altrimenti quella predefinita */
-export function shownPrint(c){
-  let best = null;
-  for(const p of c.prints){ if(!qtyOf(p.id) || !p.img) continue; if(!best || (RARITY_ORDER[p.rarity] ?? 0) > (RARITY_ORDER[best.rarity] ?? 0)) best = p; }
-  return best || c.def;
+/* la stampa da mostrare in collezione (modalità «una voce per carta»): quella preferita
+   scelta nella scheda, altrimenti tra le possedute la più rara / la meno rara / la più recente
+   (impostazioni), altrimenti quella predefinita */
+export function shownPrint(c, among){
+  const fav = (S.settings.favPrints || {})[c.id];
+  if(fav && !among){ const p = DATA.byPrint.get(fav); if(p && p.card === c) return p; }
+  const pool = (among || c.prints).filter(p => p.img && (among ? true : qtyOf(p.id)));
+  if(!pool.length) return among ? among[0] : c.def;
+  const mode = S.settings.collPick || "rarest";
+  const score = p => mode === "newest" ? setRank(p.set) * 1000 + (parseInt(String(p.num).replace(/\D/g, "")) || 0) : (RARITY_ORDER[p.rarity] ?? 0) * (mode === "common" ? -1 : 1);
+  return pool.reduce((a, b) => score(b) > score(a) ? b : a);
 }
 export function tileHTML(c, pid, opts = {}){
   const p = pid ? DATA.byPrint.get(pid) : (opts.owned ? shownPrint(c) : c.def);
@@ -36,9 +42,12 @@ export function tileHTML(c, pid, opts = {}){
     ${p.img ? `<img src="${thumbUrl(p.id)}" alt="${esc(c.dn)}" loading="lazy" decoding="async">` : `<div class="ph">${esc(c.dn)}</div>`}
     ${opts.qty !== false ? `<span class="qty${q ? "" : " zero"}">${q ? "×" + q : "0"}</span>` : ""}
     ${p.rarity && p.rarity !== "Common" && opts.rarity !== false ? `<span class="tr">${esc(RARITY_IT[p.rarity] || p.rarity)}</span>` : ""}
-    <div class="cap"><b>${pr ? eur(pr.trend) + (pr.approx ? " ~" : "") : "—"}</b>${esc(c.dn)}</div>
+    <div class="cap"><b>${pr ? eur(pr.trend) + (pr.approx ? " ~" : "") : "—"}</b>${esc(c.dn)}${opts.sub ? `<small>${esc(opts.sub)}</small>` : ""}</div>
   </div>`;
 }
+/* etichetta breve di una stampa (set · numero · rarità) per le voci per artwork/edizione */
+export const printLabel = (p, withNum = true) => `${setShort(p.set)}${withNum ? " #" + p.num : ""}${p.rarity && p.rarity !== "Common" ? " · " + (RARITY_IT[p.rarity] || p.rarity) : ""}${p.lang !== "en" ? " · " + p.lang.toUpperCase() : ""}`;
+const setShort = code => setName(code).replace("Welcome to Night City", "WNC").replace(" — Retail", "").replace("Starter Deck", "Starter").replace("Edgerunner Open S 1", "Edgerunner Open S1").replace("Night City Brawl S 1", "Night City Brawl S1");
 /* riga compatta: con `compact` le statistiche sono testo breve (€$ · ⚡ · RAM) che va a capo, mai troncato */
 export function rowHTML(c, pid, right = "", extra = "", compact = false, badge = ""){
   const p = pid ? DATA.byPrint.get(pid) : c.def;
@@ -62,11 +71,8 @@ export function filtersHTML(f){
   const rar = Object.keys(RARITY_IT).map(r => `<button class="tag" data-fk="rar" data-fv="${r}" aria-pressed="${f.rar.has(r)}">${RARITY_IT[r]}</button>`).join("");
   const cls = classificationsOf().slice(0, 18).map(k => `<button class="tag" data-fk="cls" data-fv="${esc(k)}" aria-pressed="${f.cls.has(k)}">${esc(k)}</button>`).join("");
   const n = f.colors.size + f.types.size + f.rar.size + f.cls.size + f.cost.size + f.sets.size;
-  return `<div class="frow"><span class="lbl">Colore</span>${pips}</div>
-    <div class="frow"><span class="lbl">Tipo</span>${types}</div>
-    <div class="frow"><span class="lbl">Costo</span>${costs}</div>
-    <div class="frow"><span class="lbl">Rarità</span>${rar}</div>
-    <div class="frow"><span class="lbl">Tratti</span>${cls}</div>
+  const row = (lbl, inner) => `<div class="frow"><span class="lbl">${lbl}</span><span class="fopts">${inner}</span></div>`;
+  return `${row("Colore", pips)}${row("Tipo", types)}${row("Costo", costs)}${row("Rarità", rar)}${row("Tratti", cls)}
     ${n ? `<button class="btn sm" data-fclear="1">Azzera i ${n} filtri</button>` : ""}`;
 }
 export function passes(c, f){
@@ -149,6 +155,7 @@ function renderSheet(opts){
         <button data-q="-1" aria-label="meno">−</button><b id="sheetQty">${q}</b><button data-q="1" aria-label="più">+</button>
       </span>
       <span class="chip" id="sheetTot">${tot} in collezione</span>
+      ${(S.settings.collView || "card") === "card" ? `<button class="btn sm${(S.settings.favPrints || {})[c.id] === p.id ? " acc2" : ""}" id="favBtn" title="Mostra sempre questa stampa nella Collection">${(S.settings.favPrints || {})[c.id] === p.id ? "★ In Collection" : "☆ Mostra in Collection"}</button>` : ""}
       <a class="btn sm" href="${cardmarketUrl(c, p.id)}" target="_blank" rel="noopener noreferrer">Cardmarket ↗</a>
       <a class="btn sm" href="https://cyberpunktcg.com/cards/${esc(c.slug)}?printing=${p.id}" target="_blank" rel="noopener noreferrer">Ufficiale ↗</a>
     </div>`}
@@ -172,6 +179,7 @@ function renderSheet(opts){
   });
   $$("#sheetBox [data-print]").forEach(el => el.onclick = () => { SHEET_PRINT = DATA.byPrint.get(el.dataset.print); renderSheet(opts); });
   $("#pickBtn")?.addEventListener("click", () => { onPick && onPick(SHEET_PRINT.id); closeSheet(); });
+  $("#favBtn")?.addEventListener("click", () => { S.settings.favPrints = S.settings.favPrints || {}; if(S.settings.favPrints[c.id] === p.id) delete S.settings.favPrints[c.id]; else S.settings.favPrints[c.id] = p.id; S.save("settings"); renderSheet(opts); document.dispatchEvent(new CustomEvent("ncd:collection")); });
 }
 export function closeSheet(){
   const box = $("#sheetBox"); box.classList.remove("drag", "snap"); box.style.transform = "";

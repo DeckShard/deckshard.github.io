@@ -10,7 +10,7 @@ import { renderSim } from "./sim.js";
 import { renderRules } from "./rules.js";
 import { initI18n } from "./i18n.js";
 
-export const APP_VERSION = "1.3.0";
+export const APP_VERSION = "1.4.0";
 
 const TABS = { collection: renderCollection, deck: renderDeck, profile: renderProfile, sim: renderSim, rules: renderRules, settings: renderSettings };
 

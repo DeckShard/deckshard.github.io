@@ -26,7 +26,7 @@ export const S = {
   coll: get("coll", {}),          // { printingId: qty }
   decks: get("decks", []),        // [{ id, name, legends:[cardId], cards:[{cid,pid,n}], updated }]
   profile: migrateProfile(Object.assign({}, DEFAULT_PROFILE, get("profile", {}))),
-  settings: Object.assign({ view: "grid", sort: "name", ownedOnly: false }, get("settings", {})),
+  settings: Object.assign({ view: "grid", sort: "name", ownedOnly: false, collView: "card", collPick: "rarest", favPrints: {} }, get("settings", {})),
   record: Object.assign({ wins: 0, losses: 0, games: [] }, get("record", {})),
   recent: get("recent", []),
   save(k){ set(k, this[k]); }
