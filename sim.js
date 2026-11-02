@@ -21,10 +21,12 @@ const killGhosts = () => { $$(".bc.ghost").forEach(g => g.remove()); $$("#board 
 /* all'inizio del trascinamento: evidenzia dove la carta può essere lasciata */
 function markDropZones(c){
   const M = G.players[me()];
+  if(c.isLegendDrag){ const f = $(`#board [data-field="${M.id}"]`); if(f) f.classList.add("candrop"); return; }
   if(c.card.type === "Gear"){
     $$(`#board [data-field="${M.id}"] .bc`).forEach(x => x.classList.add("candrop"));
     for(const l of M.legends) if(l.faceUp && !l.onField && !l.removed){ const el = $(`#board .bz.mine [data-legend][data-uid="${l.uid}"]`); if(el) el.classList.add("candrop"); }
   } else { const f = $(`#board [data-field="${M.id}"]`); if(f) f.classList.add("candrop"); }
+  if(c.card.eddiable && !M.sold){ const e = $(`#board .bz.mine [data-eddies]`); if(e) e.classList.add("candrop"); }
 }
 /* avviso dentro la plancia (il toast globale non segue la rotazione) */
 function note(msg){ noteMsg = msg; clearTimeout(noteT); noteT = setTimeout(() => { noteMsg = ""; const n = $("#noteMsg"); if(n) n.remove(); }, 2600); render(); }
@@ -348,6 +350,7 @@ function wire(){
 
   const dropTarget = (x, y) => {
     const M = G.players[me()], el = document.elementFromPoint(x, y); if(!el) return null;
+    const ed = el.closest(".bz.mine [data-eddies]"); if(ed) return { kind: "sell", el: ed };
     const bc = el.closest(".bc");
     if(bc && bc.closest(`[data-field="${M.id}"]`)) return { kind: "unit", el: bc, uid: +bc.dataset.uid };
     if(bc && bc.dataset.legend && bc.closest(".bz.mine")){ const l = M.legends.find(l => l.uid === +bc.dataset.uid); if(l && l.faceUp && !l.onField && !l.removed) return { kind: "legend", el: bc, uid: l.uid }; if(l && !l.faceUp) return { kind: "facedown", el: null }; }
@@ -356,18 +359,26 @@ function wire(){
   };
   board.addEventListener("pointerdown", e => {
     if(drag) return;                                   // un secondo dito non avvia un altro trascinamento
-    if(!e.isPrimary) return;
-    const el = e.target.closest("[data-handrow] .bc"); if(!el || !G || G.winner != null) return;
+    if(!e.isPrimary || !G || G.winner != null) return;
     const M = G.players[me()]; if(G.active !== M.id || G.phase !== "main" || G.pending || !human[M.id]) return;
+    const el = e.target.closest("[data-handrow] .bc");
+    const lg = !el && e.target.closest(".bz.mine [data-legend]");
+    if(lg){   // una Leggenda scoperta con Go Solo si trascina in plancia
+      const l = M.legends.find(x => x.uid === +lg.dataset.uid);
+      if(!l || !l.faceUp || l.onField || l.removed || !(l.card.kw || []).includes("Go Solo")) return;
+      killGhosts(); drag = { uid: l.uid, legendIdx: M.legends.indexOf(l), el: lg, x: e.clientX, y: e.clientY, active: false, ghost: null, id: e.pointerId }; return;
+    }
+    if(!el) return;
     killGhosts();
     drag = { uid: +el.dataset.uid, el, x: e.clientX, y: e.clientY, active: false, ghost: null, id: e.pointerId };
   });
   board.addEventListener("pointermove", e => {
     if(!drag || e.pointerId !== drag.id) return;
     const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
-    if(!drag.active){ if(Math.hypot(dx, dy) < 12) return; drag.active = true; lpCancel(); try{ drag.el.setPointerCapture(e.pointerId); }catch(err){}
+    if(!drag.active){ if(Math.hypot(dx, dy) < 12) return; drag.active = true; lpCancel(); unpeek(); try{ drag.el.setPointerCapture(e.pointerId); }catch(err){}
       drag.ghost = drag.el.cloneNode(true); drag.ghost.className = "bc big ghost" + (rotated() ? " rot" : ""); document.body.appendChild(drag.ghost); drag.el.classList.add("dragging");
-      const c = G.players[me()].hand.find(x => x.uid === drag.uid); if(c) markDropZones(c); }
+      const M = G.players[me()];
+      if(drag.legendIdx != null) markDropZones({ isLegendDrag: true }); else { const c = M.hand.find(x => x.uid === drag.uid); if(c) markDropZones(c); } }
     drag.ghost.style.left = e.clientX + "px"; drag.ghost.style.top = e.clientY + "px";
     clearDrop(); const t = dropTarget(e.clientX, e.clientY); if(t && t.el) t.el.classList.add("drop");
   });
@@ -377,9 +388,12 @@ function wire(){
     killGhosts();
     if(!d.active) return;
     // (nessun "click" segue un trascinamento che finisce su un altro elemento: non serve ignorarlo)
-    const M = G.players[me()], c = M.hand.find(x => x.uid === d.uid); if(!c) return;
+    const M = G.players[me()];
     const t = e.type === "pointercancel" ? null : dropTarget(e.clientX, e.clientY);
     if(!t) return;
+    if(d.legendIdx != null){ if(t.kind === "field" || t.kind === "unit") after(doAction(G, M.id, { t: "gosolo", idx: d.legendIdx })); return; }
+    const c = M.hand.find(x => x.uid === d.uid); if(!c) return;
+    if(t.kind === "sell"){ if(c.card.eddiable) after(doAction(G, M.id, { t: "sell", uid: c.uid })); else note("Questa carta non ha il simbolo di vendita"); return; }
     if(c.card.type === "Gear"){ if(t.kind === "unit" || t.kind === "legend") after(doAction(G, M.id, { t: "play", uid: c.uid, target: t.uid })); else note(t.kind === "facedown" ? "Un Gear si equipaggia solo a una Leggenda scoperta" : "Trascina il Gear su un'Unità o una Leggenda scoperta"); return; }
     if(t.kind === "field" || t.kind === "unit") after(doAction(G, M.id, { t: "play", uid: c.uid }));
   };
@@ -387,7 +401,10 @@ function wire(){
   // rilascio fuori dalla plancia o finestra che perde il fuoco: niente copie fantasma in giro
   window.addEventListener("pointerup", e => { if(drag && e.pointerId === drag.id) endDrag(e); else if(!drag) killGhosts(); });
   window.addEventListener("blur", () => { drag = null; killGhosts(); });
-  board.addEventListener("pointerup", lpCancel); board.addEventListener("pointercancel", lpCancel); board.addEventListener("pointermove", e => { if(e.movementX || e.movementY) lpCancel(); });
+  board.addEventListener("pointerup", lpCancel); board.addEventListener("pointercancel", lpCancel);
+  let lpStart = null;
+  board.addEventListener("pointerdown", e => { lpStart = { x: e.clientX, y: e.clientY }; }, true);
+  board.addEventListener("pointermove", e => { if(lpStart && Math.hypot(e.clientX - lpStart.x, e.clientY - lpStart.y) > 10){ lpCancel(); unpeek(); } });
   board.addEventListener("click", e => {
     if(lpFired){ lpFired = false; return; }
     if(e.target.closest(".pop")) return;

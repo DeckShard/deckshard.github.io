@@ -4,6 +4,7 @@ import { DATA, priceOf, cardPrice, eur, COLORS, COLOR_IT } from "./data.js";
 import { S, qtyOf, setQty, cardQty } from "./store.js";
 import { $, $$, esc, toast, tileHTML, rowHTML, makeFilters, filtersHTML, passes, bindFilters, sortCards, openCard } from "./ui.js";
 import { openScanner } from "./scanner.js";
+import { parseCardLines, collectionText } from "./deck.js";
 
 const F = makeFilters("coll");
 let wired = false;
@@ -77,4 +78,48 @@ function wire(root){
   $("#collRows").addEventListener("pointerup", cancel); $("#collRows").addEventListener("pointercancel", cancel); $("#collRows").addEventListener("pointerleave", cancel);
   $("#collRows").addEventListener("click", e => { if(fired){ e.stopImmediatePropagation(); fired = false; } }, true);
   document.addEventListener("ncd:collection", renderCollection);
+  wireImport();
+}
+
+/* ---- import massivo (aggiorna o sostituisci) ed export in testo */
+let impMode = "add", impParsed = null;
+function wireImport(){
+  const box = $("#collImport"), ta = $("#collImportText");
+  const open = () => { box.hidden = false; ta.value = ""; impParsed = null; preview(); setTimeout(() => ta.focus(), 50); };
+  const close = () => { box.hidden = true; };
+  const preview = () => {
+    const txt = ta.value.trim();
+    if(!txt){ impParsed = null; $("#collImportPreview").textContent = ""; $("#collImportGo").disabled = true; return; }
+    impParsed = parseCardLines(txt);
+    const n = impParsed.entries.reduce((a, e) => a + e.n, 0), distinct = new Set(impParsed.entries.map(e => e.pid)).size;
+    $("#collImportPreview").innerHTML = `<b>${n} copie</b> di ${distinct} stampe riconosciute${impParsed.bad.length ? ` · <span style="color:var(--bad)">${impParsed.bad.length} righe non riconosciute:</span> ${impParsed.bad.slice(0, 5).map(esc).join(" · ")}${impParsed.bad.length > 5 ? "…" : ""}` : ""}${impMode === "replace" ? " · <b>la collezione attuale verrà azzerata</b>" : ""}`;
+    $("#collImportGo").disabled = !impParsed.entries.length;
+  };
+  $("#collImportBtn").addEventListener("click", open);
+  $("#collImportClose").addEventListener("click", close);
+  ta.addEventListener("input", preview);
+  $("#collImportMode").addEventListener("click", e => { const b = e.target.closest("button"); if(!b) return; impMode = b.dataset.v; $$("#collImportMode button").forEach(x => x.setAttribute("aria-pressed", String(x === b))); preview(); });
+  $("#collImportFile").addEventListener("click", () => $("#collImportInput").click());
+  $("#collImportInput").addEventListener("change", async e => {
+    const f = e.target.files[0]; if(!f) return;
+    let txt = await f.text();
+    // CSV: "nome o codice, quantità" (anche con ; e con intestazione)
+    if(/\.csv$/i.test(f.name) || /[;,]\s*\d+\s*$/m.test(txt)){
+      txt = txt.split(/\r?\n/).filter(l => l.trim() && !/^(name|nome|card|carta|code|codice)/i.test(l)).map(l => { const parts = l.split(/[;,\t]/).map(x => x.trim().replace(/^"|"$/g, "")); const q = parts.find((x, i) => i > 0 && /^\d+$/.test(x)); return q ? `${q} ${parts[0]}` : parts[0]; }).join("\n");
+    }
+    ta.value = txt; preview(); e.target.value = "";
+  });
+  $("#collImportGo").addEventListener("click", () => {
+    if(!impParsed || !impParsed.entries.length) return;
+    if(impMode === "replace" && !confirm("Sostituire tutta la collezione con questa lista?")) return;
+    if(impMode === "replace"){ for(const pid of Object.keys(S.coll)) setQty(pid, 0); }
+    let n = 0; for(const e of impParsed.entries){ setQty(e.pid, qtyOf(e.pid) + e.n); n += e.n; }
+    close(); toast(`${n} copie ${impMode === "replace" ? "caricate" : "aggiunte"} alla collezione`); renderCollection();
+  });
+  $("#collExportBtn").addEventListener("click", () => {
+    const txt = collectionText(S.coll);
+    const blob = new Blob([txt], { type: "text/plain" }); const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `collezione-${new Date().toISOString().slice(0, 10)}.txt`; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    (navigator.clipboard?.writeText(txt) || Promise.reject()).then(() => toast("Collezione esportata (file e appunti)")).catch(() => toast("Collezione esportata"));
+  });
 }

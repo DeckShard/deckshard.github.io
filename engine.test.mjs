@@ -31,13 +31,13 @@ const ok = (cond, msg) => { if(cond){ passes++; } else { fails++; console.log(" 
   const fx2 = parseEffects("{Play} Draw 2.");
   ok(fx2.play[0].op === "draw" && fx2.play[0].n === 2, "draw 2");
   const fx3 = parseEffects("{Blocker} (You may spend this Unit to redirect a rival Unit's attack to it instead.)\nWhen this Unit uses {Blocker}, increase a Gig by up to 3.");
-  ok(fx3.manual.length === 1, "frase condizionale lasciata manuale");
+  ok(fx3.on.block.length === 1 && fx3.on.block[0].ops[0].op === "gig", "«When this Unit uses Blocker, increase a Gig» → evento block");
   const fx4 = parseEffects("This Unit can only attack rival Units. (It can't attack Gig areas.)");
   ok(fx4.onlyUnits, "solo Unità");
   ok(parseEffects("This Unit can't attack.\n{Blocker}").cantAttack, "non può attaccare");
   ok(!parseEffects("This Unit can't attack unless you played a Program this turn.").cantAttack, "can't attack unless: non statico");
   const fx5 = parseEffects("{Play} Defeat a rival Unit with power 2 or less. If you have more ☆ (Street Cred) than a Rival, defeat a rival Unit with power 3 or less instead.");
-  ok(fx5.play[0].op === "defeat" && fx5.play[0].max === 2 && fx5.play[1].op === "manual", "defeat ≤2 + condizionale manuale");
+  ok(fx5.play[0].op === "defeat" && fx5.play[0].max === 2 && fx5.play[1].op === "defeat" && fx5.play[1].cond && fx5.play[1].cond.c === "credCmp", "defeat ≤2 + defeat ≤3 condizionato allo Street Cred");
   const fx6 = parseEffects("{Call} Trash 3. Then, add 1 BRAINDANCE Program from your trash to your hand.\n{Go Solo} (Pay this Legend's cost...)");
   ok(fx6.call[0].op === "mill" && fx6.call[0].n === 3, "Call: trash 3");
   const fx7 = parseEffects("{Quick} Defeat a rival Gear with power 2 or less.");
@@ -132,7 +132,7 @@ console.log(`bot vs bot: ${wins[0]}–${wins[1]}, turni medi ${(turnsTot / 60).t
   resolve(G, 0);
   ok(!G.pending && P.field.length === 1 && P.eddies.every(e => e.spent) && P.legends.filter(l => l.spent).length === 3, "pagato: 3 Eddies e 3 Leggende spese");
 }
-import { canPay } from "./engine.js";
+import { canPay, costOf } from "./engine.js";
 
 /* --- Go Solo: la Leggenda può spendere sé stessa per il proprio costo */
 {
@@ -143,12 +143,64 @@ import { canPay } from "./engine.js";
   const P = G.players[G.active];
   const v = P.legends.find(l => l.card.dn === "V: Streetkid"); v.faceUp = true; v.spent = false;
   for(const l of P.legends) l.spent = false;
-  P.eddies = Array.from({ length: 2 }, (_, i) => ({ uid: 8000 + i, card: { dn: "E" }, spent: false }));   // 2 Eddies + 3 Leggende = 5 = costo di V
+  P.eddies = Array.from({ length: 3 }, (_, i) => ({ uid: 8000 + i, card: { dn: "E" }, spent: false }));   // 3 Eddies + 3 Leggende = 6 > 5 = costo di V: si sceglie
   const idx = P.legends.indexOf(v);
-  ok(doAction(G, P.id, { t: "gosolo", idx }), "Go Solo accettato con 2 Eddies + 3 Leggende (V compresa)");
+  ok(doAction(G, P.id, { t: "gosolo", idx }), "Go Solo accettato con 3 Eddies + 3 Leggende (V compresa)");
   ok(G.pending && G.pending.kind === "pay" && G.pending.options.some(o => o.l === v), "V è tra le fonti di pagamento del proprio Go Solo");
   let guard = 0; while(G.pending && G.pending.kind === "pay" && guard++ < 8){ const i = G.pending.options.findIndex(o => o.l === v); resolve(G, i >= 0 ? i : 0); }
   ok(!G.pending && P.field.some(u => u.isLegend && u.card.dn === "V: Streetkid" && !u.spent && !u.lag), "V entra in campo pronta dopo aver pagato anche con sé stessa");
+}
+
+/* --- effetti interpretati: condizioni, eventi, sconti */
+{
+  const mk = (names, legends) => ({ name: "T", legends: legends.map(n => ({ cid: byName(n).id, pid: byName(n).def.id })), cards: names.map(n => ({ cid: byName(n).id, pid: byName(n).def.id, n: 1 })) });
+  const pool = ["Bootleg Black Sapphire Show", "Field Operator", "Trauma Team Operatives", "Satori: Sword of Saburo", "Sandevistan", "Kerry Eurodyne: The Last Rockerboy", "Animals Wrecker"];
+  const d = mk([...pool, ...pool, ...pool, ...pool, ...pool, ...pool], ["V: Streetkid", "Rogue Amendiares: Preem Solo", "Goro Takemura: Hands Unclean"]);
+  const G = createGame([d, JSON.parse(JSON.stringify(d))], byId, { seed: 21, autoPay: [true, true] });
+  mulligan(G, 0, false); mulligan(G, 1, false); resolve(G, 0);
+  const P = G.players[G.active], R = G.players[1 - G.active];
+  const give = name => { let c = P.hand.find(x => x.card.dn === name) || P.deck.find(x => x.card.dn === name); if(!P.hand.includes(c)){ P.deck.splice(P.deck.indexOf(c), 1); P.hand.push(c); } return c; };
+  const cash = () => { P.eddies = Array.from({ length: 8 }, (_, i) => ({ uid: 9100 + i, card: { dn: "E" }, spent: false })); };
+  cash();
+  // Bootleg: vende la prima carta del mazzo; con un Gig pari e uno dispari pesca 2
+  P.gigs = [{ sides: 6, value: 2, uid: 1 }, { sides: 8, value: 3, uid: 2 }];
+  const bb = give("Bootleg Black Sapphire Show");
+  const h0 = P.hand.length, e0 = P.eddies.length;
+  doAction(G, P.id, { t: "play", uid: bb.uid }); while(G.pending) resolve(G, 0);
+  ok(P.eddies.length === e0 + 1 && P.hand.length === h0 - 1 + 2, `Bootleg: +1 Eddie dal mazzo e pesca 2 (mano ${h0} → ${P.hand.length}, eddies ${e0} → ${P.eddies.length})`);
+  // Field Operator: pesca 1 solo se lo Street Cred è pari
+  P.gigs = [{ sides: 6, value: 2, uid: 1 }, { sides: 8, value: 3, uid: 2 }];  // 5: dispari
+  cash(); let fo = give("Field Operator"); let h = P.hand.length;
+  doAction(G, P.id, { t: "play", uid: fo.uid }); while(G.pending) resolve(G, 0);
+  ok(P.hand.length === h - 1, "Field Operator con ☆ dispari: non pesca");
+  P.gigs = [{ sides: 6, value: 2, uid: 1 }, { sides: 8, value: 4, uid: 2 }];  // 6: pari
+  cash(); fo = give("Field Operator"); h = P.hand.length;
+  doAction(G, P.id, { t: "play", uid: fo.uid }); while(G.pending) resolve(G, 0);
+  ok(P.hand.length === h, "Field Operator con ☆ pari: pesca 1");
+  // Trauma Team Operatives: -1 €$ per ogni Unità nel trash
+  P.trash.push(...P.deck.splice(0, 3).map(c => c)); const unitsTrash = P.trash.filter(c => c.card.type === "Unit").length;
+  const tt = give("Trauma Team Operatives");
+  ok(costOf(G, P, tt) === Math.max(1, 6 - unitsTrash), `costo di Trauma Team: ${costOf(G, P, tt)} con ${unitsTrash} Unità nel trash`);
+  // Kerry {Spend}: pesca 2 se controlli un Gig 8+
+  cash(); const ke = give("Kerry Eurodyne: The Last Rockerboy"); doAction(G, P.id, { t: "play", uid: ke.uid }); while(G.pending) resolve(G, 0);
+  const keU = P.field.find(u => u.card.dn.startsWith("Kerry")); keU.lag = false; P.gigs = [{ sides: 10, value: 9, uid: 3 }]; h = P.hand.length;
+  doAction(G, P.id, { t: "spend", uid: keU.uid }); while(G.pending) resolve(G, 0);
+  ok(P.hand.length === h + 2 && keU.spent, "Kerry: abilità Spend condizionata al Gig 8+ → pesca 2");
+  // Satori: quando l'Unità vince uno scontro, pesca 1 — e Sandevistan: a fine turno prepara
+  cash(); const aw = give("Animals Wrecker"); doAction(G, P.id, { t: "play", uid: aw.uid }); while(G.pending) resolve(G, 0);
+  const awU = P.field.find(u => u.card.dn === "Animals Wrecker"); awU.lag = false;
+  cash(); const sat = give("Satori: Sword of Saburo"); doAction(G, P.id, { t: "play", uid: sat.uid, target: awU.uid }); while(G.pending) resolve(G, 0);
+  cash(); const sand = give("Sandevistan"); doAction(G, P.id, { t: "play", uid: sand.uid, target: awU.uid }); while(G.pending) resolve(G, 0);
+  ok(awU.gear.length === 2, "due Gear equipaggiati");
+  const foe = { uid: 9300, cid: "z", pid: null, card: { dn: "Foe", type: "Unit", power: 3, cost: 2, kw: [], text: "" }, fx: parseEffects(""), spent: true, lag: false, mod: 0, gear: [] };
+  R.field.push(foe); R.legends.forEach(l => { l.faceUp = true; }); R.eddies = [];
+  h = P.hand.length;
+  doAction(G, P.id, { t: "attack", uid: awU.uid, target: { kind: "unit", uid: foe.uid } }); while(G.pending) resolve(G, 0);
+  ok(!R.field.includes(foe) && P.hand.length === h + 1, "vince lo scontro: Satori fa pescare 1");
+  ok(awU.spent, "l'attaccante è spesa");
+  endTurn(G); while(G.pending && G.pending.kind !== "die") resolve(G, 0);
+  ok(!awU.spent, "Sandevistan: a fine turno l'Unità torna pronta");
+  ok(G.active !== P.id, "il turno è passato");
 }
 
 /* --- furto dei Gig in base alla potenza */

@@ -21,8 +21,8 @@ export function botDecide(G, pi, kind, options, ctx){
       if(!ctx.target && (P.gigs.length <= 2 || pa >= 10 || R.gigs.length >= 5)){ const cheap = options.filter(o => o.unit).sort((a, b) => power(a.unit) - power(b.unit))[0]; if(cheap) return cheap; }
       return options[0];
     }
-    case "steal": return options.reduce((a, b) => b.gig.value > a.gig.value ? b : a);
-    case "discard": return options.reduce((a, b) => val(b.c) < val(a.c) ? b : a);
+    case "steal": { const w = options.filter(o => o.gig); return w.length ? w.reduce((a, b) => b.gig.value > a.gig.value ? b : a) : options[0]; }
+    case "discard": { const w = options.filter(o => o.c); return w.length ? w.reduce((a, b) => val(b.c) < val(a.c) ? b : a) : options[0]; }
     case "target": {
       // preferisci Unità rivali più forti; per i buff la propria Unità pronta più forte
       const rivals = options.filter(o => o.unit && R.field.includes(o.unit));
@@ -31,7 +31,7 @@ export function botDecide(G, pi, kind, options, ctx){
       if(mine.length) return mine.reduce((a, b) => power(b.unit) > power(a.unit) ? b : a);
       return options[0];
     }
-    case "gigpick": return options.reduce((a, b) => (b.gig.sides - b.gig.value) > (a.gig.sides - a.gig.value) ? b : a);
+    case "gigpick": { const w = options.filter(o => o.gig); return w.length ? w.reduce((a, b) => (b.gig.sides - b.gig.value) > (a.gig.sides - a.gig.value) ? b : a) : options[0]; }
     case "pickcard": {   // carte da prendere in mano / Gear da sacrificare: la più utile; "Nessuna" solo se non c'è altro
       const withCard = options.filter(o => o.c);
       if(withCard.length) return withCard.reduce((a, b) => val(b.c) > val(a.c) ? b : a);
@@ -40,8 +40,8 @@ export function botDecide(G, pi, kind, options, ctx){
       return options[options.length - 1];
     }
     case "choice": return options.reduce((a, b) => b.alt.ops.filter(o => o.op === "manual").length < a.alt.ops.filter(o => o.op === "manual").length ? b : a);
-    case "yesno": return options[0];
-    case "gigvalue": return options.reduce((a, b) => b.v > a.v ? b : a);
+    case "yesno": return options.find(o => !o.disabled) || options[0];
+    case "gigvalue": { const w = options.filter(o => o.v != null); return w.length ? w.reduce((a, b) => b.v > a.v ? b : a) : options[0]; }
     default: return options[0];
   }
 }
@@ -50,8 +50,12 @@ export function botDecide(G, pi, kind, options, ctx){
 export function botStep(G, pi){
   if(G.winner != null || G.pending || G.active !== pi || G.phase !== "main") return false;
   const P = G.players[pi], R = rival(G, P);
-  const acts = legalActions(G, pi);
+  // azioni fallite in questo turno: non vanno ritentate (altrimenti il bot gira a vuoto)
+  if(G._skipTurn !== G.turn){ G._skipTurn = G.turn; G._skip = new Set(); }
+  const key = a => a.t + ":" + (a.uid || a.idx || "") + ":" + (a.target ? a.target.kind + (a.target.uid || "") : "");
+  const acts = legalActions(G, pi).filter(a => !G._skip.has(key(a)));
   const by = t => acts.filter(a => a.t === t);
+  const go = a => { const ok = doAction(G, pi, a); if(ok === false) G._skip.add(key(a)); return true; };
 
   // 1) vendita: una carta che non giocheremo presto (costo alto) o la meno utile se la mano è piena
   const sells = by("sell");
@@ -60,10 +64,10 @@ export function botStep(G, pi){
     const cand = sells.filter(a => (a.card.card.cost ?? 0) > money + 2).sort((a, b) => val(a.card) - val(b.card))[0]
               || (P.hand.length >= 5 ? sells.sort((a, b) => val(a.card) - val(b.card))[0] : null)
               || (P.eddies.length < 4 ? sells.sort((a, b) => val(a.card) - val(b.card))[0] : null);
-    if(cand){ doAction(G, pi, cand); return true; }
+    if(cand){ go(cand); return true; }
   }
   // 2) chiama una Leggenda nei primi turni o quando c'è denaro in abbondanza
-  if(by("call").length && (P.turns <= 2 || ready(P) >= 3)){ doAction(G, pi, by("call")[0]); return true; }
+  if(by("call").length && (P.turns <= 2 || ready(P) >= 3)){ go(by("call")[0]); return true; }
   // 3) attacchi (prima di spendere, così le Unità spese del rivale sono già note)
   const attacks = by("attack");
   if(attacks.length){
@@ -77,21 +81,21 @@ export function botStep(G, pi){
       if(bestBlock >= pa) score -= 4; // probabile blocco perdente
       if(score > bestScore){ bestScore = score; best = a; }
     }
-    if(best){ doAction(G, pi, best); return true; }
+    if(best){ go(best); return true; }
   }
   // 4) gioca: l'Unità più forte che può permettersi, poi Gear sull'Unità migliore, poi Programmi interpretabili
   const plays = by("play");
   const units = plays.filter(a => a.card.card.type === "Unit").sort((a, b) => power(b.card) - power(a.card) || (a.card.card.cost ?? 0) - (b.card.card.cost ?? 0));
-  if(units.length && P.field.length < 7){ doAction(G, pi, units[0]); return true; }
+  if(units.length && P.field.length < 7){ go(units[0]); return true; }
   const gears = plays.filter(a => a.card.card.type === "Gear" && a.targetObj && !a.targetObj.isLegend && P.field.includes(a.targetObj)).sort((a, b) => power(b.targetObj) - power(a.targetObj));
-  if(gears.length){ doAction(G, pi, gears[0]); return true; }
+  if(gears.length){ go(gears[0]); return true; }
   const progs = plays.filter(a => a.card.card.type === "Program" && a.card.fx.manual.length < 2 && (a.card.fx.passive.length || a.card.fx.play.length));
-  if(progs.length && ready(P) >= (progs[0].card.card.cost ?? 0)){ doAction(G, pi, progs[0]); return true; }
+  if(progs.length && ready(P) >= (progs[0].card.card.cost ?? 0)){ go(progs[0]); return true; }
   // 5) Go Solo quando il campo è vuoto e c'è denaro
-  const solo = by("gosolo"); if(solo.length && P.field.length <= 1 && ready(P) >= (solo[0].legend.card.cost ?? 0) + 1){ doAction(G, pi, solo[0]); return true; }
+  const solo = by("gosolo"); if(solo.length && P.field.length <= 1 && ready(P) >= (solo[0].legend.card.cost ?? 0) + 1){ go(solo[0]); return true; }
   // 6) abilità {Spend} interpretabili
   const sp = by("spend").filter(a => a.obj.fx.spend.some(o => o.op !== "manual") && !(P.field.includes(a.obj) && canAttack(G, P, a.obj)));
-  if(sp.length){ doAction(G, pi, sp[0]); return true; }
+  if(sp.length){ go(sp[0]); return true; }
   doAction(G, pi, { t: "end" });
   return false;
 }

@@ -88,6 +88,35 @@ export function printByCode(code, num){
   if(!code){ const all = [...idx.entries()].filter(([k]) => k.endsWith("|" + n)).map(([, p]) => p); if(all.length === 1) return all[0]; }
   return null;
 }
+/* righe "N carta" (nome o codice) → stampe con quantità; usato anche dall'import della collezione */
+export function parseCardLines(text){
+  const byName = new Map(DATA.cards.map(c => [norm(c.dn), c]));
+  const find = s => { s = norm(s); if(byName.has(s)) return byName.get(s);
+    const base = s.split(":")[0].trim(); return DATA.cards.find(c => norm(c.dn).startsWith(s)) || DATA.cards.find(c => norm(c.name) === base && c.type === "Legend") || null; };
+  const entries = [], bad = [];
+  for(let raw of text.split(/\r?\n/)){
+    let line = raw.trim(); if(!line || line.startsWith("#") || /^[-=_*]+$/.test(line)) continue;
+    if(/^(legends?|main( deck)?|deck|units?|programs?|gears?|sideboard|cards?|collezione|collection)\s*:?\s*(\(\d+\))?$/i.test(line)) continue;
+    line = line.replace(/^legend:?\s*/i, "");
+    let m = line.match(/^(\d+)\s*[x×]?\s+(.+)$/i) || line.match(/^(.+?)\s*[x×]\s*(\d+)$/i);
+    let n = 1, name = line; if(m){ if(/^\d+$/.test(m[1])){ n = +m[1]; name = m[2]; } else { n = +m[2]; name = m[1]; } }
+    name = name.replace(/\s*[;,]\s*\d+\s*$/, "");
+    const cm = name.match(/^(?:([A-Za-z]{2,4}\d{0,2})\s*[-–\s]\s*)?#?(\d{1,3})(?:\s+(.*))?$/);
+    if(cm){ const p = printByCode(cm[1] || "", cm[2]); if(p){ entries.push({ pid: p.id, cid: p.card.id, n }); continue; } if(!cm[3]){ bad.push(raw); continue; } name = cm[3]; }
+    const c = find(name); if(!c){ bad.push(raw); continue; }
+    entries.push({ pid: c.def.id, cid: c.id, n });
+  }
+  return { entries, bad };
+}
+/* testo esportabile della collezione: codice quando c'è, altrimenti nome e set */
+export function collectionText(coll){
+  const CODE = { welcometonightcityretail: "WNC", welcometonightcitybeta: "WNC", theheistretailstarterdeck: "HEI", embracingpowerretailstarterdeck: "EBP", PRM01: "PRM01", prereleaseretail: "PRR", edgerunneropens1: "EOR", nightcitybrawls1: "NCB", boxtoppersretail: "BT" };
+  const lines = [];
+  for(const [pid, n] of Object.entries(coll)){ const p = DATA.byPrint.get(pid); if(!p || !n) continue;
+    const num = String(p.num).replace(/^[^0-9]*/, "").replace(/[^0-9].*$/, "").padStart(3, "0");
+    lines.push(CODE[p.set] ? `${n} ${CODE[p.set]}-${num} ${p.card.dn}` : `${n} ${p.card.dn}  # ${p.set} #${p.num}`); }
+  return `# Night City Deck — collezione (${lines.length} voci)\n` + lines.sort((a, b) => a.slice(a.indexOf(" ") + 1).localeCompare(b.slice(b.indexOf(" ") + 1), "it")).join("\n");
+}
 export function importText(text){
   const deck = { id: newId(), name: "Mazzo importato", legends: [], cards: [], notes: "" };
   const byName = new Map(DATA.cards.map(c => [norm(c.dn), c]));

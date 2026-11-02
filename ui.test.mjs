@@ -54,6 +54,25 @@ await page.fill("#collQ", "");
 await page.reload(); await page.waitForFunction(() => document.querySelector("#collRows .gc, #collRows .row"));
 ok((await page.locator("#tOwned").textContent()) === "3", "collezione persistita dopo ricarica");
 
+/* import massivo della collezione */
+await page.click("#collImportBtn");
+await page.fill("#collImportText", "3 Mantis Blades\n2 WNC-030\nHEI-004 x1\nNon esiste");
+ok((await page.locator("#collImportPreview").textContent()).includes("6 copie") && (await page.locator("#collImportPreview").textContent()).includes("Non esiste"), "anteprima import: conteggio e righe non riconosciute");
+await page.click("#collImportGo");
+await page.waitForFunction(() => document.querySelector("#collImport").hidden);
+ok((await page.locator("#tOwned").textContent()) === "9", "aggiorna: 3 già possedute + 6 = 9 copie");
+await page.click("#collImportBtn");
+await page.fill("#collImportText", "1 Detonate");
+await page.click('#collImportMode [data-v="replace"]');
+page.once("dialog", d => d.accept());
+await page.click("#collImportGo");
+await page.waitForFunction(() => document.querySelector("#collImport").hidden);
+ok((await page.locator("#tOwned").textContent()) === "1", "sostituisci: la collezione contiene solo la lista nuova");
+// ripristina 3 copie di Mantis Blades per i controlli successivi
+await page.click("#collImportBtn"); await page.fill("#collImportText", "3 WNC-025"); await page.click('#collImportMode [data-v="add"]'); await page.click("#collImportGo");
+await page.waitForFunction(() => document.querySelector("#collImport").hidden);
+ok((await page.locator("#tOwned").textContent()) === "4", "aggiunte 3 copie");
+
 /* scanner da foto (OCR vero, motore da CDN) */
 await page.click("#collScan");
 await page.waitForSelector("#scan:not([hidden])");

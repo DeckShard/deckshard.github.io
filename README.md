@@ -17,6 +17,8 @@ engine.js                  motore di regole, puro (collaudabile con Node)
 bot.js                     avversario euristico
 scanner.js                 scanner della collezione (OCR con Tesseract.js, caricato dalla CDN quando serve)
 engine.test.mjs            collaudo del motore (bot contro bot + regole puntuali)
+fuzz.test.mjs              300 partite con mazzi casuali: nessun effetto deve rompere il motore
+parser.js                  interprete del testo delle carte (effetti, eventi, condizioni)
 ui.test.mjs                collaudo dell'interfaccia con Playwright
 .github/workflows/collect.yml   raccolta notturna + pubblicazione su GitHub Pages
 public/, data/img/         creati dal collector (il workflow li scrive nel repository)
@@ -40,13 +42,13 @@ ln -s public/cards.json . ; ln -s public/prices.json . ; ln -s data/img img
 python -m http.server 8080              # poi apri http://localhost:8080/
 ```
 
-Collaudo: `node engine.test.mjs` e, con il server acceso, `BASE=http://127.0.0.1:8080 node ui.test.mjs` (serve `npm i playwright`).
+Collaudo: `node engine.test.mjs`, `node fuzz.test.mjs` e, con il server acceso, `BASE=http://127.0.0.1:8080 node ui.test.mjs` (serve `npm i playwright`).
 
 ## Cosa fa il motore di gioco
 
 Regole di base applicate per intero: fasi del turno (prepara, pesca, Gig dal fixer con il d20 per ultimo), Eddies e vendita di una carta a turno, Chiamata di una Leggenda a turno per 1 €$ (si tocca la Leggenda coperta da scoprire), Leggende spese per pagare, Go Solo, Lag e Adrenaline, attacchi a Unità spese o all'area Gig con **finestra di reazione** del difensore (Blocker, Chiamata di una Leggenda, Programmi e abilità Quick, anche in sequenza), furto dei Gig in base alla potenza (1 ogni 10), Street Cred, vittoria con 7 Gig all'inizio del turno, overtime dopo il 7º turno, sconfitta per mazzo vuoto, mulligan, chi inizia con 2 Leggende spese. In due sullo stesso dispositivo le decisioni del difensore si aprono solo dopo un suo tocco, così l'attaccante non vede le sue carte.
 
-Effetti delle carte interpretati dal testo: pesca, trash, +potenza, Gig ±N, sconfiggi/spendi Unità rivali per potenza o costo, scarti, «sconfiggi tutte le altre Unità», «spendi tutte le Unità rivali», «può attaccare solo Unità», «non può attaccare», «scegli un effetto: A // B», ricerca nelle prime N carte del mazzo, recupero dal trash (anche tra le carte appena trashate), «puoi sconfiggere un Gear: se lo fai pesca…», Chiamata gratis, gioca un Gear/Unità dalla mano gratis, scambio di Gig, «imposta un Gig al valore di un altro», prepara Unità/Leggende, Adrenaline a un'altra Unità, «spendi e non si prepara». Il resto (condizioni «se/quando», conteggi, effetti a fine turno) viene segnalato nel registro come **effetto manuale** e, per restare nelle regole, non si applica: gli strumenti manuali esistono nel codice (`MANUAL` in `sim.js`) ma sono spenti. Il bot ignora gli effetti manuali.
+Effetti delle carte: l'interprete (`parser.js`) legge il testo e lo trasforma in operazioni. Copre gli inneschi {Play}/{Call}/{Attack}/{Defeated}/{Spend}, gli eventi («When this Unit steals a Gig…», «When this Unit uses Blocker…», «When this Unit wins/loses a fight…», «When this Unit or Legend is spent…», «At the end/start of your turn…», «The first time … each turn»), le condizioni («If you control a value-pair / a Gig with 8+ value / an even and an odd Gig…», «If you have more ☆ than a Rival», «If a Rival controls more Gigs than you», «If all friendly Legends are face-up»…, anche con «instead» e «Otherwise»), i conteggi («for each friendly face-up Legend / Gig with an odd value / Unit in your trash…»), gli sconti sul costo («Play this Unit for -1 €$ for each…»), le aure di potenza (Saul Bright, Saburo, Meredith) e le restrizioni temporanee («can't attack until your next turn», «can't ready»). Operazioni: pesca, trash, vendi dal mazzo, prepara Eddies/Unità/Leggende, ±potenza, Gig ±N, scambio e copia di Gig, ruba un Gig, sconfiggi/spendi/bottom-deck Unità con vari filtri, scarti, ricerca nel mazzo, recupero dal trash, gioca gratis dalla mano o dal trash, Chiamata gratis, Blocker/Adrenaline temporanei, «scegli un effetto», «puoi pagare/scartare/sconfiggere un Gear: se lo fai…». Di 151 carte, 136 hanno tutti o parte degli effetti eseguiti; le frasi che restano fuori (effetti «la prossima volta che…», scelte del rivale, qualche aura particolare) vengono segnalate nel registro come **effetto manuale** e, per restare nelle regole, non si applicano: gli strumenti manuali esistono nel codice (`MANUAL` in `sim.js`) ma sono spenti. Il bot ignora gli effetti manuali. `fuzz.test.mjs` fa giocare al bot 300 partite con mazzi casuali per scovare errori negli effetti.
 
 Pagamenti: di base il giocatore sceglie cosa spendere toccando sulla plancia gli Eddies o le Leggende (con la scorciatoia «Tutto con Eddies» e «Annulla»); nel profilo si può attivare il pagamento automatico, che chiede conferma solo quando dovrebbe spendere una Leggenda scoperta con un'abilità Spend ancora utilizzabile.
 
@@ -55,6 +57,8 @@ Nota sul Gear: il motore somma la potenza del Gear a quella dell'Unità equipagg
 ## Import delle liste
 
 «Importa testo» accetta una carta per riga, per nome (`3 Mantis Blades`, `2x Japantown Jonin`, `Legend: V: Streetkid`) o per codice stampato sulla carta (`3 WNC-025`, `MS01 025`, `SD01-004 x2`, `EBP-001`, oppure il solo numero, riferito al set principale). Codici riconosciuti: WNC/MS01 (Welcome to Night City), HEI/SD01 (starter The Heist), EBP/SD02 (starter Embracing Power), PRM01, PRR/PRR02 (prerelease), EOR/EOR01 (Edgerunner Open), NCB/NCB01 (Night City Brawl), BT (box topper). Le righe non riconosciute vengono mostrate nell'editor del mazzo.
+
+Collezione: «Importa collezione» accetta lo stesso formato (testo incollato o file .txt/.csv) in modalità **Aggiorna** (somma alle copie possedute) o **Sostituisci** (azzera e ricarica); «Esporta testo» produce la lista con i codici, pronta da reimportare o da portare altrove.
 
 ## Scanner della collezione
 
