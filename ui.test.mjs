@@ -240,13 +240,14 @@ if(played){
   const M0 = await page.evaluate(() => null);
   const hand = page.locator('[data-handrow] .bc'); const n = await hand.count(); let dragged = false;
   for(let k = 0; k < n && !dragged; k++){
+    if(await hand.count() <= k){ dragged = await hand.count() < n; break; }   // una carta è già stata giocata (pagata da sola)
     const card = hand.nth(k); const box = await card.boundingBox(); const field = await page.locator('.bz.mine [data-field]').boundingBox();
     const afford = (await card.locator(".co").getAttribute("class")).indexOf("no") < 0;
     if(!afford || !box || !field) continue;
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.down();
     await page.mouse.move(box.x + 20, box.y - 40, { steps: 4 }); await page.mouse.move(field.x + field.width / 2, field.y + field.height / 2, { steps: 6 });
     await page.mouse.up(); await page.waitForTimeout(150);
-    dragged = /Paga \d+ €\$/.test(await page.locator(".bstrip .lg").textContent()) || (await page.locator(".bstrip .lg").textContent()).includes("Trascina");
+    dragged = /Paga \d+ €\$/.test(await page.locator(".bstrip .lg").textContent()) || (await page.locator(".bstrip .lg").textContent()).includes("Trascina") || await hand.count() < n;
   }
   if(dragged){ ok(true, "trascinamento dalla mano avvia il gioco della carta"); if(await page.locator("#bPayCancel").count()) await page.click("#bPayCancel"); }
 }
@@ -340,13 +341,13 @@ await page.click("#bMenu"); await page.click('.pop button:has-text("Esci")');
 await page.click("#simTutorial");
 await page.waitForSelector("#board:not([hidden])");
 await page.waitForSelector(".tutbar");
-ok((await page.locator(".tutbar .n").textContent()) === "1/10", "tutorial: primo passo");
+ok((await page.locator(".tutbar .n").textContent()) === "1/12", "tutorial: primo passo");
 await page.click('[data-mull="keep"]'); await page.waitForTimeout(300);
-{ const tn = await page.locator(".tutbar .n").textContent(); ok(/^(2|3)\/10/.test(tn), "tutorial: avanza dopo il mulligan (" + tn + ")"); }
+{ const tn = await page.locator(".tutbar .n").textContent(); ok(/^(2|3)\/12/.test(tn), "tutorial: avanza dopo il mulligan (" + tn + ")"); }
 ok(await page.locator("#tutSkip").count() === 0, "tutorial senza pulsante di chiusura");
 // il bot inizia (partita seedata); al mio turno: dado, poi i passi guidati con le azioni giuste sempre disponibili
-for(let i = 0; i < 80; i++){ if(await page.locator("#simAsk [data-ask]").count()){ await page.click("#simAsk [data-ask] >> nth=0"); } if(/^3\/10/.test(await page.locator(".tutbar .n").textContent().catch(() => ""))) break; await page.waitForTimeout(300); }
-ok(/^3\/10/.test(await page.locator(".tutbar .n").textContent()), "tutorial: passo della vendita raggiunto al mio turno");
+for(let i = 0; i < 80; i++){ if(await page.locator("#simAsk [data-ask]").count()){ await page.click("#simAsk [data-ask] >> nth=0"); } if(/^3\/12/.test(await page.locator(".tutbar .n").textContent().catch(() => ""))) break; await page.waitForTimeout(300); }
+ok(/^3\/12/.test(await page.locator(".tutbar .n").textContent()), "tutorial: passo della vendita raggiunto al mio turno");
 ok(await page.locator("#bEnd").count() === 0, "fine turno nascosto finché il passo non è completato");
 // vendita: la carta vendibile c'è sempre
 let soldT = false;
@@ -355,8 +356,8 @@ for(let k = 0; k < (await page.locator('[data-handrow] .bc').count()) && !soldT;
   if(await sb.count() && await sb.isEnabled()){ await sb.click(); soldT = true; } else await page.click("#board .bstrip .st");
 }
 await page.waitForTimeout(300);
-ok(soldT && /^4\/10/.test(await page.locator(".tutbar .n").textContent()), "venduta: passo 4 (gioca un'Unità)");
-// l'Unità da ≤2 €$ c'è sempre
+ok(soldT && /^4\/12/.test(await page.locator(".tutbar .n").textContent()), "venduta: passo 4 (gioca un'Unità)");
+// l'Unità con potenza da ≤3 €$ (Dexter) c'è sempre; le altre Unità sono disattivate in questo passo
 let playedT = false;
 for(let k = 0; k < (await page.locator('[data-handrow] .bc').count()) && !playedT; k++){
   await page.click(`[data-handrow] .bc >> nth=${k}`); const pb = page.locator('.pop button:has-text("Gioca")');
@@ -365,8 +366,38 @@ for(let k = 0; k < (await page.locator('[data-handrow] .bc').count()) && !played
 for(let k = 0; k < 6 && /Paga \d+ €\$/.test(await page.locator(".bstrip .lg").textContent()); k++){ const ed = page.locator(".bz.mine [data-eddies].target"), lg = page.locator(".bz.mine [data-legend].target"); if(await ed.count()) await ed.click(); else if(await lg.count()) await lg.first().click(); await page.waitForTimeout(120); }
 for(let i = 0; i < 6 && await page.locator("#simAsk [data-ask]").count(); i++){ await page.click("#simAsk [data-ask] >> nth=-1"); await page.waitForTimeout(150); }
 await page.waitForTimeout(300);
-ok(playedT && /^5\/10/.test(await page.locator(".tutbar .n").textContent()), "giocata: passo 5 (chiama una Leggenda)");
-await page.click("#bMenu"); await page.click('.pop button:has-text("Esci")');
+ok(playedT && /^5\/12/.test(await page.locator(".tutbar .n").textContent()), "giocata: passo 5 (chiama una Leggenda)");
+// passi 5→10: chiama, fine turno, secondo turno (dado, vendi, Bombus), attacca con Dexter, fine turno, reazione all'attacco del bot
+const step = async () => (await page.locator(".tutbar .n").textContent().catch(() => "")).split("/")[0];
+const payLoop = async () => { for(let k = 0; k < 8 && /Paga \d+ €\$/.test(await page.locator(".bstrip .lg").textContent()); k++){ const ed = page.locator(".bz.mine [data-eddies].target"), lg = page.locator(".bz.mine [data-legend].target"); if(await ed.count()) await ed.click(); else if(await lg.count()) await lg.first().click(); await page.waitForTimeout(120); } };
+const asks = async (sel = "#simAsk [data-ask] >> nth=0") => { for(let i = 0; i < 8 && await page.locator("#simAsk [data-ask]").count(); i++){ await page.click(sel); await page.waitForTimeout(150); } };
+await page.click('.bz.mine [data-legend] >> nth=0'); await page.click('.pop button:has-text("Chiama")'); await payLoop(); await asks(); await page.waitForTimeout(300);
+ok(await step() === "6", "chiamata: passo 6 (fine turno)");
+await page.click("#bEnd");
+// il bot gioca; al mio turno arriva la scelta del dado (le opzioni iniziano con «d»), poi si vende e si gioca Bombus
+let dieSeen = false;
+for(let i = 0; i < 80 && !dieSeen; i++){ const a = page.locator("#simAsk [data-ask]"); if(await a.count()){ const t = await a.first().textContent(); if(/^d\d+/.test(t)) dieSeen = true; await a.first().click(); } await page.waitForTimeout(300); }
+await page.waitForTimeout(400);
+ok(dieSeen && await step() === "7", "secondo turno: passo 7 (gioca Bombus)");
+{ let s2 = false; for(let k = 0; k < (await page.locator('[data-handrow] .bc').count()) && !s2; k++){ await page.click(`[data-handrow] .bc >> nth=${k}`); const sb = page.locator('.pop button:has-text("Vendi")'); if(await sb.count() && await sb.isEnabled()){ await sb.click(); s2 = true; } else await page.click("#board .bstrip .st"); }
+  let pb2 = false; for(let k = 0; k < (await page.locator('[data-handrow] .bc').count()) && !pb2; k++){ await page.click(`[data-handrow] .bc >> nth=${k}`); const pb = page.locator('.pop button:has-text("Gioca")'); if(await pb.count() && await pb.isEnabled()){ await pb.click(); pb2 = true; } else await page.click("#board .bstrip .st"); }
+  await payLoop(); await asks(); await page.waitForTimeout(300); }
+ok(await step() === "8", "Bombus giocata: passo 8 (attacca)");
+await page.click('.bz.mine [data-field] .bc[title^="Dexter"]'); await page.click('.pop button:has-text("area Gig")'); await asks("#simAsk [data-ask] >> nth=-1"); await page.waitForTimeout(300);
+ok(await step() === "9", "attacco fatto: passo 9 (fine turno)");
+await page.click("#bEnd");
+let reacted = false;
+for(let i = 0; i < 80; i++){
+  if(await page.locator('#simAsk [data-ask]:has-text("Blocca con")').count()){ ok(true, "il bot attacca: finestra di reazione con Blocca/Chiama/Quick"); await page.click('#simAsk [data-ask]:has-text("Blocca con")'); reacted = true; await page.waitForTimeout(300); break; }
+  if(await page.locator("#simAsk [data-ask]").count()) await page.click("#simAsk [data-ask] >> nth=-1");
+  if(await page.locator("#bEnd").count()) break;
+  await page.waitForTimeout(400);
+}
+ok(reacted && ["11", "12"].includes(await step()), "bloccato con Bombus: passo 11 (" + await step() + ")");
+await page.click("#bMenu"); ok(await page.locator('.pop button:has-text("Abbandona il tutorial")').count() === 1 && await page.locator('.pop button:has-text("Mi arrendo")').count() === 0, "nel tutorial il menù ha «Abbandona il tutorial» al posto della resa");
+const lossesBefore = await page.evaluate(() => JSON.parse(localStorage.getItem("ncd:record") || "{}").losses || 0);
+await page.click('.pop button:has-text("Abbandona il tutorial")'); await page.waitForTimeout(300);
+ok(await page.locator("#board[hidden]").count() === 1 && (await page.evaluate(() => JSON.parse(localStorage.getItem("ncd:record") || "{}").losses || 0)) === lossesBefore, "abbandono: plancia chiusa, nessuna sconfitta registrata");
 
 /* desktop: tab in alto, griglia larga */
 const desk = await browser.newPage({ viewport: { width: 1280, height: 900 } });

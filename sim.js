@@ -331,7 +331,8 @@ function menu(el){
   openPop(el, [
     ...(MANUAL ? [{ label: "Pesca 1 (manuale)", disabled: !human[M.id] || G.winner != null, fn: () => { manual.draw(G, M.id, 1); after(); } }] : []),
     { label: "Registro completo", fn: () => { showLog = true; render(); } },
-    { label: "Mi arrendo", cls: "danger", disabled: G.winner != null, fn: () => { manual.concede(G, M.id); after(); } },
+    ...(tutorialActive() ? [{ label: "Abbandona il tutorial", cls: "danger", fn: () => { G.recorded = true; G = null; closeBoard(); toast("Tutorial chiuso: nessuna sconfitta registrata"); } }]
+                        : [{ label: "Mi arrendo", cls: "danger", disabled: G.winner != null, fn: () => { manual.concede(G, M.id); after(); } }]),
     { label: "Esci dalla plancia", fn: () => closeBoard() }
   ], "Menù");
 }
@@ -456,7 +457,7 @@ function wire(){
     }
     const mull = t.closest("[data-mull]"); if(mull){ const who = mulliganPending(); mulligan(G, who, mull.dataset.mull === "redo"); if(tutorialActive() && who === 0) ensureHand(G, 0); render(); tick(); return; }
     const zoom = t.closest("[data-zoom]"); if(zoom){ openLens(imgUrl(zoom.dataset.zoom)); return; }
-    const ask = t.closest("[data-ask]"); if(ask){ resolve(G, +ask.dataset.ask); render(); tick(); return; }
+    const ask = t.closest("[data-ask]"); if(ask){ if(G.pending && G.pending.kind === "block" && human[G.pending.player]) G.tutReacted = true; resolve(G, +ask.dataset.ask); render(); tick(); return; }
     const hand = t.closest("[data-hand=\"1\"]"); if(hand){ handCard(hand, G.players[me()]); return; }
     const leg = t.closest("[data-legend]"); if(leg){ const owner = leg.closest(".bz").classList.contains("mine") ? me() : 1 - me(); legendCard(leg, owner); return; }
     const bc = t.closest(".bc"); if(bc){ const f = bc.closest("[data-field]"); if(f){ fieldCard(bc, +f.dataset.field); return; } }

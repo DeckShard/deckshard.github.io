@@ -9,7 +9,7 @@ import { renderProfile, renderSettings } from "./profile.js";
 import { renderSim } from "./sim.js";
 import { renderRules } from "./rules.js";
 
-export const APP_VERSION = "1.2.0";
+export const APP_VERSION = "1.2.1";
 
 const TABS = { collection: renderCollection, deck: renderDeck, profile: renderProfile, sim: renderSim, rules: renderRules, settings: renderSettings };
 

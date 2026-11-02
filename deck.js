@@ -348,7 +348,8 @@ function renderBrowser(){
     const pe = d.format === "sealed" ? d.pool.find(e => e.cid === c.id) : null;
     const extra = d.format === "sealed" ? "" : `<span class="chip${ramKo ? " bad" : ""}">RAM ${c.ramN}</span>${cardQty(c) ? `<span class="chip">hai ${cardQty(c)}</span>` : ""}`;
     const left = d.format === "sealed" ? poolCount(d, c.id) - (browse === "legends" ? (inDeck ? 1 : 0) : (inDeck || 0)) : 0;
-    return rowHTML(c, pe ? pe.pid : null, right, extra, false, d.format === "sealed" ? `${left}x` : "");
+    const html = rowHTML(c, pe ? pe.pid : null, right, extra, false, d.format === "sealed" ? `${left}x` : "");
+    return d.format !== "sealed" && !cardQty(c) ? html.replace('class="row"', 'class="row unowned" title="Non in collezione"') : html;   // non posseduta: miniatura in bianco e nero
   }).join("") || `<div class="empty">Nessuna carta con questi filtri.</div>`;
 }
 
