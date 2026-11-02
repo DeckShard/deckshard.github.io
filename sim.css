@@ -38,7 +38,9 @@
 .bc.dragging{opacity:.35}
 .bc.ghost{position:fixed;z-index:200;pointer-events:none;transform:translate(-50%,-60%) scale(1.15);box-shadow:0 12px 30px rgba(0,0,0,.6);outline:2px solid var(--acc2Fill)}
 .bc.ghost.rot{transform:translate(-50%,-60%) rotate(90deg) scale(1.15)}
-.drop{outline:3px solid #fcee0a!important;box-shadow:0 0 0 4px rgba(252,238,10,.35)}
+.candrop{outline:2px dashed var(--acc2Fill);outline-offset:2px;animation:pulse 1.2s ease-in-out infinite}
+.brow.field.candrop{outline-offset:-3px;background:color-mix(in srgb,var(--acc2Fill) 8%,transparent)}
+.drop{outline:3px solid #fcee0a!important;box-shadow:0 0 0 4px rgba(252,238,10,.35);animation:none}
 .brow.field.drop{outline-offset:-3px;background:rgba(252,238,10,.08)}
 .bc.ok{outline:2px solid var(--good)}
 .bc .pw{position:absolute;right:2px;bottom:2px;background:rgba(0,0,0,.78);color:#fff;font-weight:800;font-size:11px;padding:1px 5px;border-radius:5px;line-height:1.2}

@@ -15,6 +15,17 @@ import { starterDeck, isLegal, deckSize } from "./deck.js";
 const MANUAL = false;
 let G = null, mode = "bot", human = [true, false], sel = null, targeting = null, pop = null, showLog = false, botTimer = null, handoff = false, wired = false;
 let lastSeen = { turn: 0, seen: 0 }, noteMsg = "", noteT = null, reactCover = null;
+let drag = null;   // trascinamento in corso dalla mano
+const clearDrop = () => $$("#board .drop").forEach(x => x.classList.remove("drop"));
+const killGhosts = () => { $$(".bc.ghost").forEach(g => g.remove()); $$("#board .dragging").forEach(x => x.classList.remove("dragging")); $$("#board .candrop").forEach(x => x.classList.remove("candrop")); clearDrop(); };
+/* all'inizio del trascinamento: evidenzia dove la carta può essere lasciata */
+function markDropZones(c){
+  const M = G.players[me()];
+  if(c.card.type === "Gear"){
+    $$(`#board [data-field="${M.id}"] .bc`).forEach(x => x.classList.add("candrop"));
+    for(const l of M.legends) if(l.faceUp && !l.onField && !l.removed){ const el = $(`#board .bz.mine [data-legend][data-uid="${l.uid}"]`); if(el) el.classList.add("candrop"); }
+  } else { const f = $(`#board [data-field="${M.id}"]`); if(f) f.classList.add("candrop"); }
+}
 /* avviso dentro la plancia (il toast globale non segue la rotazione) */
 function note(msg){ noteMsg = msg; clearTimeout(noteT); noteT = setTimeout(() => { noteMsg = ""; const n = $("#noteMsg"); if(n) n.remove(); }, 2600); render(); }
 const names = () => [S.profile.nick || "Tu", mode === "bot" ? "Bot" : "Giocatore 2"];
@@ -146,6 +157,7 @@ function render(){
   const last = G.log.slice(-1)[0];
   // misura delle carte dall'altezza disponibile: 2 righe rivale + campo + pile + mano (1,15×) + barra e margini
   const H = board.clientHeight; board.style.setProperty("--bh", H + "px");
+  if(drag){ drag = null; killGhosts(); }   // un ridisegno durante un trascinamento lo annulla, senza lasciare copie in giro
   board.style.setProperty("--cw", Math.max(32, Math.min(64, (H - 110) / (1.4 * 4.15 + 0.6))).toFixed(1) + "px");
   board.innerHTML = `
     <div class="bz rival">
@@ -274,7 +286,7 @@ function legendCard(el, owner){
   const items = [], idx = P.legends.indexOf(l);
   if(mine && myTurn && !l.removed && !l.onField){
     if(!l.faceUp) items.push({ label: "Chiama questa Leggenda (1 €$)", cls: "acc", disabled: P.called || !canPay(P, 1), fn: () => after(doAction(G, M.id, { t: "call", idx })) });
-    if(l.faceUp && (l.card.kw || []).includes("Go Solo") && l.card.cost != null) items.push({ label: `Go Solo (${l.card.cost} €$): entra come Unità pronta`, disabled: l.spent || ready(P) - 1 < l.card.cost, fn: () => after(doAction(G, M.id, { t: "gosolo", idx })) });
+    if(l.faceUp && (l.card.kw || []).includes("Go Solo") && l.card.cost != null) items.push({ label: `Go Solo (${l.card.cost} €$): entra come Unità pronta${l.spent ? "" : ", può pagare 1 €$ da sé"}`, disabled: !canPay(P, l.card.cost), fn: () => after(doAction(G, M.id, { t: "gosolo", idx })) });
     if(l.faceUp && l.fx.spend.length) items.push({ label: "Abilità {Spend}", disabled: l.spent, fn: () => after(doAction(G, M.id, { t: "spend", uid: l.uid })) });
     if(MANUAL) items.push({ label: l.spent ? "Prepara (manuale)" : "Spendi come 1 €$ (manuale)", fn: () => { manual.toggleSpent(G, owner, l.uid); after(); } });
     if(MANUAL && !l.faceUp) items.push({ label: "Scopri senza chiamare (manuale)", fn: () => { manual.flip(G, owner, idx); after(); } });
@@ -332,9 +344,8 @@ function wire(){
   board.addEventListener("contextmenu", e => e.preventDefault());
   const lpCancel = () => clearTimeout(lp);
   // trascinamento dalla mano: sulla plancia per giocare, su un'Unità/Leggenda per equipaggiare un Gear
-  let drag = null;
   const rotated = () => matchMedia("(orientation: portrait) and (max-width: 760px)").matches;
-  const clearDrop = () => $$("#board .drop").forEach(x => x.classList.remove("drop"));
+
   const dropTarget = (x, y) => {
     const M = G.players[me()], el = document.elementFromPoint(x, y); if(!el) return null;
     const bc = el.closest(".bc");
@@ -344,23 +355,28 @@ function wire(){
     return null;
   };
   board.addEventListener("pointerdown", e => {
+    if(drag) return;                                   // un secondo dito non avvia un altro trascinamento
+    if(!e.isPrimary) return;
     const el = e.target.closest("[data-handrow] .bc"); if(!el || !G || G.winner != null) return;
     const M = G.players[me()]; if(G.active !== M.id || G.phase !== "main" || G.pending || !human[M.id]) return;
-    drag = { uid: +el.dataset.uid, el, x: e.clientX, y: e.clientY, active: false, ghost: null };
+    killGhosts();
+    drag = { uid: +el.dataset.uid, el, x: e.clientX, y: e.clientY, active: false, ghost: null, id: e.pointerId };
   });
   board.addEventListener("pointermove", e => {
-    if(!drag) return;
+    if(!drag || e.pointerId !== drag.id) return;
     const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
     if(!drag.active){ if(Math.hypot(dx, dy) < 12) return; drag.active = true; lpCancel(); try{ drag.el.setPointerCapture(e.pointerId); }catch(err){}
-      drag.ghost = drag.el.cloneNode(true); drag.ghost.className = "bc big ghost" + (rotated() ? " rot" : ""); document.body.appendChild(drag.ghost); drag.el.classList.add("dragging"); }
+      drag.ghost = drag.el.cloneNode(true); drag.ghost.className = "bc big ghost" + (rotated() ? " rot" : ""); document.body.appendChild(drag.ghost); drag.el.classList.add("dragging");
+      const c = G.players[me()].hand.find(x => x.uid === drag.uid); if(c) markDropZones(c); }
     drag.ghost.style.left = e.clientX + "px"; drag.ghost.style.top = e.clientY + "px";
     clearDrop(); const t = dropTarget(e.clientX, e.clientY); if(t && t.el) t.el.classList.add("drop");
   });
   const endDrag = e => {
-    if(!drag) return;
+    if(!drag || (e && e.pointerId !== drag.id && e.type !== "blur")) return;
     const d = drag; drag = null;
+    killGhosts();
     if(!d.active) return;
-    d.ghost && d.ghost.remove(); d.el.classList.remove("dragging"); clearDrop(); lpFired = true;   // il click che segue va ignorato
+    // (nessun "click" segue un trascinamento che finisce su un altro elemento: non serve ignorarlo)
     const M = G.players[me()], c = M.hand.find(x => x.uid === d.uid); if(!c) return;
     const t = e.type === "pointercancel" ? null : dropTarget(e.clientX, e.clientY);
     if(!t) return;
@@ -368,6 +384,9 @@ function wire(){
     if(t.kind === "field" || t.kind === "unit") after(doAction(G, M.id, { t: "play", uid: c.uid }));
   };
   board.addEventListener("pointerup", endDrag); board.addEventListener("pointercancel", endDrag);
+  // rilascio fuori dalla plancia o finestra che perde il fuoco: niente copie fantasma in giro
+  window.addEventListener("pointerup", e => { if(drag && e.pointerId === drag.id) endDrag(e); else if(!drag) killGhosts(); });
+  window.addEventListener("blur", () => { drag = null; killGhosts(); });
   board.addEventListener("pointerup", lpCancel); board.addEventListener("pointercancel", lpCancel); board.addEventListener("pointermove", e => { if(e.movementX || e.movementY) lpCancel(); });
   board.addEventListener("click", e => {
     if(lpFired){ lpFired = false; return; }

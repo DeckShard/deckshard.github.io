@@ -134,6 +134,23 @@ console.log(`bot vs bot: ${wins[0]}–${wins[1]}, turni medi ${(turnsTot / 60).t
 }
 import { canPay } from "./engine.js";
 
+/* --- Go Solo: la Leggenda può spendere sé stessa per il proprio costo */
+{
+  const mk = (names, legends) => ({ name: "T", legends: legends.map(n => ({ cid: byName(n).id, pid: byName(n).def.id })), cards: names.map(n => ({ cid: byName(n).id, pid: byName(n).def.id, n: 1 })) });
+  const d = mk(Array(40).fill("Animals Wrecker"), ["V: Streetkid", "Rogue Amendiares: Preem Solo", "Goro Takemura: Hands Unclean"]);
+  const G = createGame([d, JSON.parse(JSON.stringify(d))], byId, { seed: 5 });
+  mulligan(G, 0, false); mulligan(G, 1, false); resolve(G, 0);
+  const P = G.players[G.active];
+  const v = P.legends.find(l => l.card.dn === "V: Streetkid"); v.faceUp = true; v.spent = false;
+  for(const l of P.legends) l.spent = false;
+  P.eddies = Array.from({ length: 2 }, (_, i) => ({ uid: 8000 + i, card: { dn: "E" }, spent: false }));   // 2 Eddies + 3 Leggende = 5 = costo di V
+  const idx = P.legends.indexOf(v);
+  ok(doAction(G, P.id, { t: "gosolo", idx }), "Go Solo accettato con 2 Eddies + 3 Leggende (V compresa)");
+  ok(G.pending && G.pending.kind === "pay" && G.pending.options.some(o => o.l === v), "V è tra le fonti di pagamento del proprio Go Solo");
+  let guard = 0; while(G.pending && G.pending.kind === "pay" && guard++ < 8){ const i = G.pending.options.findIndex(o => o.l === v); resolve(G, i >= 0 ? i : 0); }
+  ok(!G.pending && P.field.some(u => u.isLegend && u.card.dn === "V: Streetkid" && !u.spent && !u.lag), "V entra in campo pronta dopo aver pagato anche con sé stessa");
+}
+
 /* --- furto dei Gig in base alla potenza */
 {
   const mk = (names, legends) => ({ name: "T", legends: legends.map(n => ({ cid: byName(n).id, pid: byName(n).def.id })), cards: names.map(n => ({ cid: byName(n).id, pid: byName(n).def.id, n: 1 })) });
