@@ -235,11 +235,12 @@
 html[data-motion="reduce"] #oppFeed,html[data-motion="reduce"] .bc.justnow{animation:none}
 
 /* Gear sotto la carta (stile Arena): chiusi ne spunta un margine a destra, aperti stanno di fianco */
-#board .bcw{position:relative;display:inline-flex;flex:0 0 auto;width:calc(var(--cw) * (1 + .2 * var(--gn)));transition:width .18s ease}
-#board .bcw.open{width:calc(var(--cw) * (1 + 1.06 * var(--gn)))}
+#board .bcw{--hx:1;position:relative;display:inline-flex;flex:0 0 auto;width:calc(var(--cw) * (var(--hx) + .2 * var(--gn)));transition:width .22s ease}
+#board .bcw.hspent{--hx:1.4}
+#board .bcw.open{width:calc(var(--cw) * (var(--hx) + 1.06 * var(--gn)))}
 #board .bcw > .bc.host{position:relative;z-index:3;margin:0}
-#board .bcw > .gearc{position:absolute;top:0;left:0;z-index:calc(3 - var(--gi));margin:0;transform:translateX(calc(var(--cw) * .2 * var(--gi))) scale(.92);transform-origin:left center;transition:transform .18s ease;filter:brightness(.8)}
-#board .bcw.open > .gearc{transform:translateX(calc(var(--cw) * 1.06 * var(--gi)));z-index:4;filter:none}
+#board .bcw > .gearc{position:absolute;top:0;left:0;z-index:calc(3 - var(--gi));margin:0;transform:translateX(calc(var(--cw) * (var(--hx) - 1 + .2 * var(--gi)))) scale(.92);transform-origin:left center;transition:transform .22s ease;filter:brightness(.8)}
+#board .bcw.open > .gearc{transform:translateX(calc(var(--cw) * (var(--hx) + .06 + 1.06 * (var(--gi) - 1))));z-index:4;filter:none}
 #board .bcw.open > .gearc{box-shadow:0 0 0 1px var(--acc2Fill, var(--acc2))}
 #board .bc .gn{position:absolute;left:2px;bottom:2px;font-size:calc(9px * var(--bz,1));font-weight:800;padding:0 3px;border-radius:2px;background:rgba(0,0,0,.75);color:#fff;line-height:1.4}
 #board .bcw.open .bc .gn{display:none}
@@ -254,3 +255,12 @@ html[data-motion="reduce"] #board .bcw,html[data-motion="reduce"] #board .bcw > 
 #board .clk.turn{border-color:var(--acc)}
 #board .clk.low{color:#fff;background:var(--bad,#e23)}
 .winbox .series{margin:4px 0 10px;color:var(--ink2)}
+
+/* carte spese ad angolo retto (Unità e Leggende; gli Eddies restano contatori): la carta gira di 90°
+   e il suo posto in riga si allarga quanto serve (la carta girata è larga 1,4 volte), senza sovrapposizioni */
+#board .bc{transition:transform .22s ease,margin .22s ease,box-shadow .15s}
+#board .bc.spent{transform:rotate(90deg);margin-left:calc(var(--cw) * .2);margin-right:calc(var(--cw) * .2)}
+#board .bc.spent.sel{transform:rotate(90deg) translateX(-4px)}
+#board .bc.spent .pw,#board .bc.spent .gn{transform:rotate(-90deg)}
+#board .bcw > .bc.host.spent{margin-left:calc(var(--cw) * .2);margin-right:calc(var(--cw) * .2)}
+html[data-motion="reduce"] #board .bc{transition:none}

@@ -452,7 +452,7 @@ function cardHTML(x, cls = "", extra = ""){
     ${x.card.type === "Unit" || x.isLegend ? `<span class="pw${pw !== base ? " mod" : ""}">${pw}</span>` : ""}${extra}${gear.length ? `<span class="gn" aria-hidden="true">⚙${gear.length}</span>` : ""}</div>`;
   if(!gear.length) return card;
   const open = gearOpen === x.uid;
-  return `<div class="bcw${open ? " open" : ""}" data-w="${x.uid}" style="--gn:${gear.length}">${card}${gear.map((g, i) => `<div class="bc gearc${flashUids.has(g.uid) ? " justnow" : ""}" data-uid="${g.uid}" data-gear-of="${x.uid}" style="--gi:${i + 1}" title="${esc(g.card.dn)} (Gear)">${g.pid ? `<img src="${thumbUrl(g.pid)}" alt="">` : `<div class="n">${esc(g.card.dn)}</div>`}</div>`).join("")}</div>`;
+  return `<div class="bcw${open ? " open" : ""}${x.spent ? " hspent" : ""}" data-w="${x.uid}" style="--gn:${gear.length}">${card}${gear.map((g, i) => `<div class="bc gearc${flashUids.has(g.uid) ? " justnow" : ""}" data-uid="${g.uid}" data-gear-of="${x.uid}" style="--gi:${i + 1}" title="${esc(g.card.dn)} (Gear)">${g.pid ? `<img src="${thumbUrl(g.pid)}" alt="">` : `<div class="n">${esc(g.card.dn)}</div>`}</div>`).join("")}</div>`;
 }
 function gearCard(el){
   const host = +el.dataset.gearOf;
