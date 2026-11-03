@@ -40,9 +40,9 @@ const names = () => [S.profile.nick || "Tu", gmode === "bot" ? "IA" : "Giocatore
 
 /* tutte le mosse passano da qui: in una partita online vengono anche inviate all'avversario */
 const online = () => gOnline && ON.T.row;
-function act(pi, a){ animWho = "mine"; const m = moveOf(a); const r = doAction(G, pi, m); if(online()){ ON.send({ k: "a", p: pi, a: m }); clockMark(); } return r; }
-function res(i){ animWho = "mine"; const r = resolve(G, i); if(online()){ ON.send({ k: "r", i: i == null ? -1 : i }); clockMark(); } return r; }
-function doMull(pi, d){ if(G.players[pi].mulliganed) return; animWho = "mine"; mulligan(G, pi, d); if(online()){ ON.send({ k: "m", p: pi, d: d ? 1 : 0 }); clockMark(); } }
+function act(pi, a){ markMove("mine"); const m = moveOf(a); const r = doAction(G, pi, m); if(online()){ ON.send({ k: "a", p: pi, a: m }); clockMark(); } return r; }
+function res(i){ markMove("mine"); const r = resolve(G, i); if(online()){ ON.send({ k: "r", i: i == null ? -1 : i }); clockMark(); } return r; }
+function doMull(pi, d){ if(G.players[pi].mulliganed) return; markMove("mine"); mulligan(G, pi, d); if(online()){ ON.send({ k: "m", p: pi, d: d ? 1 : 0 }); clockMark(); } }
 
 /* ------------------------------------------------------------ animazioni delle carte
    La plancia si ridisegna da zero a ogni mossa; prima del ridisegno si annota dov'era ogni carta e dopo
@@ -52,6 +52,8 @@ function doMull(pi, d){ if(G.players[pi].mulliganed) return; animWho = "mine"; m
    dell'avversario). Durata: Impostazioni → Simulator, separata per le tue mosse e per quelle avversarie;
    «Istantanea» o «Animazioni ridotte» = nessun movimento.                                              */
 let animWho = null;   // chi ha fatto l'ultima mossa: "mine" | "opp" | null (ridisegno senza animazione)
+let animBase = null;  // pile prima della mossa (Eddies e Trash): ciò che cresce va animato anche se la carta non era visibile (vendite e Programmi dell'avversario)
+function markMove(who){ animWho = who; animBase = G ? { eddies: G.players.map(P => P.eddies.length), trash: G.players.map(P => P.trash.length) } : null; }
 /* la plancia si ridisegna anche a metà animazione (tick, selezioni): le copie volanti vivono in uno strato
    che sopravvive al ridisegno, e le animazioni delle carte si riapplicano all'elemento nuovo dal punto in cui erano */
 const flyLayer = document.createElement("div"); flyLayer.id = "flyLayer";
@@ -78,7 +80,7 @@ function snapBoard(board){
   if(!G || board.hidden || !animMs()) return null;
   const m = new Map();
   for(const el of board.querySelectorAll("[data-uid]")){ const r = localRect(board, el); if(!r) continue; const img = el.querySelector(":scope > img"); m.set(+el.dataset.uid, { ...r, src: img ? img.getAttribute("src") : "", spent: el.classList.contains("spent"), back: el.classList.contains("back"), t: getComputedStyle(el).transform }); }
-  return { m, eddies: G.players.map(P => P.eddies.length), trash: G.players.map(P => P.trash.length) };
+  return { m, eddies: (animBase || {}).eddies || G.players.map(P => P.eddies.length), trash: (animBase || {}).trash || G.players.map(P => P.trash.length) };
 }
 function animateBoard(board, prev){
   board.appendChild(flyLayer);
@@ -107,29 +109,34 @@ function animateBoard(board, prev){
   }
   reapplyAnims(board, fresh);
   // copie volanti
+  const main = board.querySelector(".bmain") || board, mainR = localRect(board, main) || { cx: board.clientWidth / 2, cy: board.clientHeight / 2 };
   const fly = (from, to, src, kind) => {
     if(!from || !to) return;
     const g = document.createElement("div"); g.className = "bc fly"; g.style.cssText = `left:${from.x}px;top:${from.y}px;width:${from.w}px;height:${from.h}px`;
     if(src) g.innerHTML = `<img src="${src}" alt="">`; flyLayer.appendChild(g);
     const dx = to.cx - from.cx, dy = to.cy - from.cy, sc = Math.min(1, to.w / from.w, to.h / from.h);
-    const kf = kind === "sell" ? [{ transform: "none", opacity: 1 }, { transform: `translate(${dx}px, ${dy}px) scale(${sc}) rotateY(0deg)`, opacity: 1, offset: .62 }, { transform: `translate(${dx}px, ${dy}px) scale(${sc}) rotateY(90deg)`, opacity: .9 }]
-      : kind === "trash" ? [{ transform: "none", opacity: 1 }, { transform: `translate(${dx}px, ${dy}px) scale(${sc * .8}) rotate(12deg)`, opacity: 0 }]
-      : [{ transform: "none", opacity: 1 }, { transform: "scale(.6)", opacity: 0 }];
-    const a = g.animate(kf, { duration: kind === "sell" ? ms * 1.6 : ms * 1.1, easing: ease, fill: "forwards" }); a.onfinish = () => g.remove(); setTimeout(() => g.remove(), ms * 2 + 100);
+    let kf, dur = ms * 1.1;
+    if(kind === "sell"){ kf = [{ transform: "none", opacity: 1 }, { transform: `translate(${dx}px, ${dy}px) scale(${sc}) rotateY(0deg)`, opacity: 1, offset: .62 }, { transform: `translate(${dx}px, ${dy}px) scale(${sc}) rotateY(90deg)`, opacity: .9 }]; dur = ms * 1.6; }
+    else if(kind === "program"){   // si mostra al centro della plancia, poi va nel Trash
+      const cx = mainR.cx - from.cx, cy = mainR.cy - from.cy, big = Math.max(1.4, Math.min(2.2, (parseFloat(getComputedStyle(board).getPropertyValue("--cw")) * 2.2) / from.w));
+      kf = [{ transform: "none", opacity: 1 }, { transform: `translate(${cx}px, ${cy}px) scale(${big})`, opacity: 1, offset: .3 }, { transform: `translate(${cx}px, ${cy}px) scale(${big})`, opacity: 1, offset: .72 }, { transform: `translate(${dx}px, ${dy}px) scale(${sc * .8}) rotate(12deg)`, opacity: 0 }]; dur = ms * 3.2; }
+    else if(kind === "trash") kf = [{ transform: "none", opacity: 1 }, { transform: `translate(${dx}px, ${dy}px) scale(${sc * .8}) rotate(12deg)`, opacity: 0 }];
+    else kf = [{ transform: "none", opacity: 1 }, { transform: "scale(.6)", opacity: 0 }];
+    const a = g.animate(kf, { duration: dur, easing: ease, fill: "forwards" }); a.onfinish = () => g.remove(); setTimeout(() => g.remove(), dur + 200);
   };
   const grown = G.players.map((P, i) => ({ e: P.eddies.slice(prev.eddies[i]), t: P.trash.slice(prev.trash[i]) }));
   for(const [uid, was] of prev.m){
     if(seen.has(uid) || was.back) continue;
     const ePl = G.players.find(P => P.eddies.some(e => e.uid === uid)), tPl = G.players.find(P => P.trash.some(c => c.uid === uid));
     if(ePl){ fly(was, anchor("eddies", ePl.id), was.src, "sell"); grown[ePl.id].e = grown[ePl.id].e.filter(e => e.uid !== uid); }
-    else if(tPl){ fly(was, anchor("trash", tPl.id), was.src, "trash"); grown[tPl.id].t = grown[tPl.id].t.filter(c => c.uid !== uid); }
+    else if(tPl){ const c = tPl.trash.find(c => c.uid === uid); fly(was, anchor("trash", tPl.id), was.src, c && c.card && c.card.type === "Program" ? "program" : "trash"); grown[tPl.id].t = grown[tPl.id].t.filter(c => c.uid !== uid); }
     else fly(was, was, was.src, "fade");
   }
   // vendite e scarti dell'avversario (la sua mano non si vede): dalla mano alla pila
   for(const P of G.players){
     if(P.id === me()) continue;
     for(const e of grown[P.id].e) fly(srcOf("handc", P.id), anchor("eddies", P.id), e.pid ? thumbUrl(e.pid) : "", "sell");
-    for(const c of grown[P.id].t) fly(srcOf("handc", P.id), anchor("trash", P.id), c.pid ? thumbUrl(c.pid) : "", "trash");
+    for(const c of grown[P.id].t) fly(srcOf("handc", P.id), anchor("trash", P.id), c.pid ? thumbUrl(c.pid) : "", c.card && c.card.type === "Program" ? "program" : "trash");
   }
 }
 
@@ -315,7 +322,7 @@ function showOpp(b){
 function drainOpp(){
   if(oppQT || !oppQ.length || !G) return;
   const [m, seat] = oppQ.shift(), b = snapBefore();
-  animWho = "opp"; applyMoveAs(G, seat, m); clockMark();
+  markMove("opp"); applyMoveAs(G, seat, m); clockMark();
   if(targeting && !G.players[me()].hand.some(c => c.uid === targeting.uid) && !G.players[me()].field.some(u => u.uid === targeting.uid)) targeting = null;
   if(m.k !== "m") showOpp(b);
   render(); tick();
@@ -333,7 +340,7 @@ function tick(){
     // decisione del bot (fuori dal suo turno, es. blocco): già risolta da ask()
   }
   if(!human[G.active] && G.phase === "main" && !G.pending){
-    botTimer = setTimeout(() => { const b = snapBefore(); animWho = "opp"; const more = botStep(G, G.active); showOpp(b); render(); if(G.winner != null) finish(); if(more || G.active !== undefined) tick(); }, oppDelay(false));
+    botTimer = setTimeout(() => { const b = snapBefore(); markMove("opp"); const more = botStep(G, G.active); showOpp(b); render(); if(G.winner != null) finish(); if(more || G.active !== undefined) tick(); }, oppDelay(false));
     return;
   }
   render();
@@ -961,7 +968,7 @@ function pidOf(el){
   return null;
 }
 /* per i collaudi automatici: stessa strada dei tocchi sulla plancia */
-window.__ncdSim = { chat: () => openTableChat(), G: () => G, seat: () => me(), clocks: () => clocks(), render: () => render(),
+window.__ncdSim = { chat: () => openTableChat(), G: () => G, seat: () => me(), clocks: () => clocks(), render: () => render(), asOpp: fn => { markMove("opp"); fn(); render(); },
   // solo in locale (collaudi): una partita online finta, senza server
   ...(/^(127\.0\.0\.1|localhost)$/.test(location.hostname) ? { fakeOnline: (row, moves) => { ON.T.row = row; ON.T.seat = 0; ON.T.nicks = ["A", "B"]; ON.T.ended = null; ON.T.stamps = moves.map(m => m.at); hooksForTest.start(row, 0, ["A", "B"], moves.map(m => ({ move: m.move, seat: m.seat }))); } } : {}), act: a => { const r = act(me(), a); after(r); return r; }, res: i => { res(i); render(); tick(); } };
 /* per la Home: partita da riprendere e scorciatoia alla lobby online */
