@@ -1,6 +1,8 @@
 // DeckShard · Edge Function «push» (Supabase → Edge Functions → nome: push)
 // Manda le notifiche push quando arriva un messaggio, una sfida o una richiesta d'amicizia.
 // La chiamano tre Database Webhook (INSERT su messages, game_tables, friendships).
+// Segreto WEBHOOK_SECRET (Edge Functions → Secrets) e la stessa stringa nell'intestazione x-webhook-secret
+// dei tre webhook: così solo il database può chiedere l'invio delle notifiche.
 // Impostazioni della funzione: «Verify JWT» SPENTO (la funzione non si fida del contenuto ricevuto:
 // rilegge ogni evento dal database; e il GET restituisce solo la chiave pubblica).
 // Con GET restituisce la chiave pubblica VAPID che serve al telefono per iscriversi.
@@ -14,6 +16,10 @@ const SERVICE_KEY = (() => { try{ const k = JSON.parse(Deno.env.get("SUPABASE_SE
 // le chiavi «sb_secret_» non sono JWT: vanno solo nell'intestazione apikey
 const AUTH_HEADERS: Record<string, string> = SERVICE_KEY.startsWith("sb_") ? { apikey: SERVICE_KEY } : { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` };
 const SUBJECT = "mailto:deckshard.app@gmail.com";
+// segreto condiviso con i Database Webhook (intestazione x-webhook-secret): se è impostato tra i segreti
+// della funzione, le chiamate POST senza quel valore vengono ignorate
+const HOOK_SECRET = Deno.env.get("WEBHOOK_SECRET") || "";
+const sameSecret = (a: string, b: string) => { if(a.length !== b.length) return false; let d = 0; for(let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i); return d === 0; };
 const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-client-info", "Access-Control-Allow-Methods": "GET, POST, OPTIONS" };
 
 /* ------------------------------------------------------------ utilità */
@@ -115,6 +121,7 @@ Deno.serve(async req => {
   if(req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   try{
     if(req.method === "GET") return json({ publicKey: (await keys()).pub });
+    if(HOOK_SECRET && !sameSecret(req.headers.get("x-webhook-secret") || "", HOOK_SECRET)) return json({ error: "forbidden" }, 403);
     const ev = await describe(await req.json().catch(() => null));
     if(!ev) return json({ sent: 0, skipped: true });
     const subs = await rest(`push_subs?user_id=eq.${ev.to}&select=endpoint,p256dh,auth,prefs,lang`);

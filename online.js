@@ -92,7 +92,7 @@ export async function attach(row, seat){
     .on("postgres_changes", { event: "UPDATE", schema: "public", table: "game_tables", filter: `id=eq.${row.id}` }, p => onTableUpdate(p.new))
     .subscribe();
   chatCh = c.channel("tchat:" + row.id, { config: { broadcast: { self: false } } })
-    .on("broadcast", { event: "msg" }, p => { const m = p.payload || {}; if(!m.text) return; T.chat.push({ who: String(m.who || "").slice(0, 24), text: String(m.text).slice(0, 300), at: Date.now(), mine: false }); T.chat = T.chat.slice(-60); T.chatUnread++; emit("ncd:tablechat"); })
+    .on("broadcast", { event: "msg" }, p => { const m = p.payload || {}; if(!m.text) return; T.chat.push({ who: T.nicks[1 - T.seat] || "", text: String(m.text).slice(0, 300), at: Date.now(), mine: false }); T.chat = T.chat.slice(-60); T.chatUnread++; emit("ncd:tablechat"); })
     .subscribe();
   clearInterval(beat); beat = setInterval(heartbeat, 10000);
   document.addEventListener("visibilitychange", onVisible);
@@ -116,7 +116,7 @@ async function startFromRow(row){
   T.row = row; T.nicks = await nicksOf(row);
   const moves = await fetchMoves();
   T.applied = moves.length;
-  hooks.start(row, T.seat, T.nicks, moves);
+  hooks.start(row, T.seat, T.nicks, moves.map(withSeat));
   if(row.status === "finished") endFrom(row);
 }
 export function setupOf(row){
@@ -125,6 +125,9 @@ export function setupOf(row){
     opts: { seed: Number(row.seed), autoPay: [!!row.host_autopay, !!row.guest_autopay] }
   };
 }
+/* il posto di chi ha fatto la mossa lo dice il database (chi l'ha inserita), non la mossa */
+const seatOf = player => T.row && player === T.row.host ? 0 : 1;
+const withSeat = m => ({ move: m.move, seat: seatOf(m.player) });
 async function fetchMoves(){
   const c = await client();
   const { data, error } = await c.from("game_moves").select("seq, player, move").eq("table_id", T.row.id).order("seq").range(0, 4999);
@@ -154,7 +157,7 @@ function onRemoteMove(r){
   // il database numera le mosse senza buchi: la successiva si applica subito,
   // qualsiasi altra cosa (buco, conflitto con una mia mossa) si risolve rileggendo il registro
   if(syncing){ behind(r.seq); return; }
-  if(r.seq === T.applied + 1){ T.applied++; try{ hooks.move(r.move); }catch(e){ console.warn(e); resync(); } return; }
+  if(r.seq === T.applied + 1){ T.applied++; try{ hooks.move(r.move, seatOf(r.player)); }catch(e){ console.warn(e); resync(); } return; }
   // già applicata (arrivata dopo una rilettura) o in conflitto con una mia mossa: in quel caso
   // il database rifiuta la mia e send() rilegge il registro. Un buco invece si colma rileggendo.
   if(r.seq > T.applied + 1) behind(r.seq);
@@ -174,7 +177,7 @@ export function resync(lost){
     try{
       const moves = await fetchMoves();
       T.applied = moves.length;
-      hooks.rebuild(moves.map(m => m.move));
+      hooks.rebuild(moves.map(withSeat));
       if(lost) hooks.lost(lost);
     }catch(e){ T.error = e.message; }
     finally{ syncing = null; emit("ncd:table"); }

@@ -26,6 +26,22 @@ create table if not exists public.profiles (
 );
 alter table public.profiles enable row level security;
 
+-- avatar: solo un'immagine delle carte di questo sito (niente indirizzi esterni che vedrebbero chi apre il profilo),
+-- inquadratura numerica e nome breve. I valori esistenti fuori regola si azzerano prima di attivare il controllo.
+update public.profiles set avatar = '{}'::jsonb where not (
+  jsonb_typeof(avatar) = 'object' and pg_column_size(avatar) < 600
+  and coalesce(avatar->>'img', '') ~ '^(\./img/[A-Za-z0-9_-]{1,64}\.webp)?$'
+  and coalesce(jsonb_typeof(avatar->'img'), 'string') = 'string'
+  and coalesce(jsonb_typeof(avatar->'pos'), 'number') = 'number' and coalesce(jsonb_typeof(avatar->'zoom'), 'number') = 'number'
+  and coalesce(jsonb_typeof(avatar->'fav'), 'string') = 'string' and char_length(coalesce(avatar->>'fav', '')) <= 60);
+alter table public.profiles drop constraint if exists profiles_avatar_check;
+alter table public.profiles add constraint profiles_avatar_check check (
+  jsonb_typeof(avatar) = 'object' and pg_column_size(avatar) < 600
+  and coalesce(avatar->>'img', '') ~ '^(\./img/[A-Za-z0-9_-]{1,64}\.webp)?$'
+  and coalesce(jsonb_typeof(avatar->'img'), 'string') = 'string'
+  and coalesce(jsonb_typeof(avatar->'pos'), 'number') = 'number' and coalesce(jsonb_typeof(avatar->'zoom'), 'number') = 'number'
+  and coalesce(jsonb_typeof(avatar->'fav'), 'string') = 'string' and char_length(coalesce(avatar->>'fav', '')) <= 60);
+
 -- un profilo per ogni nuovo account, con un nick provvisorio da cambiare
 create or replace function public.handle_new_user() returns trigger
 language plpgsql security definer set search_path = public as $$
@@ -189,11 +205,14 @@ create policy feedback_send on public.feedback for insert to anon, authenticated
 -- niente permessi diretti oltre a quelli delle regole (Supabase di base concede tutto ad anon e authenticated)
 revoke all on public.profiles, public.user_data, public.friendships, public.blocks, public.messages, public.reports, public.feedback from anon, authenticated;
 grant select on public.profiles to authenticated;
-grant update (nick, avatar, faction, lifepath, wins, losses, show_collection, dm_open, updated_at) on public.profiles to authenticated;
+-- vittorie e sconfitte non si scrivono dall'app: le conta il database dalle partite online (vedi count_result)
+revoke update (wins, losses) on public.profiles from authenticated;
+grant update (nick, avatar, faction, lifepath, show_collection, dm_open, updated_at) on public.profiles to authenticated;
 grant select, insert, update on public.user_data to authenticated;
 grant select on public.friendships, public.blocks to authenticated;
 grant select, insert on public.messages to authenticated;
-grant insert on public.reports to authenticated;
+-- segnalazioni solo con report_user(), che copia il testo vero del messaggio (niente segnalazioni con testi inventati)
+revoke insert on public.reports from authenticated;
 grant insert on public.feedback to anon, authenticated;
 grant usage on all sequences in schema public to anon, authenticated;
 
@@ -209,6 +228,10 @@ begin
   if t = me then return 'self'; end if;
   if is_blocked(me, t) then return 'not_found'; end if;   -- chi ci ha bloccato non si fa trovare
   if exists (select 1 from friendships where status = 'accepted' and ((a = me and b = t) or (a = t and b = me))) then return 'already'; end if;
+  -- anti-spam: al massimo 30 richieste inviate all'ora (ognuna fa arrivare una notifica)
+  if (select count(*) from friendships where a = me and created_at > now() - interval '1 hour') >= 30 then
+    raise exception 'troppe richieste di amicizia: riprova più tardi' using errcode = 'P0001';
+  end if;
   -- se l'altro ci aveva già chiesto l'amicizia, accettarla
   if exists (select 1 from friendships where a = t and b = me and status = 'pending') then
     update friendships set status = 'accepted', accepted_at = now() where a = t and b = me;
@@ -517,6 +540,25 @@ language sql stable security definer set search_path = public as $$
   order by (t.status = 'active') desc, (t.status = 'waiting') desc, t.created_at desc
   limit 20
 $$;
+
+-- record pubblico: a fine partita online +1 vittoria a chi vince e +1 sconfitta a chi perde (i pareggi non contano)
+create or replace function public.count_result() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if new.status = 'finished' and old.status is distinct from 'finished' and new.guest is not null and new.result in ('host', 'guest') then
+    update profiles set wins = wins + 1 where id = case when new.result = 'host' then new.host else new.guest end;
+    update profiles set losses = losses + 1 where id = case when new.result = 'host' then new.guest else new.host end;
+  end if;
+  return new;
+end $$;
+drop trigger if exists game_tables_result on public.game_tables;
+create trigger game_tables_result after update of status on public.game_tables for each row execute function public.count_result();
+revoke all on function public.count_result() from public, anon, authenticated;
+-- il record pubblico riparte dalle partite online già giocate (prima lo scriveva l'app e si poteva falsificare);
+-- rieseguire lo script lo ricalcola uguale
+update public.profiles p set
+  wins = (select count(*) from public.game_tables t where t.status = 'finished' and t.guest is not null and ((t.result = 'host' and t.host = p.id) or (t.result = 'guest' and t.guest = p.id))),
+  losses = (select count(*) from public.game_tables t where t.status = 'finished' and t.guest is not null and ((t.result = 'host' and t.guest = p.id) or (t.result = 'guest' and t.host = p.id)));
 
 revoke all on function public._finish_table(uuid, text, text) from public, anon, authenticated;
 revoke all on function public.create_table(jsonb, boolean, uuid, text), public.join_table(text, jsonb, boolean, text), public.cancel_table(uuid),

@@ -4,9 +4,9 @@
 import { DATA, imgUrl, thumbUrl } from "./data.js";
 import { S, saveDeck } from "./store.js";
 import { $, $$, esc, toast, openLens, openCard } from "./ui.js";
-import { createGame, mulligan, resolve, legalActions, doAction, applyMove, moveOf, power, powerIn, ready, readyEddies, streetCred, canAttack, canPay, manual, rival, hasKw, hasSpend } from "./engine.js";
+import { createGame, mulligan, resolve, legalActions, doAction, applyMoveAs, moveOf, power, powerIn, ready, readyEddies, streetCred, canAttack, canPay, manual, rival, hasKw, hasSpend } from "./engine.js";
 import { botDecide, botStep } from "./bot.js";
-import { starterDeck, isLegal, deckSize, openDeck } from "./deck.js";
+import { starterDeck, isLegal, validate, deckSize, openDeck } from "./deck.js";
 import { prereleaseSetupHTML, wirePrerelease, verifySealed } from "./prerelease.js";
 import * as ON from "./online.js";
 import { state as cloudState, friends as cloudFriends } from "./cloud.js";
@@ -49,7 +49,18 @@ function doMull(pi, d){ if(G.players[pi].mulliganed) return; mulligan(G, pi, d);
    aperti da un kit). Le modalità: Sfida IA, Offline (due giocatori, un dispositivo), Online, Tutorial;
    nel Prerelease solo Sfida IA e Online, sempre contro mazzi Prerelease. */
 let kind = null;   // "built" | "sealed"
-let oppWarn = false;   // online Prerelease: mazzo dell'avversario che non corrisponde a un kit
+let oppWarn = false;   // online: testo del problema se il mazzo dell'avversario non è regolare (o non viene da un kit Prerelease)
+/* il mazzo dell'avversario arriva dal suo telefono: lo si ricontrolla qui con le stesse regole del deckbuilder
+   (le carte non legali nei tornei restano ammesse in amichevole) */
+function oppDeckIssue(opp){
+  if(!opp) return false;
+  if(opp.format === "sealed") return verifySealed({ ...opp, format: "sealed" }) ? false : "Le carte del mazzo avversario non corrispondono al kit Prerelease dichiarato";
+  try{
+    const d = { ...opp, legends: Array.isArray(opp.legends) ? opp.legends : [], cards: (Array.isArray(opp.cards) ? opp.cards : []).map(e => ({ ...e, n: Math.floor(Number(e && e.n)) || 0 })) };
+    const ko = validate(d).filter(v => !v.ok && !v.t.startsWith("Non legali nei tornei")).map(v => v.t);
+    return ko.length ? "Mazzo avversario fuori regola: " + ko.join(" · ") : false;
+  }catch(e){ return "Mazzo avversario illeggibile"; }
+}
 const MODES = { built: [["bot", "Sfida IA"], ["hot", "Offline"], ["online", "Online"], ["tutorial", "Tutorial"]], sealed: [["bot", "Sfida IA"], ["online", "Online"]] };
 export function simKind(){ return kind || S.settings.simKind || "built"; }
 export function renderSim(){
@@ -207,7 +218,7 @@ function onlineLobbyHTML(){
 }
 function onlineBadgeHTML(){
   if(!ON.T.row || G.winner != null) return "";
-  if(oppWarn) return `<b class="onl warn" title="Le carte del mazzo avversario non corrispondono al kit Prerelease dichiarato">⚠ mazzo avversario non verificato</b>`;
+  if(oppWarn) return `<b class="onl warn" title="${esc(oppWarn)}">⚠ mazzo avversario ${oppWarn.startsWith("Le carte") ? "non verificato" : "non regolare"}</b>`;
   const idle = ON.otherIdle(), R = G.players[1 - me()];
   if(ON.T.error && /fetch|network|Failed/i.test(ON.T.error)) return `<b class="onl warn">⚠ connessione assente</b>`;
   if(idle >= 25) return `<b class="onl warn">⚠ ${esc(R.name)} non risponde: vinci tra ${Math.max(0, 60 - idle)}s</b>`;
@@ -251,7 +262,7 @@ function buildOnline(moves){
   const { decks, opts } = ON.setupOf(ON.T.row);
   G = createGame(decks, DATA.byId, opts);
   G.mulliganAsked = [false, false];
-  for(const m of moves){ try{ applyMove(G, m); }catch(e){ console.warn("mossa non applicabile", m, e); break; } }
+  for(const x of moves){ try{ applyMoveAs(G, x.seat, x.move); }catch(e){ console.warn("mossa non applicabile", x, e); break; } }
   if(ON.T.ended) applyEnd(ON.T.ended);
 }
 function applyEnd(e){
@@ -279,13 +290,13 @@ ON.setOnlineHooks({
     clearTimeout(botTimer); stopTutorial();
     gmode = "online"; mode = "online"; gOnline = true; gSeat = seat; human = [seat === 0, seat === 1];
     // Prerelease: il mazzo dell'avversario deve venire davvero da un kit (si riapre e si confronta)
-    const opp = seat === 0 ? row.guest_deck : row.host_deck; oppWarn = !!(opp && opp.format === "sealed" && !verifySealed({ ...opp, format: "sealed" }));
+    const opp = seat === 0 ? row.guest_deck : row.host_deck; oppWarn = oppDeckIssue(opp);
     sel = null; targeting = null; pop = null; handoff = false; showLog = false; lastSeen = { turn: 0, seen: 0 };
-    buildOnline(moves.map(m => m.move));
+    buildOnline(moves);
     if(location.hash !== "#sim") location.hash = "#sim";
     $("#board").innerHTML = ""; openBoard(); render(); tick();
   },
-  move(m){ if(!G || !gOnline) return; applyMove(G, m); if(targeting && !G.players[me()].hand.some(c => c.uid === targeting.uid) && !G.players[me()].field.some(u => u.uid === targeting.uid)) targeting = null; render(); tick(); },
+  move(m, seat){ if(!G || !gOnline) return; applyMoveAs(G, seat, m); if(targeting && !G.players[me()].hand.some(c => c.uid === targeting.uid) && !G.players[me()].field.some(u => u.uid === targeting.uid)) targeting = null; render(); tick(); },
   rebuild(moves){ if(!gOnline || !ON.T.row) return; window.__ncdRebuilds = (window.__ncdRebuilds || 0) + 1; buildOnline(moves); sel = null; targeting = null; render(); tick(); },
   lost(m){ if(m.k === "m" && G && !G.players[m.p].mulliganed){ doMull(m.p, !!m.d); render(); tick(); } },
   end(e){ if(G && gOnline){ applyEnd(e); render(); finish(); } }

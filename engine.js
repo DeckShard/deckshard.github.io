@@ -27,7 +27,10 @@ export { parseEffects };
 
 /* ------------------------------------------------------------ creazione partita */
 let UID = 1;
-function inst(card, pid){ return { uid: UID++, cid: card.id, pid: pid || (card.def && card.def.id) || null, card, fx: parseEffects(card.text) }; }
+/* la stampa deve essere davvero una stampa di quella carta: un mazzo che arriva dalla rete (partite online)
+   potrebbe contenere qualsiasi testo, e il pid finisce negli indirizzi delle immagini */
+const printOf = (card, pid) => (pid && Array.isArray(card.prints) && card.prints.some(p => p.id === pid)) ? pid : ((card.def && card.def.id) || null);
+function inst(card, pid){ return { uid: UID++, cid: card.id, pid: printOf(card, pid), card, fx: parseEffects(card.text) }; }
 
 /* deck: { name, legends:[{cid,pid}], cards:[{cid,pid,n}] }; cards: Map id → carta */
 export function createGame(decks, cardsById, opts = {}){
@@ -36,8 +39,10 @@ export function createGame(decks, cardsById, opts = {}){
   const G = { turn: 0, active: 0, first: 0, phase: "setup", log: [], winner: null, reason: "", overtime: false, rng, pending: null, players: [], auto: [!!opts.bot0, !!opts.bot1], autoPay: opts.autoPay || [false, false], events: [] };
   decks.forEach((d, i) => {
     const P = { id: i, name: d.name || `Giocatore ${i + 1}`, deck: [], hand: [], trash: [], eddies: [], legends: [], field: [], fixer: DICE.slice(), gigs: [], sold: false, called: false, turns: 0, removed: [] };
-    for(const e of d.cards){ const c = cardsById.get(e.cid); if(!c) continue; for(let k = 0; k < e.n; k++) P.deck.push(inst(c, e.pid)); }
-    for(const l of d.legends.filter(Boolean)){ const c = cardsById.get(l.cid); if(c) P.legends.push({ ...inst(c, l.pid), faceUp: false, spent: false, gear: [] }); }
+    // copie per voce limitate (un mazzo arrivato dalla rete con n enorme bloccherebbe il telefono), al massimo 3 Leggende
+    const cards = Array.isArray(d.cards) ? d.cards.slice(0, 200) : [], legs = Array.isArray(d.legends) ? d.legends.filter(Boolean).slice(0, 3) : [];
+    for(const e of cards){ const c = e && cardsById.get(e.cid); if(!c) continue; const n = Math.max(0, Math.min(50, Math.floor(Number(e.n)) || 0)); for(let k = 0; k < n && P.deck.length < 100; k++) P.deck.push(inst(c, e.pid)); }
+    for(const l of legs){ const c = cardsById.get(l.cid); if(c) P.legends.push({ ...inst(c, l.pid), faceUp: false, spent: false, gear: [] }); }
     shuffle(P.deck, rng); shuffle(P.legends, rng);
     G.players.push(P);
   });
@@ -956,6 +961,21 @@ export function summary(G){
    Una partita online è seme + mazzi + elenco di mosse: ogni telefono le applica
    nello stesso ordine e ottiene lo stesso stato.                                */
 export function moveOf(a){ const m = { t: a.t }; for(const k of ["uid", "target", "idx"]) if(a[k] !== undefined) m[k] = a[k]; return m; }
+/* mossa arrivata dalla rete: vale solo se la fa chi ne ha il diritto. `seat` è il posto di chi l'ha inviata
+   secondo il database (non secondo la mossa stessa): azioni solo nel proprio turno, scelte solo sulle
+   proprie decisioni in sospeso, mulligan solo il proprio. Le mosse rifiutate non toccano la partita,
+   allo stesso modo su entrambi i telefoni. */
+export function applyMoveAs(G, seat, m){
+  if(!m || typeof m !== "object" || (seat !== 0 && seat !== 1)) return false;
+  if(m.k === "a"){ if(m.p !== seat || G.active !== seat || !m.a || typeof m.a !== "object") return false; return applyMove(G, m); }
+  if(m.k === "r"){
+    if(!G.pending || G.pending.player !== seat) return false;
+    const i = m.i; if(i != null && i !== -1 && !(Number.isInteger(i) && i >= 0 && i < G.pending.options.length)) return false;
+    return applyMove(G, m);
+  }
+  if(m.k === "m"){ if(m.p !== seat) return false; return applyMove(G, m); }
+  return false;
+}
 export function applyMove(G, m){
   if(!m) return false;
   if(m.k === "a") return doAction(G, m.p, m.a);

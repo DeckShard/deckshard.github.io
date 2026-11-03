@@ -142,7 +142,7 @@ export function jsonToLines(obj){
   const pick = (o, keys) => { for(const k of keys) if(o[k] != null && o[k] !== "") return o[k]; return null; };
   const handle = o => {
     if(!o || typeof o !== "object") return;
-    const q = +pick(o, ["qty", "quantity", "count", "n", "amount", "copies", "owned"]) || 1;
+    const q = Math.max(1, Math.min(99, Math.floor(+pick(o, ["qty", "quantity", "count", "n", "amount", "copies", "owned"])) || 1));   // 1–99 come nella collezione
     const id = pick(o, ["printing_id", "printingId", "pid", "id"]);
     if(id && DATA.byPrint.has(String(id))){ direct.push({ pid: String(id), n: q }); return; }
     const name = pick(o, ["name", "card", "cardName", "card_name", "title"]);
@@ -156,7 +156,7 @@ export function jsonToLines(obj){
   const LISTS = ["entries", "cards", "collection", "items", "list", "deck", "main", "mainDeck", "legends", "units", "programs", "gears"];
   if(Array.isArray(obj)) obj.forEach(handle);
   else if(obj && typeof obj === "object"){
-    if(obj.coll && typeof obj.coll === "object"){ for(const [pid, n] of Object.entries(obj.coll)) if(DATA.byPrint.has(pid)) direct.push({ pid, n: +n || 0 }); }
+    if(obj.coll && typeof obj.coll === "object"){ for(const [pid, n] of Object.entries(obj.coll)) if(DATA.byPrint.has(pid)) direct.push({ pid, n: Math.max(0, Math.min(99, Math.floor(+n) || 0)) }); }
     else if(LISTS.some(k => Array.isArray(obj[k]))){ for(const k of LISTS) if(Array.isArray(obj[k])) obj[k].forEach(x => typeof x === "string" ? lines.push(`1 ${x}`) : handle(x)); }
     else if(obj.deck && typeof obj.deck === "object"){ return jsonToLines(obj.deck); }
     else { for(const [k, v] of Object.entries(obj)){ if(typeof v === "number") lines.push(`${v} ${k}`); else if(v && typeof v === "object" && !Array.isArray(v)) handle({ name: k, ...v }); } }

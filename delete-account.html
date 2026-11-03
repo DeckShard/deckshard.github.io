@@ -64,12 +64,13 @@
       <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="del" id="del" disabled>Elimina definitivamente</button><button class="ghost" id="out">Esci senza eliminare</button></div>`;
     const conf = document.getElementById("conf"), del = document.getElementById("del");
     conf.oninput = () => { del.disabled = conf.value.trim().toUpperCase() !== "ELIMINA"; };
-    document.getElementById("out").onclick = async () => { await sb.auth.signOut(); draw(); };
+    document.getElementById("out").onclick = async () => { try{ await sb.auth.signOut({ scope: "local" }); }catch(e){} for(const k of ["ncd:auth", "ncd:auth-code-verifier"]) try{ localStorage.removeItem(k); }catch(e){} draw(); };
     del.onclick = async () => {
       del.disabled = true;
       const { error } = await sb.rpc("delete_me");
       if(error){ box.insertAdjacentHTML("beforeend", `<p class="err">Non è stato possibile eliminare l'account: ${esc(error.message)}</p>`); del.disabled = false; return; }
-      await sb.auth.signOut();
+      try{ await sb.auth.signOut({ scope: "local" }); }catch(e){}
+      for(const k of ["ncd:auth", "ncd:auth-code-verifier", "ncd:syncUser", "ncd:synced", "ncd:stamps", "ncd:lastSync"]) try{ localStorage.removeItem(k); }catch(e){}
       box.innerHTML = `<p class="ok"><b>Account eliminato.</b> Tutti i dati collegati sono stati cancellati.</p>`;
     };
   }

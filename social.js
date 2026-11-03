@@ -10,7 +10,10 @@ import { DATA, thumbUrl } from "./data.js";
 import { openCard } from "./ui.js";
 import { openSharedDeck } from "./deck.js";
 
-const AVA = f => { const a = f.avatar || {}; return { favImg: a.img || "", favPos: a.pos ?? 34, favZoom: a.zoom ?? 150, fav: a.fav || "", nick: f.nick }; };
+/* l'avatar degli altri arriva dal database: solo immagini delle carte di questo sito e numeri veri */
+const num = (v, d, lo, hi) => { const n = Number(v); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d; };
+const AVA = f => { const a = (f.avatar && typeof f.avatar === "object") ? f.avatar : {}; const img = typeof a.img === "string" && /^\.\/img\/[\w-]{1,64}\.webp$/.test(a.img) ? a.img : "";
+  return { favImg: img, favPos: num(a.pos, 34, 0, 100), favZoom: num(a.zoom, 150, 50, 400), fav: typeof a.fav === "string" ? a.fav.slice(0, 60) : "", nick: f.nick }; };
 const initials = s => String(s || "?").split(/[\s_.-]+/).map(w => w[0]).join("").slice(0, 2).toUpperCase();
 function miniAvatar(f, size = 38){
   const a = AVA(f);
@@ -57,7 +60,7 @@ export function friendsHTML(){
   const fr = cloud.friends, online = cloud.state.online;
   const incoming = fr.filter(f => f.status === "pending" && f.incoming), outgoing = fr.filter(f => f.status === "pending" && !f.incoming);
   const acc = fr.filter(f => f.status === "accepted").sort((a, b) => (online.has(b.id) - online.has(a.id)) || (b.unread - a.unread) || String(a.nick).localeCompare(String(b.nick)));
-  const row = (f, right) => `<div class="frow2" data-fid="${f.id}">${miniAvatar(f)}<div class="nm"><b>${esc(f.nick)}${online.has(f.id) ? ` <i class="dot on" title="in linea"></i>` : ""}</b><span>${[f.faction, `${f.wins}V – ${f.losses}S`].filter(Boolean).map(esc).join(" · ")}</span></div>${right}</div>`;
+  const row = (f, right) => `<div class="frow2" data-fid="${f.id}">${miniAvatar(f)}<div class="nm"><b>${esc(f.nick)}${online.has(f.id) ? ` <i class="dot on" title="in linea"></i>` : ""}</b><span>${[f.faction, `${f.wins}V – ${f.losses}S online`].filter(Boolean).map(esc).join(" · ")}</span></div>${right}</div>`;
   return `<div class="card" id="friends">
     <h3>Amici${acc.length ? ` <small style="color:var(--mute)">${acc.length}</small>` : ""}</h3>
     <div class="acrow"><input class="inp" id="frQ" placeholder="Cerca un giocatore per nick" value="${esc(searchQ)}" autocomplete="off"><button class="btn sm" id="frSearch">Cerca</button></div>
@@ -129,7 +132,12 @@ document.addEventListener("submit", async e => {
 /* ---------------------------------------------------------------- scelta al primo collegamento */
 cloud.setMergeAsker(info => new Promise(resolve => {
   const el = document.createElement("div"); el.id = "mergeAsk";
-  el.innerHTML = `<div class="box"><h3>Questo dispositivo e il tuo account hanno dati diversi</h3>
+  el.innerHTML = info.remoteEmpty ? `<div class="box"><h3>Su questo dispositivo ci sono già dei dati</h3>
+    <p class="sub">${info.localCards} carte, ${info.localDecks} mazzi. Il tuo account è ancora vuoto: se questi dati non sono tuoi (telefono di qualcun altro), non portarli.</p>
+    <div class="opts">
+      <button class="btn yel" data-m="device">Portali nel mio account<small>Collezione, mazzi e profilo di questo dispositivo vanno nell'account</small></button>
+      <button class="btn" data-m="cloud">Parti da zero<small>Questo dispositivo si svuota e segue l'account</small></button>
+    </div></div>` : `<div class="box"><h3>Questo dispositivo e il tuo account hanno dati diversi</h3>
     <p class="sub">Qui: ${info.localCards} carte, ${info.localDecks} mazzi. Nell'account: ${info.remoteCards} carte, ${info.remoteDecks} mazzi.</p>
     <div class="opts">
       <button class="btn yel" data-m="merge">Unisci (consigliato)<small>Per ogni stampa tiene il numero più alto, i mazzi di entrambi</small></button>
@@ -150,7 +158,7 @@ export function wireSocial(root, redraw){
       if(id("#acNickSave")){ await cloud.setNick($("#acNick").value.trim()); toast("Nuovo handle registrato"); redraw(); return; }
       const sh = id("#acShow button"); if(sh){ await cloud.setProfileFlags({ show_collection: sh.dataset.v === "1" }); return; }
       if(id("#acSync")){ await cloud.syncNow(); toast("Sincronizzato"); return; }
-      if(id("#acOut")){ if(confirm("Uscire dall'account? I dati restano anche su questo dispositivo.")){ await cloud.signOut(); } return; }
+      if(id("#acOut")){ if(confirm("Uscire dall'account su questo dispositivo? Collezione e mazzi restano qui; gli altri dispositivi restano collegati.")){ await cloud.signOut(); } return; }
       if(id("#acDelete")){ if(confirm("Eliminare l'account? Profilo, amici, messaggi e dati salvati nel cloud vengono cancellati per sempre. Quello che c'è su questo dispositivo resta.")){ await cloud.deleteAccount(); toast("Account eliminato"); } return; }
       if(id("#frSearch")){ searchQ = $("#frQ").value.trim(); if(searchQ.length < 2){ toast("Scrivi almeno 2 lettere"); return; } searchRes = await cloud.searchPlayers(searchQ); redraw(); return; }
       const add = id("[data-fadd]"); if(add){ const r = await cloud.friendRequest(add.dataset.fadd); toast({ sent: "Richiesta inviata", accepted: "Siete amici!", already: "Siete già amici", not_found: "Giocatore non trovato", self: "Sei tu!" }[r] || r); redraw(); return; }
@@ -215,7 +223,7 @@ export async function safeWipe(){ if(cloud.state.user){ try{ await cloud.signOut
 document.addEventListener("ncd:friendcoll", e => {
   const { nick, coll } = e.detail;
   const byCard = new Map();
-  for(const [pid, n] of Object.entries(coll || {})){ const p = DATA.byPrint.get(pid); if(!p || !n) continue; const c = p.card; const x = byCard.get(c.id) || { c, n: 0, p }; x.n += n; byCard.set(c.id, x); }
+  for(let [pid, n] of Object.entries(coll || {})){ const p = DATA.byPrint.get(pid); n = Math.max(0, Math.min(999, Math.floor(Number(n)) || 0)); if(!p || !n) continue; const c = p.card; const x = byCard.get(c.id) || { c, n: 0, p }; x.n += n; byCard.set(c.id, x); }
   const all = [...byCard.values()];
   const F = { q: "", colors: new Set(), types: new Set(), cost: new Set(), rar: new Set(), cls: new Set(), sets: new Set(), owned: "", show: "all", sort: "name" };
   const el = document.createElement("div"); el.id = "mergeAsk"; el.className = "wide";

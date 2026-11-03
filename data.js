@@ -31,8 +31,10 @@ export const SET_IT = {
 };
 export const setName = code => SET_IT[code] || (DATA.sets.find(s => s.code === code) || {}).name || code;
 
-export const imgUrl   = pid => `./img/${pid}.webp`;
-export const thumbUrl = pid => `./img/t/${pid}.webp`;
+// solo lettere, cifre e trattini: un identificativo arrivato dalla rete non può uscire dall'attributo HTML
+const safeId = pid => String(pid ?? "").replace(/[^A-Za-z0-9_-]/g, "");
+export const imgUrl   = pid => `./img/${safeId(pid)}.webp`;
+export const thumbUrl = pid => `./img/t/${safeId(pid)}.webp`;
 
 export async function loadData(base = "./"){
   const bust = u => u + "?t=" + Date.now();

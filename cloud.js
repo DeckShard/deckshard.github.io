@@ -11,7 +11,7 @@
    unire, tenere il cloud o tenere il dispositivo; dopo, vince la modifica
    più recente sezione per sezione (i mazzi si uniscono mazzo per mazzo). */
 
-import { S, onSave, quietly, rawGet, rawSet, DEFAULT_PROFILE } from "./store.js";
+import { S, onSave, quietly, rawGet, rawSet, rawDel, DEFAULT_PROFILE, clean } from "./store.js";
 
 export const SUPABASE_URL = "https://uxbtwurhsujzyzvsvghm.supabase.co";
 export const SUPABASE_KEY = "sb_publishable__IATo8hKZDNZMp9_jESfAQ_Ll6PwNqF";   // chiave pubblica: i permessi li fanno le regole del database
@@ -72,16 +72,27 @@ export async function signInAnon(){   // solo per i collaudi
   const { error } = await c.auth.signInAnonymously();
   if(error) throw error;
 }
+/* all'uscita si cancella tutto ciò che lega questo dispositivo all'account: la sessione e i segni
+   della sincronizzazione (quale account era collegato, cosa era già allineato). Collezione, mazzi e
+   profilo restano sul dispositivo; chi entra dopo, anche con lo stesso account, sceglie cosa farne. */
+function forgetSession(){
+  for(const k of ["auth", "auth-code-verifier", "syncUser", "synced", "stamps", "lastSync"]) rawDel(k);
+  state.lastSync = null;
+}
 export async function signOut(){
   const c = await client(); if(!c) return;
   // chi esce non deve più ricevere le notifiche dell'account su questo telefono
   try{ await disablePush(); if(S.settings.push){ S.settings.push.on = false; S.save("settings"); } }catch(e){}
-  await c.auth.signOut();
+  try{ await push(); }catch(e){}   // le ultime modifiche arrivano al cloud prima di staccarsi
+  // solo questo dispositivo: gli altri restano collegati (senza «local» Supabase chiude la sessione ovunque)
+  try{ await c.auth.signOut({ scope: "local" }); }catch(e){}
+  forgetSession();
 }
 export async function deleteAccount(){
   const c = await client();
   const { error } = await c.rpc("delete_me"); if(error) throw error;
-  await c.auth.signOut();
+  try{ await c.auth.signOut({ scope: "local" }); }catch(e){}
+  forgetSession();
 }
 
 let channel = null, presence = null;
@@ -132,7 +143,7 @@ function schedulePublic(){
   pubTimer = setTimeout(async () => {
     const p = S.profile, r = S.record;
     const row = { avatar: { img: p.favImg || "", pos: p.favPos ?? 34, zoom: p.favZoom ?? 150, fav: p.fav || "" }, faction: p.faction || null, lifepath: p.lifepath || null,
-      wins: r.wins || 0, losses: r.losses || 0, updated_at: new Date().toISOString() };
+      updated_at: new Date().toISOString() };   // vittorie e sconfitte pubbliche le conta il database dalle partite online
     try{ const c = await client(); await c.from("profiles").update(row).eq("id", state.user.id); Object.assign(state.profile, row); }catch(e){}
   }, 1200);
 }
@@ -169,7 +180,9 @@ async function firstSync(){
   const remoteEmpty = !remote || !Object.keys(remote.stamps || {}).length;
   if(linked === state.user.id){ await pull(remote); await push(); return; }
   let choice = "cloud";
-  if(remoteEmpty) choice = "device";
+  // account vuoto: si chiede comunque prima di caricarci i dati del dispositivo, che potrebbero essere di
+  // qualcun altro (telefono condiviso, oppure chi l'ha usato prima è uscito tenendo i dati)
+  if(remoteEmpty) choice = isEmptyLocal() ? "device" : await askMerge(remote, true);
   else if(!isEmptyLocal()) choice = await askMerge(remote);
   if(choice === "merge") applyMerge(remote);
   else if(choice === "cloud") applyRemote(remote, SECTIONS);
@@ -185,7 +198,7 @@ async function firstSync(){
 /* scelta dell'utente: la chiede l'interfaccia (social.js registra la funzione) */
 let mergeAsker = async () => "merge";
 export const setMergeAsker = f => { mergeAsker = f; };
-const askMerge = remote => mergeAsker({ remoteCards: Object.values(remote.coll || {}).reduce((a, b) => a + b, 0), remoteDecks: (remote.decks || []).length,
+const askMerge = (remote, remoteEmpty = false) => mergeAsker({ remoteEmpty, remoteCards: Object.values(remote.coll || {}).reduce((a, b) => a + b, 0), remoteDecks: (remote.decks || []).length,
   localCards: Object.values(S.coll).reduce((a, b) => a + b, 0), localDecks: S.decks.length });
 
 function mergeDecks(a, b){
@@ -204,11 +217,12 @@ function applyMerge(remote){
   });
 }
 function applySection(k, v){
-  if(k === "coll") S.coll = v || {};
-  else if(k === "decks") S.decks = v || [];
-  else if(k === "profile") S.profile = Object.assign({}, DEFAULT_PROFILE, v || {});
-  else if(k === "settings") S.settings = Object.assign(S.settings, v || {});
-  else if(k === "record") S.record = Object.assign({ wins: 0, losses: 0, games: [] }, v || {});
+  // anche i dati del cloud passano dalla pulizia (stesse regole di un backup importato)
+  if(k === "coll") S.coll = clean("coll", v);
+  else if(k === "decks") S.decks = clean("decks", v);
+  else if(k === "profile") S.profile = Object.assign({}, DEFAULT_PROFILE, clean("profile", v));
+  else if(k === "settings") S.settings = Object.assign(S.settings, clean("settings", v));
+  else if(k === "record") S.record = Object.assign({ wins: 0, losses: 0, games: [] }, clean("record", v));
   S.save(k);
 }
 function applyRemote(remote, keys){
