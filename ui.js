@@ -143,7 +143,9 @@ let SHEET_PRINT = null, SHEET_CARD = null, onPick = null;
 /* apre la scheda; `opts.pick(pid)` se chi chiama vuole scegliere una stampa */
 export function openCard(cid, pid, opts = {}){
   const c = DATA.byId.get(cid); if(!c) return;
-  SHEET_CARD = c; SHEET_PRINT = DATA.byPrint.get(pid) || c.def; onPick = opts.pick || null;
+  // `opts.only`: stampe ammesse (Prerelease: solo quelle aperte dal kit)
+  const only = Array.isArray(opts.only) && opts.only.length ? opts.only : null;
+  SHEET_CARD = c; SHEET_PRINT = DATA.byPrint.get(only && !only.includes(pid) ? only[0] : pid) || c.def; onPick = opts.pick || null;
   renderSheet(opts);
   $("#sheet").classList.add("on");
   $("#sheetBox").style.transform = ""; $("#sheetBox").scrollTop = 0;
@@ -183,13 +185,14 @@ function renderSheet(opts){
 
     <div class="rules">${rulesHTML(c.text) || "<i>Nessun testo.</i>"}${c.flavor ? `<div class="fl">${esc(c.flavor)}</div>` : ""}</div>
 
-    <h3 style="margin-top:16px">Stampe (${c.prints.length})</h3>
-    <div class="prints">${c.prints.map(x => {
+    ${(() => { const only = Array.isArray(opts.only) && opts.only.length ? opts.only : null, list = only ? c.prints.filter(x => only.includes(x.id)) : c.prints;
+      return `<h3 style="margin-top:16px">${only ? `Stampe aperte nel kit (${only.length} ${only.length === 1 ? "copia" : "copie"})` : `Stampe (${c.prints.length})`}</h3>
+    <div class="prints">${list.map(x => { const nOpen = only ? only.filter(y => y === x.id).length : 0;
       const xp = priceOf(x.id), xq = qtyOf(x.id);
       return `<div class="pt${x.id === p.id ? " sel" : ""}" data-print="${x.id}" title="${esc(setName(x.set))} #${esc(x.num)}">
         ${x.img ? `<img src="${thumbUrl(x.id)}" alt="" loading="lazy">` : `<div style="aspect-ratio:733/1024"></div>`}
-        <div class="cap"><b>${xp ? eur(xp.trend) + (xp.approx ? "~" : "") : "—"}${xq ? ` · ×${xq}` : ""}</b>${esc(setName(x.set))} · ${esc(x.lang.toUpperCase())}${x.rarity && x.rarity !== "Common" ? " · " + esc(RARITY_IT[x.rarity] || x.rarity) : ""}</div>
-      </div>`; }).join("")}</div>`;
+        <div class="cap"><b>${nOpen ? `aperte ×${nOpen}` : xp ? eur(xp.trend) + (xp.approx ? "~" : "") : "—"}${!nOpen && xq ? ` · ×${xq}` : ""}</b>${esc(setName(x.set))} · ${esc(x.lang.toUpperCase())}${x.rarity && x.rarity !== "Common" ? " · " + esc(RARITY_IT[x.rarity] || x.rarity) : ""}</div>
+      </div>`; }).join("")}</div>`; })()}`;
 
   $("#closeSheet").onclick = closeSheet;
   $("#sheetArt")?.addEventListener("click", () => openLens(imgUrl(p.id)));
@@ -252,7 +255,7 @@ export function openLens(src){
 (function longPressZoom(){
   let t = null, fired = false, start = null;
   document.addEventListener("pointerdown", e => {
-    const img = e.target.closest(".row .thumb, .lslot img, .pt img"); if(!img || e.target.closest("#board")) return;
+    const img = e.target.closest(".row .thumb, .row .thumbwrap, .lslot, .pt img"); if(!img || e.target.closest("#board, .lslot .x")) return;
     const row = img.closest("[data-pid], [data-print], .lslot"); const pid = row ? (row.dataset.pid || row.dataset.print) : null; if(!pid) return;
     fired = false; start = { x: e.clientX, y: e.clientY };
     t = setTimeout(() => { fired = true; openLens(imgUrl(pid)); }, 420);
@@ -261,7 +264,7 @@ export function openLens(src){
   document.addEventListener("pointermove", e => { if(t && start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 10) cancel(); });
   document.addEventListener("pointerup", cancel); document.addEventListener("pointercancel", cancel);
   document.addEventListener("click", e => { if(fired){ fired = false; e.stopImmediatePropagation(); e.preventDefault(); } }, true);
-  document.addEventListener("contextmenu", e => { if(e.target.closest(".row .thumb, .lslot img, .pt img, .gc")) e.preventDefault(); });
+  document.addEventListener("contextmenu", e => { if(e.target.closest(".row .thumb, .row .thumbwrap, .lslot, .pt img, .gc")) e.preventDefault(); });
 })();
 document.addEventListener("keydown", e => {
   if(e.key !== "Escape") return;

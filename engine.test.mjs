@@ -5,11 +5,12 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { createGame, mulligan, legalActions, doAction, resolve, summary, parseEffects, power, powerIn, streetCred, endTurn } from "./engine.js";
 import { botDecide, botTurn, botStep } from "./bot.js";
+import { ownKeywords } from "./data.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const data = JSON.parse(readFileSync(join(here, "public", "cards.json"), "utf8"));
 const byId = new Map();
-for(const c of data.cards){ c.def = c.prints[0]; c.ramN = c.ram ?? 0; byId.set(c.id, c); }
+for(const c of data.cards){ c.def = c.prints[0]; c.ramN = c.ram ?? 0; c.kw = ownKeywords(c); byId.set(c.id, c); }   // come fa l'app
 const byName = n => data.cards.find(c => c.dn === n);
 
 function starter(setCode, name){
@@ -533,6 +534,26 @@ import { canPay, costOf, spendCost } from "./engine.js";
   { const { G, P, c } = mk(42); for(const l of P.legends.slice(1)) l.spent = true; doAction(G, P.id, { t: "play", uid: c.uid });
     ok(G.pending && G.pending.kind === "pay" && G.pending.ctx.confirm, "pagamento automatico: chiede conferma prima di spendere la Leggenda con la Faceplate");
     resolve(G, G.pending.options.length - 1); ok(!P.legends[0].spent && P.hand.includes(c), "annullando, la Leggenda resta pronta e la carta in mano"); }
+}
+/* --- parole chiave citate nel testo: non sono abilità della carta */
+{
+  const byN = n => data.cards.find(c => c.name === n), kwOf = n => byN(n) ? byN(n).kw : null;
+  ok(kwOf("Valentino Guerrera") && !kwOf("Valentino Guerrera").includes("Blocker"), "Valentino Guerrera cita Blocker ma non lo ha");
+  ok(kwOf("Valentino Street Racer") && !kwOf("Valentino Street Racer").includes("Adrenaline"), "Valentino Street Racer dà Adrenaline, non ce l'ha");
+  ok(kwOf("Adrenaline Converter") && !kwOf("Adrenaline Converter").includes("Adrenaline"), "Adrenaline Converter: Adrenaline solo a condizione");
+  ok(byN("Riot Shield").kw.includes("Blocker") && !byN("Riot Shield").kw.includes("Go Solo"), "Riot Shield: Blocker sì, Go Solo è solo citato");
+  ok(byN("La Llorona").kw.includes("Blocker") && byN("Lizzy Wizzy").kw.includes("Blocker"), "Blocker a inizio riga resta (anche dopo altre righe)");
+  // in partita: Valentino pronto non compare tra chi può bloccare
+  const mk = (names, legends) => ({ name: "T", legends: legends.map(n => ({ cid: byName(n).id, pid: byName(n).def.id })), cards: names.map(n => ({ cid: byName(n).id, pid: byName(n).def.id, n: 1 })) });
+  const d = mk(Array(40).fill("Animals Wrecker"), ["V: Streetkid", "Rogue Amendiares: Preem Solo", "Jackie Welles: Loyal Choom"].filter(n => byName(n)).concat(["Goro Takemura: Hands Unclean"]).slice(0, 3));
+  const G = createGame([d, JSON.parse(JSON.stringify(d))], byId, { seed: 4 });
+  mulligan(G, 0, false); mulligan(G, 1, false); while(G.pending) resolve(G, 0);
+  const P = G.players[G.active], R = G.players[1 - G.active];
+  const u = { uid: 9101, cid: "x", pid: null, card: { dn: "Test", type: "Unit", power: 5, cost: 1, kw: [], text: "" }, fx: parseEffects(""), spent: false, lag: false, mod: 0, gear: [] };
+  const vc = byN("Valentino Guerrera"), v = { uid: 9102, cid: vc.id, pid: vc.def.id, card: vc, fx: parseEffects(vc.text), spent: false, lag: false, mod: 0, gear: [] };
+  P.field.push(u); R.field = [v]; R.gigs = [{ sides: 6, value: 2, uid: 1 }];
+  doAction(G, P.id, { t: "attack", uid: 9101, target: { kind: "gigs" } });
+  ok(!(G.pending && G.pending.options.some(o => o.kind === "block")), "Valentino Guerrera non può bloccare");
 }
 console.log(`\n${passes} controlli OK, ${fails} falliti`);
 process.exit(fails ? 1 : 0);

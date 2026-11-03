@@ -50,6 +50,7 @@ export async function loadData(base = "./"){
     c.prints.sort((a, b) => prefRank(a) - prefRank(b));
     c.def = c.prints.find(p => p.img && p.lang === "en") || c.prints.find(p => p.img) || c.prints[0];
     c.ramN = c.ram ?? 0;
+    c.kw = ownKeywords(c);
     for(const p of c.prints){ p.card = c; DATA.byPrint.set(p.id, p); }
     // illustrazioni distinte (p.art dal collector; senza, illustratore + rarità alternativa)
     const ALT = new Set(["Secret", "Iconic Other", "Iconic Legend", "Iconic Secret", "Nova Rare"]);
@@ -62,6 +63,14 @@ export async function loadData(base = "./"){
   return DATA;
 }
 /* ordine di uscita dei set (dal più vecchio): per «artwork più recente» */
+/* parole chiave che la carta ha davvero: nel testo stanno a inizio riga («{Blocker} (You may…»).
+   Quelle citate in mezzo a una frase sono riferimenti ad altre carte («può attaccare Unità con {Blocker}»,
+   «dai {Adrenaline} a un'altra Unità») o condizioni gestite dal motore, non abilità della carta. */
+export function ownKeywords(c){
+  const all = c.kw || [], t = c.text || "", own = new Set();
+  for(const m of t.matchAll(/\{([^}]+)\}/g)){ const k = m[1]; if(!all.includes(k)) continue; if(/(^|\n)\s*$/.test(t.slice(0, m.index))) own.add(k); }
+  return all.filter(k => own.has(k));
+}
 export const SET_ORDER = ["welcometonightcitybeta", "theheistbetastarterdeck", "embracingpowerbetastarterdeck", "boxtoppersbeta", "prereleasebeta", "PRM01", "mercdemodeck", "arasakademodeck", "judgepromos", "edgerunneropens1", "nightcityshowdowns1", "nightcitybrawls1",
   "welcometonightcityretail", "theheistretailstarterdeck", "embracingpowerretailstarterdeck", "boxtoppersretail", "prereleaseretail", "welcometonightcityretail-fr", "theheistretailstarterdeck-fr", "embracingpowerretailstarterde-fr", "boxtoppersretail-fr", "prereleaseretail-FR", "nightcityshowdowns1-FR", "nightcitybrawls1-FR"];
 export const setRank = code => { const i = SET_ORDER.indexOf(code); return i < 0 ? SET_ORDER.length : i; };

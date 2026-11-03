@@ -31,6 +31,10 @@ export function validate(deck){
     out.push({ ok: cols.size <= 3, t: cols.size <= 3 ? `${cols.size} colori su un massimo di 3${cols.size ? ": " + [...cols].map(c => COLOR_IT[c]).join(", ") : ""}` : `Troppi colori (${[...cols].map(c => COLOR_IT[c]).join(", ")}): massimo 3` });
     const over = deck.cards.filter(e => e.n > poolCount(deck, e.cid)).map(e => DATA.byId.get(e.cid)?.dn);
     out.push({ ok: !over.length, t: over.length ? `Più copie di quelle aperte: ${over.join(", ")}` : "Solo carte aperte dal kit" });
+    // ogni copia con una stampa aperta, e ogni stampa al massimo quante volte è uscita
+    if(deck.pool){ const left = new Map(deck.pool.map(e => [e.pid, e.n])), bad = new Set();
+      for(const e of deck.cards) for(const pid of (e.prints || [])){ const k = left.get(pid) || 0; if(k <= 0) bad.add(DATA.byId.get(e.cid)?.dn); else left.set(pid, k - 1); }
+      if(bad.size) out.push({ ok: false, t: `Stampe non aperte dal kit: ${[...bad].join(", ")}` }); }
     return out;
   }
   const out = [], lim = ramLimits(deck), legs = deck.legends.filter(Boolean);
@@ -273,7 +277,25 @@ export function openDeck(id){
   renderDeck();
 }
 function closeEditor(){ CUR = null; renderDeck(); }
-function save(){ if(CUR) saveDeck(CUR); }
+/* Prerelease: ogni copia usa una stampa davvero aperta dal kit, e ogni stampa al massimo quante volte è uscita.
+   Prima quella scelta nella scheda (se aperta), poi le altre dalla più rara: una Iconic e una Rare della
+   stessa carta danno due copie, una Iconic e una Rare. */
+const RAR = { "Iconic Secret": 8, "Iconic Legend": 7, "Iconic Other": 6, "Nova Rare": 5, "Secret": 4, "Epic": 3, "Rare": 2, "Uncommon": 1, "Common": 0 };
+export function poolPrints(d, cid){
+  const out = []; for(const e of (d.pool || []).filter(x => x.cid === cid)) for(let k = 0; k < e.n; k++) out.push(e.pid);
+  return out.sort((a, b) => (RAR[DATA.byPrint.get(b)?.rarity] ?? 0) - (RAR[DATA.byPrint.get(a)?.rarity] ?? 0));
+}
+export function sealedPrints(d, e){
+  const all = poolPrints(d, e.cid), i = all.indexOf(e.pid);
+  if(i > 0){ all.splice(i, 1); all.unshift(e.pid); }
+  return all.slice(0, e.n);
+}
+function syncSealed(d){
+  if(!d || d.format !== "sealed") return;
+  for(const e of d.cards){ const pr = sealedPrints(d, e); if(pr.length){ e.prints = pr; e.pid = pr[0]; } }
+  for(const l of d.legends) if(l){ const pr = poolPrints(d, l.cid); if(pr.length && !pr.includes(l.pid)) l.pid = pr[0]; }
+}
+function save(){ if(CUR){ syncSealed(CUR); saveDeck(CUR); } }
 
 let filtOpen = false;
 function renderEditor(){
@@ -281,7 +303,7 @@ function renderEditor(){
   const d = CUR, lim = ramLimits(d), checks = validate(d), n = deckSize(d), miss = missing(d);
   const legsHTML = [0, 1, 2].map(i => {
     const l = d.legends[i], c = l && DATA.byId.get(l.cid);
-    return c ? `<div class="lslot${d.format !== "sealed" && !cardQty(c) ? " unowned" : ""}" data-lslot="${i}" title="${esc(c.dn)}${d.format !== "sealed" && !cardQty(c) ? " (non in collezione)" : ""}"><img src="${thumbUrl(l.pid || c.def.id)}" alt="${esc(c.dn)}"><button class="x" data-lrm="${i}" aria-label="Togli">✕</button></div>`
+    return c ? `<div class="lslot${d.format !== "sealed" && !cardQty(c) ? " unowned" : ""}" data-lslot="${i}" data-pid="${esc(l.pid || c.def.id)}" title="${esc(c.dn)}${d.format !== "sealed" && !cardQty(c) ? " (non in collezione)" : ""}"><img src="${thumbUrl(l.pid || c.def.id)}" alt="${esc(c.dn)}"><button class="x" data-lrm="${i}" aria-label="Togli">✕</button></div>`
              : `<div class="lslot" data-lslot="${i}">+ Leggenda</div>`;
   }).join("");
   const ram = d.format === "sealed" ? `<span class="chip">Sealed · max 3 colori · min 30 carte · senza RAM</span>` : COLORS.map(k => `<span><i class="pip ${k}"></i>${COLOR_IT[k]} ≤ ${lim[k]}</span>`).join("");
@@ -416,7 +438,7 @@ function wire(){
     const rm = e.target.closest("[data-lrm]"); if(rm){ e.stopPropagation(); CUR.legends[+rm.dataset.lrm] = null; save(); renderEditor(); return; }
     const ls = e.target.closest("[data-lslot]"); if(ls){
       const l = CUR.legends[+ls.dataset.lslot];
-      if(l){ const i = +ls.dataset.lslot; openCard(l.cid, l.pid, { pick: pid => { CUR.legends[i].pid = pid; save(); renderEditor(); } }); }
+      if(l){ const i = +ls.dataset.lslot; openCard(l.cid, l.pid, { only: CUR.format === "sealed" ? poolPrints(CUR, l.cid) : null, pick: pid => { CUR.legends[i].pid = pid; save(); renderEditor(); } }); }
       else { browse = "legends"; renderEditor(); $("#deckBrowser").scrollIntoView({ behavior: "smooth", block: "start" }); }
       return;
     }
@@ -433,13 +455,13 @@ function wire(){
     }
     const row = e.target.closest("#deckRows .row"); if(row){ anchorCid = row.dataset.cid;
       const cid = row.dataset.cid;
-      if(e.target.closest(".thumb")){ openCard(cid, row.dataset.pid, { pick: pid => { const en = CUR.cards.find(x => x.cid === cid); if(en){ en.pid = pid; } else { addCard(cid, 1); CUR.cards.find(x => x.cid === cid).pid = pid; } save(); renderEditor(); } }); return; }
+      if(e.target.closest(".thumb")){ openCard(cid, row.dataset.pid, { only: CUR.format === "sealed" ? poolPrints(CUR, cid) : null, pick: pid => { const en = CUR.cards.find(x => x.cid === cid); if(en){ en.pid = pid; } else { addCard(cid, 1); CUR.cards.find(x => x.cid === cid).pid = pid; } save(); renderEditor(); } }); return; }
       if(browse === "legends"){ const i = CUR.legends.findIndex(l => !l); if(i < 0){ toast("Hai già 3 Leggende: togline una"); return; } setLegend(i, cid); return; }
       addCard(cid, 1); return;
     }
     const drow = e.target.closest(".dlist .row"); if(drow){
       const cid = drow.dataset.cid, en = CUR.cards.find(x => x.cid === cid);
-      openCard(cid, en?.pid, { pick: pid => { if(en){ en.pid = pid; save(); renderEditor(); } } });
+      openCard(cid, en?.pid, { only: CUR.format === "sealed" ? poolPrints(CUR, cid) : null, pick: pid => { if(en){ en.pid = pid; save(); renderEditor(); } } });
     }
   });
   // filtri (delegati: il contenitore viene ricreato a ogni render)

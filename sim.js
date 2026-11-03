@@ -40,9 +40,49 @@ const names = () => [S.profile.nick || "Tu", gmode === "bot" ? "IA" : "Giocatore
 
 /* tutte le mosse passano da qui: in una partita online vengono anche inviate all'avversario */
 const online = () => gOnline && ON.T.row;
-function act(pi, a){ const m = moveOf(a); const r = doAction(G, pi, m); if(online()) ON.send({ k: "a", p: pi, a: m }); return r; }
-function res(i){ const r = resolve(G, i); if(online()) ON.send({ k: "r", i: i == null ? -1 : i }); return r; }
-function doMull(pi, d){ if(G.players[pi].mulliganed) return; mulligan(G, pi, d); if(online()) ON.send({ k: "m", p: pi, d: d ? 1 : 0 }); }
+function act(pi, a){ const m = moveOf(a); const r = doAction(G, pi, m); if(online()){ ON.send({ k: "a", p: pi, a: m }); clockMark(); } return r; }
+function res(i){ const r = resolve(G, i); if(online()){ ON.send({ k: "r", i: i == null ? -1 : i }); clockMark(); } return r; }
+function doMull(pi, d){ if(G.players[pi].mulliganed) return; mulligan(G, pi, d); if(online()){ ON.send({ k: "m", p: pi, d: d ? 1 : 0 }); clockMark(); } }
+
+/* ------------------------------------------------------------ orologi dei tavoli con limite di tempo
+   Dopo ogni mossa si annota chi deve muovere (una decisione in sospeso o il giocatore di turno) e il
+   turno; con gli orari delle mosse dati dal server, i due telefoni calcolano gli stessi tempi.
+   Chi finisce il tempo lo dichiara dal proprio telefono (come la sconfitta decisa dal motore).     */
+let clk = [];
+const onMoveNow = () => !G || G.winner != null ? null : G.pending ? G.pending.player : G.phase === "main" ? G.active : null;
+function clockMark(){ if(G) clk.push({ on: onMoveNow(), act: G.active, turn: G.turn }); }
+function clocks(){
+  const o = ON.tableOpts(); if(!G || !gOnline || (!o.turn && !o.match)) return null;
+  const st = ON.T.stamps, now = Date.now(), used = [0, 0]; let turnUsed = 0, decision = 0;
+  const last = clk.length ? clk[clk.length - 1] : null;
+  for(let i = 0; i < clk.length; i++){
+    const from = st[i], to = i + 1 < clk.length ? st[i + 1] : now; if(!from || !to || to < from) continue;
+    const c = clk[i], d = (to - from) / 1000; if(c.on == null) continue;
+    used[c.on] += d;
+    if(last && c.turn === last.turn && c.on === c.act) turnUsed += d;
+    if(i === clk.length - 1) decision = d;
+  }
+  let expired = null;
+  if(o.match){ for(const s of [0, 1]) if(used[s] > o.match * 60) expired = s; }
+  if(o.turn && last && last.on != null){
+    if(last.on === last.act && turnUsed > o.turn) expired = last.on;
+    if(last.on !== last.act && decision > Math.min(60, o.turn)) expired = last.on;   // reazione (es. blocco): non si può far scadere il turno dell'altro
+  }
+  return { used, turnUsed, decision, on: last ? last.on : null, act: last ? last.act : null, expired, o };
+}
+const mmss = s => { s = Math.max(0, Math.ceil(s)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
+function clockHTML(){
+  const c = clocks(); if(!c) return "";
+  const mine = me(), parts = [];
+  if(c.o.match) parts.push(`<span class="clk${c.on === mine ? " on" : ""}">Tu ${mmss(c.o.match * 60 - c.used[mine])}</span><span class="clk${c.on === 1 - mine ? " on" : ""}">Avv. ${mmss(c.o.match * 60 - c.used[1 - mine])}</span>`);
+  if(c.o.turn && c.on != null){ const left = c.on === c.act ? c.o.turn - c.turnUsed : Math.min(60, c.o.turn) - c.decision; parts.push(`<span class="clk turn${left < 15 ? " low" : ""}">${c.on === mine ? "Tuo" : "Suo"} turno ${mmss(left)}</span>`); }
+  return `<span class="clocks" title="Tempo rimasto">${parts.join("")}</span>`;
+}
+let conceding = false;
+function clockCheck(){
+  const c = clocks(); if(!c || c.expired == null || conceding || ON.T.ended) return;
+  if(c.expired === me()){ conceding = true; note("Tempo scaduto"); ON.concedeTime().finally(() => { conceding = false; }); }
+}
 
 /* ------------------------------------------------------------ setup (pagina) */
 /* Il setup ha due schede: «Costruito» (mazzi del deckbuilder e starter) e «Prerelease» (solo mazzi
@@ -163,6 +203,35 @@ function closeBoard(){
 }
 
 /* turno del bot a passi, per leggere cosa fa */
+/* ------------------------------------------------------------ ritmo delle azioni dell'avversario
+   Impostazioni → Simulatore: l'IA (e l'avversario online) fa una mossa alla volta, con una pausa
+   regolabile; ogni mossa compare in un riquadro sulla plancia e le carte appena entrate lampeggiano. */
+const OPP_SPEED = { instant: [650, 0], fast: [1100, 700], normal: [1800, 1300], slow: [2800, 2300] };
+const oppSpeed = () => OPP_SPEED[S.settings.oppSpeed] ? S.settings.oppSpeed : "normal";
+const oppDelay = online => OPP_SPEED[oppSpeed()][online ? 1 : 0];
+let feed = [], feedT = null, flashUids = new Set(), oppQ = [], oppQT = null;
+const fieldUids = () => new Set(G.players.flatMap(P => [...P.field, ...P.legends].map(u => u.uid)));
+const snapBefore = () => ({ last: G.log[G.log.length - 1], uids: fieldUids() });
+function showOpp(b){
+  if(!G || oppSpeed() === "instant") return;
+  const i = b.last ? G.log.lastIndexOf(b.last) : -1, lines = G.log.slice(i + 1).map(e => e.text).filter(Boolean);
+  const now = fieldUids(); flashUids = new Set([...now].filter(u => !b.uids.has(u)));
+  if(!lines.length && !flashUids.size) return;
+  feed = lines.slice(-3); clearTimeout(feedT);
+  feedT = setTimeout(() => { feed = []; flashUids = new Set(); $("#oppFeed")?.remove(); document.querySelectorAll("#board .justnow").forEach(x => x.classList.remove("justnow")); }, Math.max(1600, oppDelay(gOnline) + 500));
+}
+/* online: le mosse dell'avversario arrivano anche a raffica; si applicano una alla volta con la pausa scelta */
+function drainOpp(){
+  if(oppQT || !oppQ.length || !G) return;
+  const [m, seat] = oppQ.shift(), b = snapBefore();
+  applyMoveAs(G, seat, m); clockMark();
+  if(targeting && !G.players[me()].hand.some(c => c.uid === targeting.uid) && !G.players[me()].field.some(u => u.uid === targeting.uid)) targeting = null;
+  if(m.k !== "m") showOpp(b);
+  render(); tick();
+  const d = m.k === "m" ? 0 : oppDelay(true);
+  if(oppQ.length){ oppQT = setTimeout(() => { oppQT = null; drainOpp(); }, d); }
+}
+const oppBusy = () => gOnline && (oppQ.length > 0);
 function tick(){
   clearTimeout(botTimer);
   if(!G) return;
@@ -173,7 +242,7 @@ function tick(){
     // decisione del bot (fuori dal suo turno, es. blocco): già risolta da ask()
   }
   if(!human[G.active] && G.phase === "main" && !G.pending){
-    botTimer = setTimeout(() => { const more = botStep(G, G.active); render(); if(G.winner != null) finish(); if(more || G.active !== undefined) tick(); }, 650);
+    botTimer = setTimeout(() => { const b = snapBefore(); const more = botStep(G, G.active); showOpp(b); render(); if(G.winner != null) finish(); if(more || G.active !== undefined) tick(); }, oppDelay(false));
     return;
   }
   render();
@@ -191,6 +260,7 @@ function finish(){
 const fmtCode = c => esc(c || "");
 const nickOf = (t, who) => esc(t[who + "_nick"] || "?");
 export function setChallenge(f){ challenge = f; mode = "online"; }
+const optsLine = o => { o = o || {}; return [o.turn ? `${o.turn < 120 ? o.turn + " s" : o.turn / 60 + " min"} per turno` : "", o.match ? `${o.match} min a testa` : "", o.bo === 3 ? "al meglio di 3" : ""].filter(Boolean).join(" · "); };
 function onlineLobbyHTML(){
   if(!cloudState.user) return `<div class="online-box"><p class="note" style="margin:0">Per giocare online serve un account: accedi dalla scheda <b>Social</b> con Google o con l'email. Il nick pubblico è il nome che vede l'avversario.</p><div style="margin-top:10px"><button class="btn acc2" id="onlLogin">Vai al Social</button></div></div>`;
   const T = ON.T, me = cloudState.user.id;
@@ -198,14 +268,20 @@ function onlineLobbyHTML(){
   const inv = ON.invitesForMe(), act = ON.activeTables(), done = ON.tables.filter(t => t.status === "finished").slice(0, 5);
   const friends = cloudFriends.filter(f => f.status === "accepted");
   const rec = S.record.online || { w: 0, l: 0, d: 0 };
-  const resultTxt = t => { const mine = t.host === me ? "host" : "guest"; const res = t.result === "draw" ? "Patta" : t.result === mine ? "Vittoria" : "Sconfitta"; const why = { resign: "abbandono", timeout: "disconnessione", agreement: "accordo" }[t.reason] || ""; return res + (why ? ` (${why})` : ""); };
+  const resultTxt = t => { const mine = t.host === me ? "host" : "guest"; const res = t.result === "draw" ? "Patta" : t.result === mine ? "Vittoria" : "Sconfitta"; const why = { resign: "abbandono", timeout: "disconnessione", agreement: "accordo", time: "tempo scaduto" }[t.reason] || ""; return res + (why ? ` (${why})` : ""); };
   const opp = t => t.host === me ? (t.guest_nick || t.invited_nick) : t.host_nick;
   return `<div class="online-box">
     ${waiting ? `<div class="tcode"><small>Codice del tavolo</small><b>${fmtCode(waiting.code)}</b>
+        ${optsLine(waiting.opts) ? `<span class="chip">${optsLine(waiting.opts)}</span>` : ""}
         <span>${waiting.invited ? `Sfida inviata a <b>${esc(ON.T.inviteNick || (ON.tables.find(x => x.id === waiting.id) || {}).invited_nick || "un amico")}</b>: appena accetta, la partita parte da sola.` : "Dai il codice all'avversario: appena entra, la partita parte da sola."}</span>
         <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:8px"><button class="btn sm" id="onlShare">Condividi il codice</button><button class="btn sm" id="onlCancel">Annulla il tavolo</button></div></div>`
     : `<div class="onl-grid">
-        <div><h4>Crea un tavolo</h4><p class="sub">Ricevi un codice di 4 caratteri da dare all'avversario.</p><button class="btn acc2" id="onlCreate">Crea un tavolo</button></div>
+        <div><h4>Crea un tavolo</h4><p class="sub">Ricevi un codice di 4 caratteri da dare all'avversario.</p>
+          ${(() => { const o = S.settings.tableOpts || {}, sel = (id, cur, opts) => `<select class="inp" id="${id}">${opts.map(([v, t]) => `<option value="${v}"${String(cur || 0) === String(v) ? " selected" : ""}>${t}</option>`).join("")}</select>`;
+            return `<div class="topts"><label>Tempo per turno${sel("onlTurn", o.turn, [[0, "Nessun limite"], [60, "1 minuto"], [90, "1 min e mezzo"], [120, "2 minuti"], [180, "3 minuti"]])}</label>
+              <label>Tempo a testa${sel("onlMatch", o.match, [[0, "Nessun limite"], [10, "10 minuti"], [20, "20 minuti"], [30, "30 minuti"]])}</label>
+              <label>Partite${sel("onlBo", o.bo || 1, [[1, "Una partita"], [3, "Al meglio di 3"]])}</label></div>`; })()}
+          <button class="btn acc2" id="onlCreate">Crea un tavolo</button></div>
         <div><h4>Entra con un codice</h4><div style="display:flex;gap:6px"><input class="inp code" id="onlCode" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD"><button class="btn yel" id="onlJoin">Entra</button></div></div>
         <div><h4>Sfida un amico</h4>${friends.length ? `<div style="display:flex;gap:6px"><select class="inp" id="onlFriend">${friends.map(f => `<option value="${f.id}"${challenge && challenge.id === f.id ? " selected" : ""}>${esc(f.nick)}${cloudState.online.has(f.id) ? " ●" : ""}</option>`).join("")}</select><button class="btn acc2" id="onlChallenge">Sfida</button></div>` : `<p class="sub">Aggiungi amici dalla scheda Social per sfidarli direttamente.</p>`}</div>
       </div>`}
@@ -218,6 +294,9 @@ function onlineLobbyHTML(){
 }
 function onlineBadgeHTML(){
   if(!ON.T.row || G.winner != null) return "";
+  return clockHTML() + onlineStatusHTML();
+}
+function onlineStatusHTML(){
   if(oppWarn) return `<b class="onl warn" title="${esc(oppWarn)}">⚠ mazzo avversario ${oppWarn.startsWith("Le carte") ? "non verificato" : "non regolare"}</b>`;
   const idle = ON.otherIdle(), R = G.players[1 - me()];
   if(ON.T.error && /fetch|network|Failed/i.test(ON.T.error)) return `<b class="onl warn">⚠ connessione assente</b>`;
@@ -261,17 +340,17 @@ function closeTableChat(){ const el = $("#tchat"); if(el){ el.hidden = true; if(
 function buildOnline(moves){
   const { decks, opts } = ON.setupOf(ON.T.row);
   G = createGame(decks, DATA.byId, opts);
-  G.mulliganAsked = [false, false];
-  for(const x of moves){ try{ applyMoveAs(G, x.seat, x.move); }catch(e){ console.warn("mossa non applicabile", x, e); break; } }
+  G.mulliganAsked = [false, false]; clk = [];
+  for(const x of moves){ try{ applyMoveAs(G, x.seat, x.move); clockMark(); }catch(e){ console.warn("mossa non applicabile", x, e); break; } }
   if(ON.T.ended) applyEnd(ON.T.ended);
 }
 function applyEnd(e){
   if(!G || !e || !e.result) return;
   const w = e.result === "draw" ? -1 : e.result === "host" ? 0 : 1;
-  if(G.winner === w && !["resign", "timeout", "agreement"].includes(e.reason)) return;   // il motore l'aveva già decisa
+  if(G.winner === w && !["resign", "timeout", "agreement", "time"].includes(e.reason)) return;   // il motore l'aveva già decisa
   const loser = w >= 0 ? G.players[1 - w].name : "";
   G.winner = w; G.pending = null;
-  G.reason = e.reason === "agreement" ? "Patta concordata" : e.reason === "resign" ? `${loser} abbandona la partita` : e.reason === "timeout" ? `${loser} si è disconnesso per più di un minuto` : (G.reason || e.reason || "");
+  G.reason = e.reason === "agreement" ? "Patta concordata" : e.reason === "resign" ? `${loser} abbandona la partita` : e.reason === "timeout" ? `${loser} si è disconnesso per più di un minuto` : e.reason === "time" ? `${loser} ha finito il tempo` : (G.reason || e.reason || "");
 }
 function finishOnline(){
   // la partita si ricostruisce più volte dal registro: si conta una volta sola per tavolo
@@ -284,10 +363,25 @@ function finishOnline(){
   S.record.games = [{ when: Date.now(), mode: "online", winner: G.winner === -1 ? "—" : G.players[G.winner].name, reason: G.reason, turns: G.turn, vs: G.players[1 - gSeat].name }, ...(S.record.games || [])].slice(0, 50);
   S.save("record");
   render();
+  seriesAfter();
 }
-ON.setOnlineHooks({
+/* al meglio di 3: punteggio sulla plancia e, se la serie non è decisa, la partita dopo parte da sola */
+let series = null, seriesT = null;
+async function seriesAfter(){
+  if(!ON.T.row || !ON.T.row.series) { series = null; return; }
+  const tid = ON.T.row.id;
+  try{ series = await ON.seriesScore(); }catch(e){ series = null; }
+  if(!series || !ON.T.row || ON.T.row.id !== tid) return;
+  series.next = series.me < 2 && series.opp < 2 && (ON.T.row.game_no || 1) < 3;
+  render();
+  if(series.next){ clearTimeout(seriesT); seriesT = setTimeout(() => { if(ON.T.row && ON.T.row.id === tid) ON.nextGame().catch(err => note(err.message)); }, 6000); }
+}
+const seriesHTML = () => series ? `<p class="series">Serie al meglio di 3 · <b>${series.me}–${series.opp}</b>${series.next ? ` · la partita ${(ON.T.row.game_no || 1) + 1} parte tra pochi secondi` : series.me >= 2 ? " · serie vinta" : series.opp >= 2 ? " · serie persa" : ""}</p>` : "";
+const hooksForTest = {};
+ON.setOnlineHooks(Object.assign(hooksForTest, {
   start(row, seat, nicks, moves){
-    clearTimeout(botTimer); stopTutorial();
+    clearTimeout(botTimer); stopTutorial(); clearTimeout(seriesT); series = null;
+    if(row.series && (row.game_no || 1) > 1) ON.seriesScore().then(x => { series = x ? { ...x, next: false } : null; render(); }).catch(() => {});
     gmode = "online"; mode = "online"; gOnline = true; gSeat = seat; human = [seat === 0, seat === 1];
     // Prerelease: il mazzo dell'avversario deve venire davvero da un kit (si riapre e si confronta)
     const opp = seat === 0 ? row.guest_deck : row.host_deck; oppWarn = oppDeckIssue(opp);
@@ -296,12 +390,12 @@ ON.setOnlineHooks({
     if(location.hash !== "#sim") location.hash = "#sim";
     $("#board").innerHTML = ""; openBoard(); render(); tick();
   },
-  move(m, seat){ if(!G || !gOnline) return; applyMoveAs(G, seat, m); if(targeting && !G.players[me()].hand.some(c => c.uid === targeting.uid) && !G.players[me()].field.some(u => u.uid === targeting.uid)) targeting = null; render(); tick(); },
-  rebuild(moves){ if(!gOnline || !ON.T.row) return; window.__ncdRebuilds = (window.__ncdRebuilds || 0) + 1; buildOnline(moves); sel = null; targeting = null; render(); tick(); },
+  move(m, seat){ if(!G || !gOnline) return; oppQ.push([m, seat]); drainOpp(); },
+  rebuild(moves){ if(!gOnline || !ON.T.row) return; oppQ = []; clearTimeout(oppQT); oppQT = null; window.__ncdRebuilds = (window.__ncdRebuilds || 0) + 1; buildOnline(moves); sel = null; targeting = null; render(); tick(); },
   lost(m){ if(m.k === "m" && G && !G.players[m.p].mulliganed){ doMull(m.p, !!m.d); render(); tick(); } },
   end(e){ if(G && gOnline){ applyEnd(e); render(); finish(); } }
-});
-setInterval(() => { if(gOnline && G && G.winner == null && !$("#board").hidden){ const b = $("#onlBadge"); if(b) b.innerHTML = onlineBadgeHTML(); } }, 1000);
+}));
+setInterval(() => { if(gOnline && G && G.winner == null){ clockCheck(); if(!$("#board").hidden){ const b = $("#onlBadge"); if(b) b.innerHTML = onlineBadgeHTML(); } } }, 1000);
 function onlineMenuItems(){
   const mine = ON.T.drawOffer && ON.T.drawOffer === cloudState.user?.id;
   return [
@@ -315,7 +409,10 @@ async function lobbyClick(e){
   const busy = async (btn, f) => { if(btn.disabled) return; btn.disabled = true; try{ await f(); }catch(err){ toast(err.message, 4000); } finally{ btn.disabled = false; renderSim(); } };
   if(t.closest("#onlLogin")){ location.hash = "#profile"; return; }
   let b;
-  if((b = t.closest("#onlCreate"))){ const d = deck(); if(d) busy(b, () => ON.createTable(d, S.profile.autoPay)); return; }
+  if((b = t.closest("#onlCreate"))){ const d = deck(); if(!d) return;
+    const o = { turn: +($("#onlTurn")?.value || 0), match: +($("#onlMatch")?.value || 0), bo: +($("#onlBo")?.value || 1) };
+    S.settings.tableOpts = o; S.save("settings");
+    busy(b, () => ON.createTable(d, S.profile.autoPay, null, { turn: o.turn || null, match: o.match || null, bo: o.bo === 3 ? 3 : null })); return; }
   if((b = t.closest("#onlJoin"))){ const code = ($("#onlCode").value || "").trim().toUpperCase(); if(!/^[A-Z2-9]{4}$/.test(code)){ toast("Il codice è di 4 caratteri"); return; } const d = deck(); if(d) busy(b, () => ON.joinTable(code, d, S.profile.autoPay)); return; }
   if((b = t.closest("#onlChallenge"))){ const id = $("#onlFriend").value, f = cloudFriends.find(x => x.id === id); const d = deck(); if(d) busy(b, async () => { await ON.createTable(d, S.profile.autoPay, id); ON.T.inviteNick = f && f.nick; challenge = null; }); return; }
   if((b = t.closest("#onlCancel"))){ busy(b, () => ON.cancelTable(ON.T.row.id)); return; }
@@ -345,11 +442,22 @@ function fitBoard(board, H){
 }
 /* potenza mostrata: quella che conta adesso, con gli effetti continui (es. Royce: +2 per ogni Gear nel suo turno) */
 function shownPower(x){ const P = G && G.players.find(Q => Q.field.includes(x) || Q.legends.includes(x)); return P ? powerIn(G, P, x) : power(x); }
+/* Gear come in Arena: le carte equipaggiate stanno sotto l'Unità (o la Leggenda) e ne spunta un margine;
+   il primo tocco sull'Unità le apre di fianco, ognuna si tocca o si ingrandisce con la pressione lunga */
+let gearOpen = null;
 function cardHTML(x, cls = "", extra = ""){
-  const pw = shownPower(x), base = x.card.power ?? 0, c = cls + (x.spent ? " spent" : "") + (x.lag ? " lag" : "") + (sel === x.uid ? " sel" : "");
-  return `<div class="bc ${c}" data-uid="${x.uid}" title="${esc(x.card.dn)}">${x.pid ? `<img src="${thumbUrl(x.pid)}" alt="">` : `<div class="n">${esc(x.card.dn)}</div>`}
-    ${x.card.type === "Unit" || x.isLegend ? `<span class="pw${pw !== base ? " mod" : ""}">${pw}</span>` : ""}${extra}
-    ${(x.gear || []).length ? `<div class="g">${x.gear.map(g => `<img src="${thumbUrl(g.pid)}" alt="" title="${esc(g.card.dn)}">`).join("")}</div>` : ""}</div>`;
+  const pw = shownPower(x), base = x.card.power ?? 0, gear = x.gear || [];
+  const c = cls + (x.spent ? " spent" : "") + (x.lag ? " lag" : "") + (sel === x.uid ? " sel" : "") + (flashUids.has(x.uid) ? " justnow" : "") + (gear.length ? " host" : "");
+  const card = `<div class="bc ${c}" data-uid="${x.uid}" title="${esc(x.card.dn)}${gear.length ? " · " + gear.map(g => esc(g.card.dn)).join(", ") : ""}">${x.pid ? `<img src="${thumbUrl(x.pid)}" alt="">` : `<div class="n">${esc(x.card.dn)}</div>`}
+    ${x.card.type === "Unit" || x.isLegend ? `<span class="pw${pw !== base ? " mod" : ""}">${pw}</span>` : ""}${extra}${gear.length ? `<span class="gn" aria-hidden="true">⚙${gear.length}</span>` : ""}</div>`;
+  if(!gear.length) return card;
+  const open = gearOpen === x.uid;
+  return `<div class="bcw${open ? " open" : ""}" data-w="${x.uid}" style="--gn:${gear.length}">${card}${gear.map((g, i) => `<div class="bc gearc${flashUids.has(g.uid) ? " justnow" : ""}" data-uid="${g.uid}" data-gear-of="${x.uid}" style="--gi:${i + 1}" title="${esc(g.card.dn)} (Gear)">${g.pid ? `<img src="${thumbUrl(g.pid)}" alt="">` : `<div class="n">${esc(g.card.dn)}</div>`}</div>`).join("")}</div>`;
+}
+function gearCard(el){
+  const host = +el.dataset.gearOf;
+  for(const P of G.players) for(const u of [...P.field, ...P.legends]){ const g = (u.gear || []).find(x => x.uid === +el.dataset.uid); if(g && u.uid === host){
+    openPop(el, [{ label: "Ingrandisci", fn: () => openLens(imgUrl(g.pid)) }, { label: "Scheda carta", fn: () => openCard(g.cid, g.pid) }], `${g.card.dn} · Gear di ${u.card.dn}`); return; } }
 }
 /* pagamento sulla plancia: quando il motore chiede «con cosa paghi?», si toccano
    direttamente gli Eddies o le Leggende invece di scegliere da una finestra */
@@ -390,7 +498,7 @@ function render(){
   const W = board.clientWidth, cw = Math.max(24, Math.min(150, (H - 110) / (1.4 * 4.15 + 0.6), (W - 320) / 9));
   board.style.setProperty("--cw", cw.toFixed(1) + "px");
   board.style.setProperty("--bz", Math.max(1, Math.min(2.2, cw / 52)).toFixed(3));
-  board.innerHTML = `
+  board.innerHTML = `${feed.length ? `<div id="oppFeed" role="status" aria-live="polite">${feed.map(t => `<div>${esc(t)}</div>`).join("")}</div>` : ""}
     <div class="bz rival">
       <div class="brow">
         <div class="stack" title="Mazzo"><b>${R.deck.length}</b><small>mazzo</small></div>
@@ -429,7 +537,7 @@ function render(){
     ${tutorialActive() ? tutorialBarHTML(G, me()) : ""}
     ${showLog ? `<div id="simLog"><div style="display:flex;justify-content:space-between;align-items:center"><b>Registro</b><button class="btn sm icon" id="bLogClose">✕</button></div>${G.log.slice(-80).map(e => `<div class="e ${e.kind}">${esc(e.text)}</div>`).join("")}</div>` : ""}
     ${mulliganPending() != null ? mulliganHTML() : pm ? "" : G.pending && human[G.pending.player] ? askHTML() : ""}
-    ${G.winner != null ? `<div class="winbox"><div class="box"><h2>${G.winner === -1 ? "PATTA" : G.winner === me() ? "VITTORIA" : gmode === "hot" ? "VINCE " + esc(G.players[G.winner].name).toUpperCase() : "SCONFITTA"}</h2><p class="wflav">${G.winner === -1 ? "Stavolta la città non è di nessuno." : G.winner === me() || gmode === "hot" ? "Night City ricorderà il tuo nome." : "Flatline. Rialzati, choom."}</p><p>${esc(G.reason)}</p><p style="color:var(--mute)">${G.turn} turni</p><div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">${gmode === "online" ? `<button class="btn" id="bChat2">💬 Chat</button><button class="btn yel" id="bExit">Torna alla lobby</button>` : `<button class="btn yel" id="bAgain">Rivincita</button><button class="btn" id="bExit">Esci</button>`}</div></div></div>` : ""}
+    ${G.winner != null ? `<div class="winbox"><div class="box"><h2>${G.winner === -1 ? "PATTA" : G.winner === me() ? "VITTORIA" : gmode === "hot" ? "VINCE " + esc(G.players[G.winner].name).toUpperCase() : "SCONFITTA"}</h2><p class="wflav">${G.winner === -1 ? "Stavolta la città non è di nessuno." : G.winner === me() || gmode === "hot" ? "Night City ricorderà il tuo nome." : "Flatline. Rialzati, choom."}</p><p>${esc(G.reason)}</p><p style="color:var(--mute)">${G.turn} turni</p>${gmode === "online" ? seriesHTML() : ""}<div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">${gmode === "online" ? `<button class="btn" id="bChat2">💬 Chat</button>${series && series.next ? `<button class="btn acc2" id="bNextGame">Partita successiva</button>` : ""}<button class="btn yel" id="bExit">Torna alla lobby</button>` : `<button class="btn yel" id="bAgain">Rivincita</button><button class="btn" id="bExit">Esci</button>`}</div></div></div>` : ""}
     ${gmode === "online" ? drawOfferHTML() : ""}
     ${peekPid ? `<div id="peek">${peekInner(peekPid)}</div>` : ""}
     ${handoff ? `<div class="handoff"><h2>Passa il dispositivo a ${esc(G.players[G.active].name)}</h2><p>Il tuo rivale non guarda, promesso.</p><button class="btn yel" id="bHand">Sono pronto</button></div>` : ""}`;
@@ -525,6 +633,7 @@ function fieldCard(el, owner){
     if(targeting.kind === "gear" && mine){ after(act(M.id, { t: "play", uid: targeting.uid, target: u.uid })); return; }
     if(targeting.kind === "attack" && !mine){ after(act(M.id, { t: "attack", uid: targeting.uid, target: { kind: "unit", uid: u.uid } })); return; }
   }
+  if((u.gear || []).length && gearOpen !== u.uid){ gearOpen = u.uid; render(); return; }   // primo tocco: Gear di fianco
   const items = [];
   if(mine && myTurn){
     const can = canAttack(G, M, u) && tutorialAllows("attack");
@@ -541,7 +650,7 @@ function fieldCard(el, owner){
       { label: "Sconfiggi", cls: "danger", fn: () => { manual.defeat(G, owner, u.uid); after(); } });
   }
   items.push({ label: "Ingrandisci", fn: () => openLens(imgUrl(u.pid)) }, { label: "Scheda carta", fn: () => openCard(u.cid, u.pid) });
-  for(const g of u.gear || []) items.push({ label: `Ingrandisci ${g.card.dn} (Gear)`, fn: () => openLens(imgUrl(g.pid)) });
+
   openPop(el, items, `${u.card.dn} · potenza ${shownPower(u)}`);
 }
 function legendCard(el, owner){
@@ -549,6 +658,7 @@ function legendCard(el, owner){
   const M = G.players[me()], mine = owner === M.id;
   const myTurn = G.active === M.id && G.phase === "main" && !G.pending && G.winner == null && human[M.id];
   if(targeting && targeting.kind === "gear" && mine && l.faceUp && !l.onField && !l.removed && myTurn){ after(act(M.id, { t: "play", uid: targeting.uid, target: l.uid })); return; }
+  if((l.gear || []).length && l.faceUp && gearOpen !== l.uid && !payMode()){ gearOpen = l.uid; render(); return; }
   const items = [], idx = P.legends.indexOf(l);
   if(mine && myTurn && !l.removed && !l.onField){
     if(!l.faceUp) items.push({ label: "Chiama questa Leggenda (1 €$)", cls: "acc", disabled: P.called || !canPay(P, 1) || !tutorialAllows("call"), fn: () => after(act(M.id, { t: "call", idx })) });
@@ -557,7 +667,7 @@ function legendCard(el, owner){
     if(MANUAL) items.push({ label: l.spent ? "Prepara (manuale)" : "Spendi come 1 €$ (manuale)", fn: () => { manual.toggleSpent(G, owner, l.uid); after(); } });
     if(MANUAL && !l.faceUp) items.push({ label: "Scopri senza chiamare (manuale)", fn: () => { manual.flip(G, owner, idx); after(); } });
   }
-  if(l.faceUp){ items.push({ label: "Ingrandisci", fn: () => openLens(imgUrl(l.pid)) }, { label: "Scheda carta", fn: () => openCard(l.cid, l.pid) }); for(const g of l.gear || []) items.push({ label: `Ingrandisci ${g.card.dn} (Gear)`, fn: () => openLens(imgUrl(g.pid)) }); }
+  if(l.faceUp){ items.push({ label: "Ingrandisci", fn: () => openLens(imgUrl(l.pid)) }, { label: "Scheda carta", fn: () => openCard(l.cid, l.pid) }); }
   if(!items.length) items.push({ label: "Leggenda coperta: nessuno sa quale sia", disabled: true, fn: () => {} });
   openPop(el, items, l.faceUp ? l.card.dn : "Leggenda coperta");
 }
@@ -636,7 +746,7 @@ function wire(){
   const dropTarget = (x, y) => {
     const M = G.players[me()], el = document.elementFromPoint(x, y); if(!el) return null;
     const ed = el.closest(".bz.mine [data-eddies]"); if(ed) return { kind: "sell", el: ed };
-    const bc = el.closest(".bc");
+    let bc = el.closest(".bc"); if(bc && bc.dataset.gearOf) bc = bc.closest("[data-w]").querySelector(".bc.host") || bc;
     if(bc && bc.closest(`[data-field="${M.id}"]`)) return { kind: "unit", el: bc, uid: +bc.dataset.uid };
     if(bc && bc.dataset.legend && bc.closest(".bz.mine")){ const l = M.legends.find(l => l.uid === +bc.dataset.uid); if(l && l.faceUp && !l.onField && !l.removed) return { kind: "legend", el: bc, uid: l.uid }; if(l && !l.faceUp) return { kind: "facedown", el: null }; }
     const zone = el.closest(".bz.mine"); if(zone && !el.closest("[data-handrow]")) return { kind: "field", el: zone.querySelector(`[data-field="${M.id}"]`) };
@@ -645,7 +755,7 @@ function wire(){
   board.addEventListener("pointerdown", e => {
     if(drag) return;                                   // un secondo dito non avvia un altro trascinamento
     if(!e.isPrimary || !G || G.winner != null) return;
-    const M = G.players[me()]; if(G.active !== M.id || G.phase !== "main" || G.pending || !human[M.id]) return;
+    const M = G.players[me()]; if(G.active !== M.id || G.phase !== "main" || G.pending || !human[M.id] || oppBusy()) return;
     const el = e.target.closest("[data-handrow] .bc");
     const lg = !el && e.target.closest(".bz.mine [data-legend]");
     if(lg){   // una Leggenda scoperta con Go Solo si trascina in plancia
@@ -698,6 +808,9 @@ function wire(){
     const t = e.target;
     // registro aperto: un tocco fuori dal pannello lo chiude
     if(showLog && !t.closest("#simLog")){ showLog = false; render(); return; }
+    if(gearOpen != null && !t.closest(`[data-w="${gearOpen}"], .pop`)){ gearOpen = null; render(); if(!t.closest(".bc, [data-ask], button")) return; }
+    // online: finché le mosse dell'avversario scorrono una alla volta, si guarda e basta
+    if(oppBusy() && !t.closest("#bLog, #bLogClose, #bMenu, #bChat, #bChat2, [data-zoom], .pop")) return;
     if(t.closest("#bEnd")){ const ok = act(me(), { t: "end" }); after(ok); if(ok !== false && gmode === "hot" && G.winner == null){ handoff = true; render(); } return; }
     if(t.closest("#bCancel")){ targeting = null; sel = null; render(); return; }
     if(t.closest("#bLog")){ showLog = !showLog; render(); return; }
@@ -705,6 +818,7 @@ function wire(){
     if(t.closest("#bMenu")){ menu(t.closest("#bMenu")); return; }
     if(t.closest("#bChat") || t.closest("#bChat2")){ openTableChat(); return; }
     const dr = t.closest("[data-draw]"); if(dr){ ON.answerDraw(dr.dataset.draw === "1").catch(err => note(err.message)); return; }
+    if(t.closest("#bNextGame")){ clearTimeout(seriesT); ON.nextGame().catch(err => note(err.message)); return; }
     if(t.closest("#bAgain")){ $("#board").hidden = true; renderSim(); start(); return; }
     if(t.closest("#bExit")){ closeBoard(); return; }
     if(t.closest("#bHand")){ handoff = false; render(); tick(); return; }
@@ -723,6 +837,7 @@ function wire(){
     const zoom = t.closest("[data-zoom]"); if(zoom){ openLens(imgUrl(zoom.dataset.zoom)); return; }
     const pk = t.closest("[data-pick]"); if(pk && G.pending){ pickSel = { p: G.pending, i: +pk.dataset.pick }; render(); return; }
     const ask = t.closest("[data-ask]"); if(ask){ if(G.pending && G.pending.kind === "block" && human[G.pending.player]) G.tutReacted = true; res(+ask.dataset.ask); render(); tick(); return; }
+    const gc = t.closest("[data-gear-of]"); if(gc){ gearCard(gc); return; }
     const hand = t.closest("[data-hand=\"1\"]"); if(hand){ handCard(hand, G.players[me()]); return; }
     const leg = t.closest("[data-legend]"); if(leg){ const owner = leg.closest(".bz").classList.contains("mine") ? me() : 1 - me(); legendCard(leg, owner); return; }
     const bc = t.closest(".bc"); if(bc){ const f = bc.closest("[data-field]"); if(f){ fieldCard(bc, +f.dataset.field); return; } }
@@ -735,11 +850,13 @@ function wire(){
 }
 function pidOf(el){
   if(!G) return null; const uid = +el.dataset.uid;
-  for(const P of G.players){ const x = [...P.hand, ...P.field, ...P.legends].find(c => c.uid === uid); if(x){ if(P.legends.includes(x) && !x.faceUp) return null; if(P.hand.includes(x) && P.id !== me()) return null; return x.pid; } }
+  for(const P of G.players){ const x = [...P.hand, ...P.field, ...P.legends, ...[...P.field, ...P.legends].flatMap(u => u.gear || [])].find(c => c.uid === uid); if(x){ if(P.legends.includes(x) && !x.faceUp) return null; if(P.hand.includes(x) && P.id !== me()) return null; return x.pid; } }
   return null;
 }
 /* per i collaudi automatici: stessa strada dei tocchi sulla plancia */
-window.__ncdSim = { chat: () => openTableChat(), G: () => G, seat: () => me(), act: a => { const r = act(me(), a); after(r); return r; }, res: i => { res(i); render(); tick(); } };
+window.__ncdSim = { chat: () => openTableChat(), G: () => G, seat: () => me(), clocks: () => clocks(),
+  // solo in locale (collaudi): una partita online finta, senza server
+  ...(/^(127\.0\.0\.1|localhost)$/.test(location.hostname) ? { fakeOnline: (row, moves) => { ON.T.row = row; ON.T.seat = 0; ON.T.nicks = ["A", "B"]; ON.T.ended = null; ON.T.stamps = moves.map(m => m.at); hooksForTest.start(row, 0, ["A", "B"], moves.map(m => ({ move: m.move, seat: m.seat }))); } } : {}), act: a => { const r = act(me(), a); after(r); return r; }, res: i => { res(i); render(); tick(); } };
 /* per la Home: partita da riprendere e scorciatoia alla lobby online */
 export const simInProgress = () => G && G.winner == null ? (gOnline ? "online" : "offline") : null;
 export function resumeSim(){ if(G && G.winner == null){ openBoard(); render(); tick(); } }

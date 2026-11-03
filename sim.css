@@ -222,3 +222,35 @@
 #board .winbox .box{max-width:calc(420px * var(--bz))} #board .winbox h2{font-size:calc(28px * var(--bz))} #board .handoff h2{font-size:calc(26px * var(--bz))}
 #board .tutbar{max-width:min(calc(680px * var(--bz)),94%)}
 #board .wflav{font-style:italic;color:var(--ink2);margin:2px 0 6px}
+
+/* mosse dell'avversario, una alla volta (Impostazioni → Simulatore → velocità) */
+#oppFeed{position:absolute;left:50%;top:27%;transform:translate(-50%,-50%);z-index:30;max-width:min(92%,520px);padding:10px 14px;border-radius:4px;
+  background:color-mix(in srgb,var(--bg) 88%,transparent);border:1px solid var(--acc);box-shadow:0 6px 28px rgba(0,0,0,.55);pointer-events:none;
+  font-size:calc(12.5px * var(--bz,1));line-height:1.35;color:var(--ink);animation:oppIn .18s ease-out}
+#oppFeed div+div{margin-top:3px;color:var(--ink2)}
+#oppFeed div:last-child{color:var(--ink);font-weight:600}
+@keyframes oppIn{from{opacity:0;transform:translate(-50%,-44%)}to{opacity:1;transform:translate(-50%,-50%)}}
+.bc.justnow{box-shadow:0 0 0 2px var(--acc),0 0 16px color-mix(in srgb,var(--acc) 70%,transparent);animation:justnow 1.1s ease-in-out 2}
+@keyframes justnow{50%{box-shadow:0 0 0 3px var(--acc),0 0 26px var(--acc)}}
+html[data-motion="reduce"] #oppFeed,html[data-motion="reduce"] .bc.justnow{animation:none}
+
+/* Gear sotto la carta (stile Arena): chiusi ne spunta un margine a destra, aperti stanno di fianco */
+#board .bcw{position:relative;display:inline-flex;flex:0 0 auto;width:calc(var(--cw) * (1 + .2 * var(--gn)));transition:width .18s ease}
+#board .bcw.open{width:calc(var(--cw) * (1 + 1.06 * var(--gn)))}
+#board .bcw > .bc.host{position:relative;z-index:3;margin:0}
+#board .bcw > .gearc{position:absolute;top:0;left:0;z-index:calc(3 - var(--gi));margin:0;transform:translateX(calc(var(--cw) * .2 * var(--gi))) scale(.92);transform-origin:left center;transition:transform .18s ease;filter:brightness(.8)}
+#board .bcw.open > .gearc{transform:translateX(calc(var(--cw) * 1.06 * var(--gi)));z-index:4;filter:none}
+#board .bcw.open > .gearc{box-shadow:0 0 0 1px var(--acc2Fill, var(--acc2))}
+#board .bc .gn{position:absolute;left:2px;bottom:2px;font-size:calc(9px * var(--bz,1));font-weight:800;padding:0 3px;border-radius:2px;background:rgba(0,0,0,.75);color:#fff;line-height:1.4}
+#board .bcw.open .bc .gn{display:none}
+html[data-motion="reduce"] #board .bcw,html[data-motion="reduce"] #board .bcw > .gearc{transition:none}
+
+/* opzioni del tavolo, orologi, serie */
+.topts{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:6px 10px;margin:4px 0 10px}
+.topts label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--mute)}
+#board .clocks{display:inline-flex;gap:6px;margin-right:6px;font-variant-numeric:tabular-nums}
+#board .clk{padding:1px 6px;border:1px solid var(--line2);border-radius:3px;color:var(--ink2);white-space:nowrap}
+#board .clk.on{border-color:var(--acc2);color:var(--ink)}
+#board .clk.turn{border-color:var(--acc)}
+#board .clk.low{color:#fff;background:var(--bad,#e23)}
+.winbox .series{margin:4px 0 10px;color:var(--ink2)}

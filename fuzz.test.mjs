@@ -1,8 +1,9 @@
 import { readFileSync } from "node:fs";
 import { createGame, mulligan, resolve, mulberry32 } from "./engine.js";
+import { ownKeywords } from "./data.js";
 import { botDecide, botTurn } from "./bot.js";
 const data = JSON.parse(readFileSync("public/cards.json", "utf8"));
-const byId = new Map(); for(const c of data.cards){ c.def = c.prints[0]; c.ramN = c.ram ?? 0; byId.set(c.id, c); }
+const byId = new Map(); for(const c of data.cards){ c.def = c.prints[0]; c.ramN = c.ram ?? 0; c.kw = ownKeywords(c); byId.set(c.id, c); }
 const legends = data.cards.filter(c => c.type === "Legend" && c.legal === "legal"), others = data.cards.filter(c => c.type !== "Legend");
 let errors = 0, games = 0, manual = 0, turns = 0;
 for(let seed = 1; seed <= 300; seed++){

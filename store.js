@@ -21,7 +21,7 @@ const fin = (v, lo, hi, d) => { const n = Number(v); return Number.isFinite(n) ?
 const str = (v, max) => typeof v === "string" ? v.slice(0, max) : "";
 const obj = v => v && typeof v === "object" && !Array.isArray(v) ? v : null;
 const plain = v => typeof v === "boolean" || (typeof v === "number" && Number.isFinite(v)) || (typeof v === "string" && v.length <= 80 && !/[<>"'`]/.test(v));
-const entry = (e, maxN) => obj(e) && isId(e.cid) ? { cid: e.cid, pid: isId(e.pid) ? e.pid : undefined, n: int(e.n, 0, maxN) } : null;
+const entry = (e, maxN) => obj(e) && isId(e.cid) ? { cid: e.cid, pid: isId(e.pid) ? e.pid : undefined, n: int(e.n, 0, maxN), ...(Array.isArray(e.prints) ? { prints: e.prints.filter(isId).slice(0, maxN) } : {}) } : null;
 function cleanDeck(d){
   if(!obj(d)) return null;
   const out = { id: isId(d.id) ? d.id : Math.random().toString(36).slice(2, 10), name: str(d.name, 80) || "Mazzo", notes: str(d.notes, 4000), updated: int(d.updated, 0, 9e15) };

@@ -74,23 +74,47 @@ export function verifySealed(d){
   if(legs.length !== 3 || n < 30) return false;
   if(legs.some(l => !cnt.get(l.cid)) || new Set(legs.map(l => l.cid)).size !== 3) return false;
   if(d.cards.some(e => e.n > (cnt.get(e.cid) || 0))) return false;
+  // le stampe dichiarate per ogni copia devono essere uscite dal kit, ognuna al massimo quante volte è uscita
+  const byPrint = new Map(), addP = p => byPrint.set(p.id, (byPrint.get(p.id) || 0) + 1);
+  for(const pk of kit.packs) for(const p of pk) addP(p); for(const p of kit.legendPack) addP(p); if(kit.promo) addP(kit.promo);
+  for(const e of d.cards) for(const pid of (Array.isArray(e.prints) ? e.prints : [])){ const k = byPrint.get(pid) || 0; if(k <= 0) return false; byPrint.set(pid, k - 1); }
   return new Set(d.cards.map(e => DATA.byId.get(e.cid)?.color).filter(Boolean)).size <= 3;
 }
 
-/* mazzo del bot: 3 Leggende dal suo kit, i 3 colori più ricchi, le carte migliori fino a ≥30 */
+/* mazzo dell'IA. Regole tarate facendo giocare migliaia di partite IA contro IA con mazzi dallo
+   stesso kit (contro il costruttore precedente vince circa 63 partite su 100):
+   - punteggio delle carte: potenza prima di tutto, poco peso al costo, +1 per Blocker e Adrenaline;
+   - colori: i 2 più forti se bastano, altrimenti 3;
+   - 38 carte, con almeno 14 carte da 3 €$ in giù e al massimo 4 da 6 €$ in su;
+   - Leggende: Go Solo, potenza, effetti e colore in comune con il mazzo.                          */
+const cardScore = c => (c.power || 0) + (c.type === "Program" ? 2 : 0) + (c.type === "Gear" ? (c.power || 0) : 0) - (c.cost || 0) * 0.3
+  + ((c.kw || []).includes("Blocker") ? 1 : 0) + ((c.kw || []).includes("Adrenaline") ? 1 : 0);
+const SIZE = 38, CHEAP = 14, BIG = 4;
 export function botSealedDeck(kit){
-  const deck = sealedDeckFromKit(kit, "Bot (Prerelease)");
-  const legs = deck.pool.filter(e => DATA.byId.get(e.cid).type === "Legend").map(e => DATA.byId.get(e.cid));
-  const uniq = []; for(const c of legs) if(!uniq.some(x => x.dn === c.dn)) uniq.push(c);
-  uniq.sort((a, b) => ((b.kw || []).includes("Go Solo") ? 1 : 0) - ((a.kw || []).includes("Go Solo") ? 1 : 0));
-  deck.legends = uniq.slice(0, 3).map(c => ({ cid: c.id, pid: deck.pool.find(e => e.cid === c.id).pid }));
-  while(deck.legends.length < 3) deck.legends.push(null);
+  const deck = sealedDeckFromKit(kit, "IA (Prerelease)");
   const others = deck.pool.filter(e => DATA.byId.get(e.cid).type !== "Legend");
-  const byColor = {}; for(const e of others){ const c = DATA.byId.get(e.cid); byColor[c.color] = (byColor[c.color] || 0) + e.n * (1 + (c.power || 0) / 10); }
-  const colors = Object.keys(byColor).sort((a, b) => byColor[b] - byColor[a]).slice(0, 3);
-  const score = e => { const c = DATA.byId.get(e.cid); return (c.power || 0) + (c.type === "Program" ? 2 : 0) + (c.type === "Gear" ? (c.power || 0) : 0) - (c.cost || 0) * 0.3; };
-  const cand = others.filter(e => colors.includes(DATA.byId.get(e.cid).color)).sort((a, b) => score(b) - score(a));
-  let n = 0; for(const e of cand){ deck.cards.push({ cid: e.cid, pid: e.pid, n: e.n }); n += e.n; if(n >= 34) break; }
+  const copies = []; for(const e of others){ const c = DATA.byId.get(e.cid); for(let k = 0; k < e.n; k++) copies.push({ e, c, s: cardScore(c) }); }
+  copies.sort((a, b) => b.s - a.s);
+  // colori: somma dei punteggi delle 15 carte migliori di ciascuno
+  const colors = [...new Set(copies.map(x => x.c.color).filter(Boolean))];
+  const strength = col => copies.filter(x => x.c.color === col).slice(0, 15).reduce((a, x) => a + Math.max(0, x.s + 3), 0);
+  const ranked = colors.sort((a, b) => strength(b) - strength(a));
+  const usable = cols => copies.filter(x => !x.c.color || cols.includes(x.c.color)).filter(x => x.s > -0.5);
+  let cols = ranked.slice(0, 2); if(usable(cols).length < SIZE) cols = ranked.slice(0, 3);
+  // riempimento con la curva
+  const pool = usable(cols).length >= SIZE ? usable(cols) : copies.filter(x => !x.c.color || cols.includes(x.c.color));
+  const pick = [], cheap = pool.filter(x => (x.c.cost ?? 0) <= 3);
+  for(const x of cheap.slice(0, CHEAP)) pick.push(x);
+  for(const x of pool){ if(pick.length >= SIZE) break; if(pick.includes(x)) continue; if((x.c.cost ?? 0) >= 6 && pick.filter(y => (y.c.cost ?? 0) >= 6).length >= BIG) continue; pick.push(x); }
+  for(const x of pool){ if(pick.length >= SIZE) break; if(!pick.includes(x)) pick.push(x); }
+  const byCid = new Map(); for(const x of pick){ const en = byCid.get(x.c.id) || { cid: x.c.id, pid: x.e.pid, n: 0, prints: [] }; en.n++; en.prints.push(x.e.pid); byCid.set(x.c.id, en); }
+  deck.cards = [...byCid.values()];
+  // Leggende: 3 nomi diversi, le migliori per il mazzo
+  const legs = deck.pool.filter(e => DATA.byId.get(e.cid).type === "Legend").map(e => ({ e, c: DATA.byId.get(e.cid) }));
+  const lscore = ({ c }) => ((c.kw || []).includes("Go Solo") ? 3 : 0) + (c.power ?? 0) * 0.4 + (cols.includes(c.color) ? 1.5 : 0) + (/\{(Spend|Attack|Play|Call)\}|When /.test(c.text || "") ? 1 : 0);
+  const chosen = []; for(const x of legs.sort((a, b) => lscore(b) - lscore(a))) if(!chosen.some(y => y.c.dn === x.c.dn || y.c.name === x.c.name) && chosen.length < 3) chosen.push(x);
+  deck.legends = chosen.map(x => ({ cid: x.c.id, pid: x.e.pid }));
+  while(deck.legends.length < 3) deck.legends.push(null);
   return deck;
 }
 

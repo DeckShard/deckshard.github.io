@@ -359,6 +359,8 @@ input.inp.wide{width:100%}
 .fold summary::before{content:"▸";transition:transform .15s} .fold[open] summary::before{transform:rotate(90deg)}
 .fold summary::-webkit-details-marker{display:none}
 .row .thumb,.lslot img,.gc img{-webkit-touch-callout:none;user-select:none;-webkit-user-select:none;-webkit-user-drag:none}
+/* pressione lunga per la lente: niente selezione del testo/immagine né menù del telefono su righe e Leggende */
+.row .thumbwrap,.lslot,.pt,.pt img,#p-deck .row{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
 .thumbwrap{position:relative;flex:0 0 auto;line-height:0}
 .thumbwrap .tq{position:absolute;right:-4px;bottom:-4px;background:var(--yel);color:var(--yelInk);font-size:10px;font-weight:800;padding:1px 4px;border-radius:2px;line-height:1.3}
 .rulesnav{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px} .rulesnav .chip{text-decoration:none;cursor:pointer}

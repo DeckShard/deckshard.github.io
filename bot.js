@@ -2,7 +2,7 @@
    gioca le Unità più forti che può permettersi, attacca dove conviene,
    blocca solo quando vince lo scontro o quando sta per perdere i Gig.   */
 
-import { legalActions, doAction, power, powerIn, ready, rival, streetCred, canAttack, hasKw } from "./engine.js";
+import { legalActions, doAction, power, powerIn, ready, rival, streetCred, canAttack, hasKw, costOf } from "./engine.js";
 
 const val = c => (c.card.power ?? 0) + (c.card.type === "Program" ? 2 : 0) + (c.card.type === "Gear" ? (c.card.power ?? 0) + 1 : 0);
 
@@ -53,6 +53,31 @@ export function botDecide(G, pi, kind, options, ctx){
   }
 }
 
+/* ------------------------------------------------------------ piano di gioco del turno
+   Valore di una carta da giocare (Unità: potenza più bonus per abilità utili; Programmi e Gear
+   solo se il motore sa applicarne l'effetto), e scelta dell'insieme di carte che rende di più
+   con il denaro disponibile (le mani sono piccole: si provano tutte le combinazioni).          */
+const playable = c => c.card.type === "Unit" || ((c.card.type === "Program" || c.card.type === "Gear") && c.fx.manual.length < 2 && (c.fx.passive.length || c.fx.play.length || c.card.type === "Gear"));
+function cardValue(G, P, c){
+  const t = c.card.type, pw = c.card.power ?? 0;
+  if(t === "Unit") return pw + 1.5 + (hasKw(c, "Blocker") ? 1 : 0) + (hasKw(c, "Adrenaline") ? 1.5 : 0) + (c.fx.play.length ? 1.5 : 0) + (c.fx.spend && c.fx.spend.length ? 1 : 0);
+  if(t === "Gear") return P.field.some(u => !u.spent || u.lag) ? pw + 2 : 0;
+  if(t === "Program") return 3 + (c.fx.play.length ? 1 : 0);
+  return 0;
+}
+function bestPlan(G, P, hand, budget){
+  const cand = hand.filter(playable).map(c => ({ c, cost: costOf(G, P, c), v: cardValue(G, P, c) })).filter(x => x.v > 0 && x.cost <= budget).slice(0, 10);
+  let best = { v: 0, cost: 0, set: [] }; const room = 7 - P.field.length;
+  for(let m = 1; m < (1 << cand.length); m++){
+    let v = 0, cost = 0, units = 0; const set = [];
+    for(let i = 0; i < cand.length; i++) if(m & (1 << i)){ v += cand[i].v; cost += cand[i].cost; if(cand[i].c.card.type === "Unit") units++; set.push(cand[i]); }
+    if(cost > budget || units > room) continue;
+    if(v > best.v || (v === best.v && cost > best.cost)) best = { v, cost, set };
+  }
+  return best;
+}
+const eddieWorth = P => P.eddies.length < 4 ? 3.5 : P.eddies.length < 6 ? 2 : P.eddies.length < 8 ? 0.8 : 0;
+
 /* un passo del bot: sceglie e applica UNA azione; ritorna false quando ha finito il turno */
 export function botStep(G, pi){
   if(G.winner != null || G.pending || G.active !== pi || G.phase !== "main") return false;
@@ -80,7 +105,7 @@ export function botStep(G, pi){
   const must = attacks.filter(a => a.unit.mustAttack);   // "must attack next turn if it can"
   if(must.length) attacks = must;
   if(attacks.length){
-    const blockers = R.field.filter(b => !b.spent && !b.lag && hasKw(b, "Blocker"));
+    const blockers = R.field.filter(b => !b.spent && !b.lag && (hasKw(b, "Blocker") || b.kwBlockerThisTurn));
     const bestBlock = blockers.length ? Math.max(...blockers.map(power)) : -1;
     let best = null, bestScore = 0;
     for(const a of attacks){
@@ -92,14 +117,19 @@ export function botStep(G, pi){
     }
     if(best || must.length){ go(best || attacks[0]); return true; }
   }
-  // 4) gioca: l'Unità più forte che può permettersi, poi Gear sull'Unità migliore, poi Programmi interpretabili
-  const plays = by("play");
-  const units = plays.filter(a => a.card.card.type === "Unit").sort((a, b) => power(b.card) - power(a.card) || (a.card.card.cost ?? 0) - (b.card.card.cost ?? 0));
-  if(units.length && P.field.length < 7){ go(units[0]); return true; }
-  const gears = plays.filter(a => a.card.card.type === "Gear" && a.targetObj && !a.targetObj.isLegend && P.field.includes(a.targetObj)).sort((a, b) => power(b.targetObj) - power(a.targetObj));
-  if(gears.length){ go(gears[0]); return true; }
-  const progs = plays.filter(a => a.card.card.type === "Program" && a.card.fx.manual.length < 2 && (a.card.fx.passive.length || a.card.fx.play.length));
-  if(progs.length && ready(P) >= (progs[0].card.card.cost ?? 0)){ go(progs[0]); return true; }
+  // 4) gioca il piano migliore per il denaro disponibile, dalla carta più cara
+  const plays = by("play"), plan = bestPlan(G, P, P.hand, ready(P));
+  for(const x of plan.set.sort((a, b) => b.cost - a.cost)){
+    const opts = plays.filter(a => a.card === x.c);
+    if(x.c.card.type === "Gear"){
+      // il Gear va sull'Unità che lo sfrutta meglio: pronta per attaccare, poi la più forte
+      const g = opts.filter(a => a.targetObj && !a.targetObj.isLegend && P.field.includes(a.targetObj))
+        .sort((a, b) => (canAttack(G, P, b.targetObj) ? 10 : 0) + power(b.targetObj) - (canAttack(G, P, a.targetObj) ? 10 : 0) - power(a.targetObj))[0];
+      if(g){ go(g); return true; }
+      continue;
+    }
+    if(opts.length){ go(opts[0]); return true; }
+  }
   // 5) Go Solo quando il campo è vuoto e c'è denaro
   const solo = by("gosolo"); if(solo.length && P.field.length <= 1 && ready(P) >= (solo[0].legend.card.cost ?? 0) + 1){ go(solo[0]); return true; }
   // 6) abilità {Spend} interpretabili

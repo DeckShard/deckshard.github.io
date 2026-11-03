@@ -1,8 +1,9 @@
 /* Partite online: le stesse mosse sullo stesso seme danno sempre lo stesso stato */
 import { readFileSync } from "node:fs";
 import { createGame, legalActions, mulberry32, applyMove, applyMoveAs, moveOf, summary } from "./engine.js";
+import { ownKeywords } from "./data.js";
 const data = JSON.parse(readFileSync("public/cards.json", "utf8"));
-const byId = new Map(); for(const c of data.cards){ c.def = c.prints[0]; c.ramN = c.ram ?? 0; byId.set(c.id, c); }
+const byId = new Map(); for(const c of data.cards){ c.def = c.prints[0]; c.ramN = c.ram ?? 0; c.kw = ownKeywords(c); byId.set(c.id, c); }
 const legends = data.cards.filter(c => c.type === "Legend" && c.legal === "legal"), others = data.cards.filter(c => c.type !== "Legend");
 const snap = G => JSON.stringify({ s: summary(G), w: G.winner, r: G.reason, t: G.turn, a: G.active, p: G.pending && [G.pending.player, G.pending.kind, G.pending.options.length], log: G.log.map(e => e.text) });
 let fails = 0, games = 0, moves = 0, ended = 0, forged = 0, forgedOk = 0;

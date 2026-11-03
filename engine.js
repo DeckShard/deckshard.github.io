@@ -41,13 +41,15 @@ export function createGame(decks, cardsById, opts = {}){
     const P = { id: i, name: d.name || `Giocatore ${i + 1}`, deck: [], hand: [], trash: [], eddies: [], legends: [], field: [], fixer: DICE.slice(), gigs: [], sold: false, called: false, turns: 0, removed: [] };
     // copie per voce limitate (un mazzo arrivato dalla rete con n enorme bloccherebbe il telefono), al massimo 3 Leggende
     const cards = Array.isArray(d.cards) ? d.cards.slice(0, 200) : [], legs = Array.isArray(d.legends) ? d.legends.filter(Boolean).slice(0, 3) : [];
-    for(const e of cards){ const c = e && cardsById.get(e.cid); if(!c) continue; const n = Math.max(0, Math.min(50, Math.floor(Number(e.n)) || 0)); for(let k = 0; k < n && P.deck.length < 100; k++) P.deck.push(inst(c, e.pid)); }
+    for(const e of cards){ const c = e && cardsById.get(e.cid); if(!c) continue; const n = Math.max(0, Math.min(50, Math.floor(Number(e.n)) || 0)); for(let k = 0; k < n && P.deck.length < 100; k++) P.deck.push(inst(c, Array.isArray(e.prints) && e.prints[k] ? e.prints[k] : e.pid)); }   // Prerelease: una stampa per copia
     for(const l of legs){ const c = cardsById.get(l.cid); if(c) P.legends.push({ ...inst(c, l.pid), faceUp: false, spent: false, gear: [] }); }
     shuffle(P.deck, rng); shuffle(P.legends, rng);
     G.players.push(P);
   });
   // tiro del d20 per chi inizia: il vincitore sceglie, qui inizia sempre lui
-  let a, b; do { a = rollDie(20, rng); b = rollDie(20, rng); } while(a === b);
+  // con opts.first (partite online: lo decide il database) si ritira finché il tiro non dà quel risultato,
+  // così il registro resta coerente su entrambi i telefoni
+  let a, b, n = 0; do { a = rollDie(20, rng); b = rollDie(20, rng); } while(a === b || (opts.first != null && (a > b ? 0 : 1) !== opts.first && ++n < 200));
   G.first = opts.first != null ? opts.first : (a > b ? 0 : 1); G.active = G.first;
   say(G, `Tiro iniziale: ${G.players[0].name} ${a} – ${G.players[1].name} ${b}. Inizia ${G.players[G.first].name}.`);
   for(const P of G.players){ draw(G, P, 6, true); }

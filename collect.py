@@ -102,7 +102,9 @@ def fetch_catalogue():
 def parse_markers(text):
     """I testi usano {Blocker}, {Play}… come marcatori: si estraggono keyword e trigger."""
     found = set(re.findall(r"\{([^}]+)\}", text or ""))
-    return ([k for k in KEYWORDS if k in found], [t for t in TRIGGERS if t in found])
+    # parole chiave proprie della carta: solo a inizio riga; quelle in mezzo a una frase sono riferimenti
+    own = set(re.findall(r"(?:^|\n)\s*\{([^}]+)\}", text or ""))
+    return ([k for k in KEYWORDS if k in own], [t for t in TRIGGERS if t in found])
 
 
 def normalize_cards(items):

@@ -167,6 +167,12 @@ export function renderSettings(){
     </div>
 
     <div class="card">
+      <h3>Simulator</h3>
+      <div class="field fcol"><label>Velocità delle mosse avversarie<small>Quanto aspetta l'IA (o l'avversario online) tra una mossa e l'altra. Ogni mossa compare per qualche istante sulla plancia e le carte appena entrate si illuminano. «Istantanea» è il ritmo di prima.</small></label>
+        <span class="seg" id="pfOppSpeed">${[["slow", "Lenta"], ["normal", "Normale"], ["fast", "Veloce"], ["instant", "Istantanea"]].map(([v, t]) => `<button data-v="${v}" aria-pressed="${(S.settings.oppSpeed || "normal") === v}">${t}</button>`).join("")}</span></div>
+    </div>
+
+    <div class="card">
       <h3>Collection</h3>
       <div class="field"><label>Voci della collezione<small>Una per carta (151), una per illustrazione (ogni arte diversa conta a sé) o una per edizione (ogni stampa: set, lingua, variante). Il completamento segue la stessa scelta.</small></label>
         <span class="seg" id="pfCollView">${[["card", "Per carta"], ["art", "Per illustrazione"], ["print", "Per edizione"]].map(([v, t]) => `<button data-v="${v}" aria-pressed="${(S.settings.collView || "card") === v}">${t}</button>`).join("")}</span></div>
@@ -245,6 +251,7 @@ function wire(root){
       })();
       return;
     }
+    const os = e.target.closest("#pfOppSpeed button"); if(os){ S.settings.oppSpeed = os.dataset.v; S.save("settings"); rerender(); return; }
     const ax = e.target.closest("#pfText button, #pfContrast button, #pfMotion button"); if(ax){
       const a = S.settings.a11y = { ...(S.settings.a11y || {}) }, id = ax.parentElement.id, v = ax.dataset.v;
       if(id === "pfText") a.text = v; if(id === "pfContrast") a.contrast = v === "1"; if(id === "pfMotion") a.motion = v;

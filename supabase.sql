@@ -367,6 +367,21 @@ create table if not exists public.game_tables (
   check (pg_column_size(host_deck) < 30000 and (guest_deck is null or pg_column_size(guest_deck) < 30000))
 );
 create unique index if not exists game_tables_open_code on public.game_tables (code) where status in ('waiting', 'active');
+-- opzioni dei tavoli con codice (le sfide tra amici non ne hanno): tempo per turno (secondi), tempo per
+-- partita a testa (minuti), al meglio di 1 o di 3. «first»: chi inizia, deciso dal database (0 = host).
+-- Al meglio di 3, le partite della serie condividono «series» e sono numerate da game_no.
+alter table public.game_tables add column if not exists opts jsonb not null default '{}'::jsonb;
+alter table public.game_tables add column if not exists first smallint check (first in (0, 1));
+alter table public.game_tables add column if not exists series uuid;
+alter table public.game_tables add column if not exists game_no smallint not null default 1 check (game_no between 1 and 3);
+alter table public.game_tables drop constraint if exists game_tables_opts_check;
+alter table public.game_tables add constraint game_tables_opts_check check (
+  jsonb_typeof(opts) = 'object' and pg_column_size(opts) < 200
+  and coalesce((opts->>'turn')::int, 0) in (0, 60, 90, 120, 180)
+  and coalesce((opts->>'match')::int, 0) in (0, 10, 20, 30)
+  and coalesce((opts->>'bo')::int, 1) in (1, 3));
+create unique index if not exists game_tables_series_no on public.game_tables (series, game_no) where series is not null;
+create index if not exists game_tables_series on public.game_tables (series) where series is not null;
 create index if not exists game_tables_host on public.game_tables (host, created_at desc);
 create index if not exists game_tables_guest on public.game_tables (guest, created_at desc);
 create index if not exists game_tables_invited on public.game_tables (invited, created_at desc);
@@ -398,13 +413,21 @@ language sql security definer set search_path = public as $$
 $$;
 
 -- crea un tavolo: codice di 4 caratteri (senza 0/O e 1/I), seme della partita; facoltativamente sfida un amico
-create or replace function public.create_table(deck jsonb, autopay boolean default false, invite uuid default null, p_ver text default '') returns public.game_tables
+drop function if exists public.create_table(jsonb, boolean, uuid, text);   -- ora ha anche le opzioni del tavolo
+create or replace function public.create_table(deck jsonb, autopay boolean default false, invite uuid default null, p_ver text default '', p_opts jsonb default null) returns public.game_tables
 language plpgsql security definer set search_path = public as $$
-declare me uuid := auth.uid(); c text; tries int := 0; r game_tables;
+declare me uuid := auth.uid(); c text; tries int := 0; r game_tables; o jsonb := '{}'::jsonb;
   alphabet constant text := 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 begin
   if me is null then raise exception 'serve un account'; end if;
   if invite is not null and (not are_friends(me, invite) or is_blocked(me, invite)) then raise exception 'puoi sfidare solo i tuoi amici'; end if;
+  -- opzioni solo per i tavoli con codice; valori ammessi soltanto quelli previsti
+  if invite is null and p_opts is not null and jsonb_typeof(p_opts) = 'object' then
+    o := jsonb_strip_nulls(jsonb_build_object(
+      'turn', case when (p_opts->>'turn') in ('60', '90', '120', '180') then (p_opts->>'turn')::int end,
+      'match', case when (p_opts->>'match') in ('10', '20', '30') then (p_opts->>'match')::int end,
+      'bo', case when (p_opts->>'bo') = '3' then 3 end));
+  end if;
   update game_tables set status = 'cancelled' where host = me and status = 'waiting';                 -- un tavolo in attesa alla volta
   update game_tables set status = 'cancelled' where status = 'waiting' and created_at < now() - interval '30 minutes';
   loop
@@ -413,8 +436,9 @@ begin
     exit when not exists (select 1 from game_tables where code = c and status in ('waiting', 'active'));
     tries := tries + 1; if tries > 30 then raise exception 'riprova tra un momento'; end if;
   end loop;
-  insert into game_tables (code, host, invited, seed, ver, host_deck, host_autopay)
-  values (c, me, invite, floor(random() * 2147483647)::bigint, left(coalesce(p_ver, ''), 40), deck, coalesce(autopay, false)) returning * into r;
+  insert into game_tables (code, host, invited, seed, ver, host_deck, host_autopay, opts, first)
+  values (c, me, invite, floor(random() * 2147483647)::bigint, left(coalesce(p_ver, ''), 40), deck, coalesce(autopay, false), o, floor(random() * 2)::smallint) returning * into r;
+  if (o->>'bo') = '3' then update game_tables set series = id where id = r.id returning * into r; end if;
   return r;
 end $$;
 
@@ -522,13 +546,54 @@ begin
   perform _finish_table(t, case when winner_seat = 0 then 'host' else 'guest' end, coalesce(why, 'game'));
 end $$;
 
+-- al meglio di 3: la partita successiva parte da sola con gli stessi mazzi; inizia chi ha perso la precedente.
+-- La possono chiedere entrambi: la seconda richiesta trova la partita già creata.
+create or replace function public.next_game(t uuid) returns public.game_tables
+language plpgsql security definer set search_path = public as $$
+declare me uuid := auth.uid(); r game_tables; nx game_tables; wh int; wg int; c text; tries int := 0;
+  alphabet constant text := 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+begin
+  select * into r from game_tables where id = t;
+  if r.id is null or me not in (r.host, r.guest) or r.series is null or r.status <> 'finished' then return null; end if;
+  select * into nx from game_tables where series = r.series and game_no = r.game_no + 1;
+  if nx.id is not null then return nx; end if;
+  select count(*) filter (where result = 'host'), count(*) filter (where result = 'guest') into wh, wg from game_tables where series = r.series and status = 'finished';
+  if wh >= 2 or wg >= 2 or r.game_no >= 3 then return null; end if;   -- serie già decisa
+  loop
+    c := '';
+    for i in 1..4 loop c := c || substr(alphabet, 1 + floor(random() * length(alphabet))::int, 1); end loop;
+    exit when not exists (select 1 from game_tables where code = c and status in ('waiting', 'active'));
+    tries := tries + 1; if tries > 30 then raise exception 'riprova tra un momento'; end if;
+  end loop;
+  begin
+    insert into game_tables (code, host, guest, invited, status, seed, ver, host_deck, guest_deck, host_autopay, guest_autopay, opts, first, series, game_no,
+                             started_at, host_seen, guest_seen)
+    values (c, r.host, r.guest, r.guest, 'active', floor(random() * 2147483647)::bigint, r.ver, r.host_deck, r.guest_deck, r.host_autopay, r.guest_autopay, r.opts,
+            case r.result when 'host' then 1 when 'guest' then 0 else 1 - coalesce(r.first, 0) end, r.series, r.game_no + 1, now(), now(), now())
+    returning * into nx;
+  exception when unique_violation then
+    select * into nx from game_tables where series = r.series and game_no = r.game_no + 1;
+  end;
+  return nx;
+end $$;
+
+-- tempo scaduto: lo dichiara il telefono di chi l'ha finito (come per la sconfitta decisa dal motore)
+create or replace function public.concede_time(t uuid) returns void
+language plpgsql security definer set search_path = public as $$
+declare me uuid := auth.uid(); r game_tables;
+begin
+  select * into r from game_tables where id = t;
+  if r.id is null or me not in (r.host, r.guest) then return; end if;
+  perform _finish_table(t, case when me = r.host then 'guest' else 'host' end, 'time');
+end $$;
+
 -- tavoli in cui sono coinvolto: inviti, in attesa, in corso, conclusi nelle ultime 24 ore
 drop function if exists public.my_tables();   -- cambia il tipo restituito (formato del tavolo)
 create or replace function public.my_tables() returns table (
   id uuid, code text, status text, host uuid, guest uuid, invited uuid, host_nick citext, guest_nick citext, invited_nick citext,
-  moves int, result text, reason text, created_at timestamptz, finished_at timestamptz, fmt text)
+  moves int, result text, reason text, created_at timestamptz, finished_at timestamptz, fmt text, opts jsonb, series uuid, game_no smallint)
 language sql stable security definer set search_path = public as $$
-  select t.id, t.code, t.status, t.host, t.guest, t.invited, ph.nick, pg.nick, pi.nick, t.moves, t.result, t.reason, t.created_at, t.finished_at, coalesce(t.host_deck->>'format', 'built')
+  select t.id, t.code, t.status, t.host, t.guest, t.invited, ph.nick, pg.nick, pi.nick, t.moves, t.result, t.reason, t.created_at, t.finished_at, coalesce(t.host_deck->>'format', 'built'), t.opts, t.series, t.game_no
   from game_tables t
   join profiles ph on ph.id = t.host
   left join profiles pg on pg.id = t.guest
@@ -561,12 +626,109 @@ update public.profiles p set
   losses = (select count(*) from public.game_tables t where t.status = 'finished' and t.guest is not null and ((t.result = 'host' and t.guest = p.id) or (t.result = 'guest' and t.host = p.id)));
 
 revoke all on function public._finish_table(uuid, text, text) from public, anon, authenticated;
-revoke all on function public.create_table(jsonb, boolean, uuid, text), public.join_table(text, jsonb, boolean, text), public.cancel_table(uuid),
+revoke all on function public.create_table(jsonb, boolean, uuid, text, jsonb), public.next_game(uuid), public.concede_time(uuid), public.join_table(text, jsonb, boolean, text), public.cancel_table(uuid),
   public.play_move(uuid, int, jsonb), public.table_heartbeat(uuid), public.claim_timeout(uuid), public.resign_table(uuid),
   public.offer_draw(uuid), public.answer_draw(uuid, boolean), public.report_result(uuid, int, text), public.my_tables() from public, anon;
-grant execute on function public.create_table(jsonb, boolean, uuid, text), public.join_table(text, jsonb, boolean, text), public.cancel_table(uuid),
+grant execute on function public.create_table(jsonb, boolean, uuid, text, jsonb), public.next_game(uuid), public.concede_time(uuid), public.join_table(text, jsonb, boolean, text), public.cancel_table(uuid),
   public.play_move(uuid, int, jsonb), public.table_heartbeat(uuid), public.claim_timeout(uuid), public.resign_table(uuid),
   public.offer_draw(uuid), public.answer_draw(uuid, boolean), public.report_result(uuid, int, text), public.my_tables() to authenticated;
+
+-- ---------------------------------------------------------------- matchmaking (BOZZA, SPENTO)
+-- Prima struttura per la ricerca automatica di un avversario. Non è ancora usata dall'app e le funzioni
+-- non sono eseguibili dagli utenti: si accenderà con i passi descritti in MATCHMAKING.md.
+-- Coda: chi cerca partita entra con il mazzo e le preferenze; mm_join prova subito ad abbinarlo con chi
+-- aspetta da più tempo con lo stesso formato e la stessa versione dell'app, con un punteggio vicino
+-- (la finestra si allarga con l'attesa). Abbinati, nasce un tavolo già attivo e la coda si svuota.
+create table if not exists public.ratings (
+  user_id uuid primary key references public.profiles(id) on delete cascade,
+  rating int not null default 1200 check (rating between 0 and 4000),
+  games int not null default 0 check (games >= 0),
+  updated_at timestamptz not null default now()
+);
+alter table public.ratings enable row level security;
+drop policy if exists ratings_read on public.ratings;
+create policy ratings_read on public.ratings for select to authenticated using (true);
+revoke all on public.ratings from anon, authenticated;
+grant select on public.ratings to authenticated;
+
+create table if not exists public.mm_queue (
+  user_id uuid primary key references public.profiles(id) on delete cascade,
+  fmt text not null check (fmt in ('built', 'sealed')),
+  ver text not null check (char_length(ver) <= 40),
+  deck jsonb not null check (pg_column_size(deck) < 30000),
+  autopay boolean not null default false,
+  rating int not null default 1200,
+  joined_at timestamptz not null default now(),
+  seen_at timestamptz not null default now()
+);
+create index if not exists mm_queue_pick on public.mm_queue (fmt, ver, joined_at);
+alter table public.mm_queue enable row level security;
+revoke all on public.mm_queue from anon, authenticated;   -- solo tramite le funzioni
+
+alter table public.game_tables add column if not exists rated boolean not null default false;   -- partite da matchmaking: contano per il punteggio
+
+create or replace function public.mm_join(deck jsonb, p_ver text, autopay boolean default false) returns public.game_tables
+language plpgsql security definer set search_path = public as $$
+declare me uuid := auth.uid(); f text := coalesce(deck->>'format', 'built'); my_r int; o mm_queue; r game_tables; c text; tries int := 0;
+  alphabet constant text := 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+begin
+  if me is null then raise exception 'serve un account'; end if;
+  if exists (select 1 from game_tables where status = 'active' and me in (host, guest)) then raise exception 'hai già una partita in corso'; end if;
+  select coalesce((select rating from ratings where user_id = me), 1200) into my_r;
+  delete from mm_queue where seen_at < now() - interval '45 seconds';                 -- chi ha chiuso l'app esce dalla coda
+  -- avversario: stesso formato e versione, non bloccato, punteggio entro 100 + 10 al secondo di attesa
+  select * into o from mm_queue q
+   where q.user_id <> me and q.fmt = f and q.ver = left(coalesce(p_ver, ''), 40) and not is_blocked(me, q.user_id)
+     and abs(q.rating - my_r) <= 100 + 10 * extract(epoch from now() - q.joined_at)
+   order by q.joined_at limit 1 for update skip locked;
+  if o.user_id is null then
+    insert into mm_queue (user_id, fmt, ver, deck, autopay, rating) values (me, f, left(coalesce(p_ver, ''), 40), deck, coalesce(autopay, false), my_r)
+    on conflict (user_id) do update set fmt = excluded.fmt, ver = excluded.ver, deck = excluded.deck, autopay = excluded.autopay, rating = excluded.rating, seen_at = now();
+    return null;                                                                       -- in attesa: l'app richiama mm_poll
+  end if;
+  delete from mm_queue where user_id in (me, o.user_id);
+  loop
+    c := '';
+    for i in 1..4 loop c := c || substr(alphabet, 1 + floor(random() * length(alphabet))::int, 1); end loop;
+    exit when not exists (select 1 from game_tables where code = c and status in ('waiting', 'active'));
+    tries := tries + 1; if tries > 30 then raise exception 'riprova tra un momento'; end if;
+  end loop;
+  insert into game_tables (code, host, guest, invited, status, seed, ver, host_deck, guest_deck, host_autopay, guest_autopay, first, rated, started_at, host_seen, guest_seen)
+  values (c, o.user_id, me, me, 'active', floor(random() * 2147483647)::bigint, o.ver, o.deck, deck, o.autopay, coalesce(autopay, false), floor(random() * 2)::smallint, true, now(), now(), now())
+  returning * into r;
+  return r;
+end $$;
+-- chi aspetta: «sono ancora qui»; restituisce il tavolo se nel frattempo qualcuno l'ha abbinato
+create or replace function public.mm_poll() returns public.game_tables
+language plpgsql security definer set search_path = public as $$
+declare me uuid := auth.uid(); r game_tables;
+begin
+  update mm_queue set seen_at = now() where user_id = me;
+  select * into r from game_tables where rated and status = 'active' and me in (host, guest) and started_at > now() - interval '2 minutes' order by started_at desc limit 1;
+  return r;
+end $$;
+create or replace function public.mm_leave() returns void
+language sql security definer set search_path = public as $$ delete from mm_queue where user_id = auth.uid() $$;
+
+-- punteggio Elo (K = 32) a fine partita da matchmaking
+create or replace function public.rate_result() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare rh int; rg int; eh float; sh float;
+begin
+  if new.rated and new.status = 'finished' and old.status is distinct from 'finished' and new.guest is not null then
+    insert into ratings (user_id) values (new.host), (new.guest) on conflict do nothing;
+    select rating into rh from ratings where user_id = new.host; select rating into rg from ratings where user_id = new.guest;
+    eh := 1 / (1 + power(10, (rg - rh) / 400.0)); sh := case new.result when 'host' then 1 when 'guest' then 0 else 0.5 end;
+    update ratings set rating = greatest(0, rating + round(32 * (sh - eh))::int), games = games + 1, updated_at = now() where user_id = new.host;
+    update ratings set rating = greatest(0, rating + round(32 * ((1 - sh) - (1 - eh)))::int), games = games + 1, updated_at = now() where user_id = new.guest;
+  end if;
+  return new;
+end $$;
+drop trigger if exists game_tables_rating on public.game_tables;
+create trigger game_tables_rating after update of status on public.game_tables for each row execute function public.rate_result();
+
+-- spento: nessuno può ancora chiamarle (per accendere: grant execute … to authenticated, vedi MATCHMAKING.md)
+revoke all on function public.mm_join(jsonb, text, boolean), public.mm_poll(), public.mm_leave(), public.rate_result() from public, anon, authenticated;
 
 -- ---------------------------------------------------------------- notifiche push
 -- Un telefono che attiva le notifiche registra qui il suo indirizzo push (endpoint e chiavi del browser).

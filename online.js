@@ -24,6 +24,7 @@ export const T = {
   ended: null,        // { result: "host"|"guest"|"draw", reason }
   drawOffer: null,
   chat: [], chatUnread: 0,
+  stamps: [],         // orario di ogni mossa (indice = seq - 1)
   error: null
 };
 let hooks = { move: () => {}, rebuild: () => {}, start: () => {}, end: () => {}, lost: () => {} };
@@ -49,8 +50,8 @@ export const invitesForMe = () => tables.filter(t => t.status === "waiting" && t
 export const activeTables = () => tables.filter(t => t.status === "active");
 export const myWaiting = () => tables.find(t => t.status === "waiting" && t.host === myId());
 
-export async function createTable(deck, autopay, inviteId){
-  const row = await rpc("create_table", { deck: deckPayload(deck), autopay: !!autopay, invite: inviteId || null, p_ver: VER });
+export async function createTable(deck, autopay, inviteId, opts){
+  const row = await rpc("create_table", { deck: deckPayload(deck), autopay: !!autopay, invite: inviteId || null, p_ver: VER, p_opts: inviteId ? null : (opts || null) });
   await attach(row, 0);
   refreshTables();
   return row;
@@ -85,7 +86,7 @@ async function nicksOf(row){
 export async function attach(row, seat){
   detach(true);
   const c = await client();
-  Object.assign(T, { row, seat, applied: 0, inflight: 0, otherIdle: 0, idleAt: Date.now(), ended: null, drawOffer: row.draw_offer || null, chat: [], chatUnread: 0, error: null });
+  Object.assign(T, { row, seat, applied: 0, inflight: 0, otherIdle: 0, idleAt: Date.now(), ended: null, drawOffer: row.draw_offer || null, chat: [], chatUnread: 0, stamps: [], error: null });
   T.nicks = await nicksOf(row);
   ch = c.channel("table:" + row.id)
     .on("postgres_changes", { event: "INSERT", schema: "public", table: "game_moves", filter: `table_id=eq.${row.id}` }, p => onRemoteMove(p.new))
@@ -122,15 +123,17 @@ async function startFromRow(row){
 export function setupOf(row){
   return {
     decks: [{ ...row.host_deck, name: T.nicks[0] || "Host" }, { ...row.guest_deck, name: T.nicks[1] || "Ospite" }],
-    opts: { seed: Number(row.seed), autoPay: [!!row.host_autopay, !!row.guest_autopay] }
+    opts: { seed: Number(row.seed), autoPay: [!!row.host_autopay, !!row.guest_autopay], ...(row.first === 0 || row.first === 1 ? { first: row.first } : {}) }
   };
 }
 /* il posto di chi ha fatto la mossa lo dice il database (chi l'ha inserita), non la mossa */
 const seatOf = player => T.row && player === T.row.host ? 0 : 1;
-const withSeat = m => ({ move: m.move, seat: seatOf(m.player) });
+const withSeat = m => { stampOf(m); return { move: m.move, seat: seatOf(m.player) }; };
+/* orario (del server) di ogni mossa: serve agli orologi dei tavoli con limite di tempo */
+const stampOf = m => { if(m && m.seq > 0 && m.created_at) T.stamps[m.seq - 1] = new Date(m.created_at).getTime(); };
 async function fetchMoves(){
   const c = await client();
-  const { data, error } = await c.from("game_moves").select("seq, player, move").eq("table_id", T.row.id).order("seq").range(0, 4999);
+  const { data, error } = await c.from("game_moves").select("seq, player, move, created_at").eq("table_id", T.row.id).order("seq").range(0, 4999);
   if(error) throw new Error(error.message);
   return data || [];
 }
@@ -139,6 +142,7 @@ async function fetchMoves(){
 export function send(move){
   if(!T.row || T.row.status !== "active" || T.ended) return;
   const seq = ++T.applied, id = T.row.id; T.inflight++;
+  if(!T.stamps[seq - 1]) T.stamps[seq - 1] = Date.now();
   chain = chain.then(async () => {
     let ok = null;
     for(let i = 0; i < 8 && ok === null; i++){
@@ -153,6 +157,7 @@ export function send(move){
 }
 function onRemoteMove(r){
   if(!T.row || r.table_id !== T.row.id) return;
+  stampOf(r);
   if(r.player === myId()) return;                          // eco delle mie mosse
   // il database numera le mosse senza buchi: la successiva si applica subito,
   // qualsiasi altra cosa (buco, conflitto con una mia mossa) si risolve rileggendo il registro
@@ -225,6 +230,21 @@ async function heartbeat(){
 /* secondi di silenzio dell'avversario, aggiornati tra un battito e l'altro */
 export const otherIdle = () => T.row && T.row.status === "active" && !T.ended ? Math.max(T.otherIdle, Math.floor((Date.now() - T.idleAt) / 1000)) : 0;
 
+/* tavoli con opzioni */
+export const tableOpts = () => (T.row && T.row.opts && typeof T.row.opts === "object") ? T.row.opts : {};
+export async function concedeTime(){ if(!T.row || T.ended) return; try{ await rpc("concede_time", { t: T.row.id }); }catch(e){ T.error = e.message; } endFrom({ ...T.row, status: "finished", result: T.seat === 0 ? "guest" : "host", reason: "time" }); }
+/* al meglio di 3: risultato della serie e partita successiva */
+export async function seriesScore(){
+  if(!T.row || !T.row.series) return null;
+  const c = await client(); const { data } = await c.from("game_tables").select("id, game_no, status, result").eq("series", T.row.series).order("game_no");
+  const me = T.seat === 0 ? "host" : "guest", fin = (data || []).filter(g => g.status === "finished");
+  return { games: data || [], me: fin.filter(g => g.result === me).length, opp: fin.filter(g => g.result && g.result !== me && g.result !== "draw").length };
+}
+export async function nextGame(){
+  if(!T.row || !T.row.series) return null;
+  const row = await rpc("next_game", { t: T.row.id }); if(!row || !row.id) return null;
+  await attach(row, row.host === myId() ? 0 : 1); refreshTables(); return row;
+}
 export async function resign(){ if(!T.row) return; await rpc("resign_table", { t: T.row.id }); endFrom({ ...T.row, status: "finished", result: T.seat === 0 ? "guest" : "host", reason: "resign" }); }
 export async function offerDraw(){ if(!T.row) return; await rpc("offer_draw", { t: T.row.id }); T.drawOffer = myId(); emit("ncd:table"); }
 export async function answerDraw(accept){
