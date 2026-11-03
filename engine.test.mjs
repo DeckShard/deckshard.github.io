@@ -555,5 +555,34 @@ import { canPay, costOf, spendCost } from "./engine.js";
   doAction(G, P.id, { t: "attack", uid: 9101, target: { kind: "gigs" } });
   ok(!(G.pending && G.pending.options.some(o => o.kind === "block")), "Valentino Guerrera non può bloccare");
 }
+/* --- Johnny Silverhand: la prima volta che vince uno scontro ogni turno torna pronto (anche bloccando con un Gear) */
+{
+  const byN = (n, t) => data.cards.find(c => c.name === n && (!t || c.type === t));
+  const unitOf = (c, uid, extra = {}) => ({ uid, cid: c.id, pid: c.def.id, card: c, fx: parseEffects(c.text || ""), spent: false, lag: false, mod: 0, gear: [], ...extra });
+  const mk = (names, legends) => ({ name: "T", legends: legends.map(n => ({ cid: byName(n).id, pid: byName(n).def.id })), cards: names.map(n => ({ cid: byName(n).id, pid: byName(n).def.id, n: 1 })) });
+  const d = mk(Array(40).fill("Animals Wrecker"), ["V: Streetkid", "Rogue Amendiares: Preem Solo", "Goro Takemura: Hands Unclean"]);
+  const weak = { uid: 0, cid: "w", pid: null, card: { dn: "Debole", type: "Unit", power: 2, cost: 1, kw: [], text: "" }, fx: parseEffects(""), spent: true, lag: false, mod: 0, gear: [] };
+  // in attacco
+  let G = createGame([d, JSON.parse(JSON.stringify(d))], byId, { seed: 8 });
+  mulligan(G, 0, false); mulligan(G, 1, false); while(G.pending) resolve(G, 0);
+  let P = G.players[G.active], R = G.players[1 - G.active];
+  const jc = byN("Johnny Silverhand", "Unit"), j = unitOf(jc, 9201);
+  P.field.push(j); R.field = [{ ...weak, uid: 9202 }, { ...weak, uid: 9203 }];
+  doAction(G, P.id, { t: "attack", uid: 9201, target: { kind: "unit", uid: 9202 } }); while(G.pending) resolve(G, G.pending.options.findIndex(o => o.kind !== "block") >= 0 ? G.pending.options.findIndex(o => o.kind !== "block") : 0);
+  ok(!R.field.some(u => u.uid === 9202) && !j.spent, "Johnny vince lo scontro e torna pronto");
+  doAction(G, P.id, { t: "attack", uid: 9201, target: { kind: "unit", uid: 9203 } }); while(G.pending) resolve(G, 0);
+  ok(!R.field.some(u => u.uid === 9203) && j.spent, "la seconda vittoria nello stesso turno non lo prepara di nuovo");
+  // in difesa, con Blocker dato da un Gear (Riot Shield)
+  G = createGame([d, JSON.parse(JSON.stringify(d))], byId, { seed: 9 });
+  mulligan(G, 0, false); mulligan(G, 1, false); while(G.pending) resolve(G, 0);
+  P = G.players[G.active]; R = G.players[1 - G.active];
+  const rs = byN("Riot Shield"), jb = unitOf(jc, 9301, { gear: [unitOf(rs, 9302)] });
+  R.field = [jb]; R.gigs = [{ sides: 6, value: 2, uid: 1 }];
+  P.field.push({ ...weak, uid: 9303, spent: false });
+  doAction(G, P.id, { t: "attack", uid: 9303, target: { kind: "gigs" } });
+  const bi = G.pending ? G.pending.options.findIndex(o => o.kind === "block" && o.unit === jb) : -1;
+  ok(bi >= 0, "Johnny con Riot Shield può bloccare");
+  if(bi >= 0){ resolve(G, bi); while(G.pending) resolve(G, 0); ok(!jb.spent && !P.field.some(u => u.uid === 9303), "Johnny blocca, vince e torna pronto"); }
+}
 console.log(`\n${passes} controlli OK, ${fails} falliti`);
 process.exit(fails ? 1 : 0);
