@@ -69,7 +69,11 @@ export function filtersHTML(f){
   const types = TYPES.map(t => `<button class="tag" data-fk="types" data-fv="${t}" aria-pressed="${f.types.has(t)}">${TYPE_IT[t]}</button>`).join("");
   const costs = ["0","1","2","3","4","5","6","7+"].map(v => `<button class="tag" data-fk="cost" data-fv="${v}" aria-pressed="${f.cost.has(v)}">${v}</button>`).join("");
   const rar = Object.keys(RARITY_IT).map(r => `<button class="tag" data-fk="rar" data-fv="${r}" aria-pressed="${f.rar.has(r)}">${RARITY_IT[r]}</button>`).join("");
-  const cls = classificationsOf().slice(0, 18).map(k => `<button class="tag" data-fk="cls" data-fv="${esc(k)}" aria-pressed="${f.cls.has(k)}">${esc(k)}</button>`).join("");
+  // tratti: i 14 più comuni (più quelli già scelti); «Tutti i tratti» li mostra tutti in ordine alfabetico
+  const allCls = classificationsOf(), top = allCls.slice(0, 14);
+  const shown = f.clsAll ? allCls.slice().sort((a, b) => a.localeCompare(b, "it")) : [...top, ...allCls.slice(14).filter(k => f.cls.has(k))];
+  const cls = shown.map(k => `<button class="tag" data-fk="cls" data-fv="${esc(k)}" aria-pressed="${f.cls.has(k)}">${esc(k)}</button>`).join("")
+    + (allCls.length > 14 ? `<button class="tag more" data-fclsall="1">${f.clsAll ? "Solo i più comuni" : `Tutti i tratti (${allCls.length})`}</button>` : "");
   const n = f.colors.size + f.types.size + f.rar.size + f.cls.size + f.cost.size + f.sets.size;
   const row = (lbl, inner) => `<div class="frow"><span class="lbl">${lbl}</span><span class="fopts">${inner}</span></div>`;
   return `${row("Colore", pips)}${row("Tipo", types)}${row("Costo", costs)}${row("Rarità", rar)}${row("Tratti", cls)}
@@ -98,6 +102,7 @@ export function bindFilters(container, f, onChange){
   container.addEventListener("click", e => {
     const b = e.target.closest("[data-fk]");
     if(b){ const set = f[b.dataset.fk]; set.has(b.dataset.fv) ? set.delete(b.dataset.fv) : set.add(b.dataset.fv); onChange(); return; }
+    if(e.target.closest("[data-fclsall]")){ f.clsAll = !f.clsAll; onChange(); return; }
     if(e.target.closest("[data-fclear]")){ for(const k of ["colors","types","rar","cls","cost","sets"]) f[k].clear(); onChange(); }
   });
 }

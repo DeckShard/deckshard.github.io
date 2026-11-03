@@ -405,6 +405,10 @@ begin
   if r.invited is not null and r.invited <> me then raise exception 'questo tavolo è riservato a un altro giocatore'; end if;
   if is_blocked(me, r.host) then raise exception 'nessun tavolo aperto con questo codice'; end if;
   if r.ver <> coalesce(p_ver, '') then raise exception 'versione diversa: aggiornate entrambi l''app (%)', r.ver; end if;
+  -- Costruito contro Costruito, Prerelease contro Prerelease
+  if coalesce(r.host_deck->>'format', 'built') <> coalesce(deck->>'format', 'built') then
+    raise exception 'formato diverso: questo tavolo è %', case when r.host_deck->>'format' = 'sealed' then 'Prerelease' else 'Costruito' end;
+  end if;
   update game_tables set guest = me, guest_deck = deck, guest_autopay = coalesce(autopay, false), status = 'active',
     started_at = now(), host_seen = now(), guest_seen = now(), invited = coalesce(invited, me)
   where id = r.id returning * into r;
@@ -493,11 +497,12 @@ begin
 end $$;
 
 -- tavoli in cui sono coinvolto: inviti, in attesa, in corso, conclusi nelle ultime 24 ore
+drop function if exists public.my_tables();   -- cambia il tipo restituito (formato del tavolo)
 create or replace function public.my_tables() returns table (
   id uuid, code text, status text, host uuid, guest uuid, invited uuid, host_nick citext, guest_nick citext, invited_nick citext,
-  moves int, result text, reason text, created_at timestamptz, finished_at timestamptz)
+  moves int, result text, reason text, created_at timestamptz, finished_at timestamptz, fmt text)
 language sql stable security definer set search_path = public as $$
-  select t.id, t.code, t.status, t.host, t.guest, t.invited, ph.nick, pg.nick, pi.nick, t.moves, t.result, t.reason, t.created_at, t.finished_at
+  select t.id, t.code, t.status, t.host, t.guest, t.invited, ph.nick, pg.nick, pi.nick, t.moves, t.result, t.reason, t.created_at, t.finished_at, coalesce(t.host_deck->>'format', 'built')
   from game_tables t
   join profiles ph on ph.id = t.host
   left join profiles pg on pg.id = t.guest

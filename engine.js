@@ -167,12 +167,16 @@ function pay(G, P, cost){
   for(const e of P.eddies){ if(left && !e.spent){ e.spent = true; left--; } }
   const legs = P.legends.filter(l => !l.spent && !l.removed && !l.onField);
   for(const l of legs.filter(l => !l.faceUp)){ if(left){ l.spent = true; left--; } }
-  for(const l of legs.filter(l => l.faceUp && !l.fx.spend.length)){ if(left){ l.spent = true; left--; } }
-  for(const l of legs.filter(l => l.faceUp && l.fx.spend.length)){ if(left){ l.spent = true; left--; } }
+  for(const l of legs.filter(l => l.faceUp && !keepReady(l))){ if(left){ l.spent = true; left--; } }
+  for(const l of legs.filter(l => keepReady(l))){ if(left){ l.spent = true; left--; } }
   return left === 0;
 }
+/* Leggende che conviene non spendere per pagare: hanno un'abilità {Spend}, oppure (loro o un Gear
+   equipaggiato, es. Zetatech Faceplate) un effetto «quando questa Leggenda è spesa» */
+const spentText = x => x.fx.spend.length || (x.fx.on.hostSpent || []).length || (x.fx.on.firstSpent || []).length;
+export const keepReady = l => l.faceUp && (spentText(l) || (l.gear || []).some(g => spentText(g)));
 export const canPay = (P, cost) => ready(P) >= cost;
-const legendLabel = (P, l) => l.faceUp ? `Leggenda ${l.card.dn}${l.fx.spend.length ? " (ha un'abilità Spend)" : ""}` : `Leggenda coperta ${P.legends.indexOf(l) + 1}`;
+const legendLabel = (P, l) => l.faceUp ? `Leggenda ${l.card.dn}${l.fx.spend.length ? " (ha un'abilità Spend)" : keepReady(l) ? " (ha un effetto quando è spesa)" : ""}` : `Leggenda coperta ${P.legends.indexOf(l) + 1}`;
 /* pagamento con scelta del giocatore. Bot e giocatori con il pagamento automatico
    pagano da soli; a loro viene chiesto solo quando toccherebbe spendere una
    Leggenda scoperta con un'abilità {Spend} ancora utilizzabile.
@@ -188,7 +192,7 @@ function payAsk(G, P, cost, cb0, onCancel){
   const autoPay = G.auto[P.id] || (G.autoPay && G.autoPay[P.id]);
   if(autoPay){
     const needLeg = Math.max(0, cost - readyEddies(P));
-    const abilityLegs = legs().filter(l => l.faceUp && l.fx.spend.length);
+    const abilityLegs = legs().filter(keepReady);
     const freeLegs = legs().length - abilityLegs.length;
     if(G.auto[P.id] || needLeg === 0 || needLeg <= freeLegs){ pay(G, P, cost); cb(); return; }
     // deve spendere almeno una Leggenda con abilità: chiede quali (gli Eddies e le altre vanno da sé)
@@ -202,7 +206,7 @@ function payAsk(G, P, cost, cb0, onCancel){
     }
     const pickLeg = () => {
       const stillNeed = needLeg - freeLegs - picked.length;
-      if(stillNeed <= 0){ for(const e of P.eddies) if(!e.spent) e.spent = true; for(const l of legs().filter(l => !(l.faceUp && l.fx.spend.length))) l.spent = true; for(const l of picked) l.spent = true; cb(); return; }
+      if(stillNeed <= 0){ for(const e of P.eddies) if(!e.spent) e.spent = true; for(const l of legs().filter(l => !keepReady(l))) l.spent = true; for(const l of picked) l.spent = true; cb(); return; }
       const opts = abilityLegs.filter(l => !picked.includes(l)).map(l => ({ label: `Spendi ${legendLabel(P, l)}`, l }));
       ask(G, P.id, "pay", [...opts, { label: "Annulla", l: null }], o => { if(o && o.l){ picked.push(o.l); pickLeg(); } else onCancel && onCancel(); }, { cost, paid: cost - stillNeed, need: stillNeed, confirm: true });
     };

@@ -519,5 +519,20 @@ import { canPay, costOf, spendCost } from "./engine.js";
   const before = P.gigs.length; doAction(G, P.id, { t: "attack", uid: u.uid, target: { kind: "gigs" } }); let g = 0; while(G.pending && g++ < 30) resolve(G, 0);
   ok(P.gigs.length - before === 2, `Royce a 10 ruba 2 Gig (rubati: ${P.gigs.length - before})`);
 }
+/* --- pagamento automatico: una Leggenda con un Gear «quando è spesa» resta pronta finché si può */
+{
+  const names = ["Zetatech Faceplate", "Floor It", "Animals Wrecker", "Pyramid Song"];
+  const legs = ["Jackie Welles: Mama's Favorite", "Kerry Eurodyne: Axe, Attitude, Audience", "Johnny Silverhand: Rocking Renegade"];
+  const d = { name: "A", legends: legs.map(n => ({ cid: byName(n).id, pid: byName(n).def.id })), cards: names.map(n => ({ cid: byName(n).id, pid: byName(n).def.id, n: 4 })) };
+  const mk = seed => { const G = createGame([d, JSON.parse(JSON.stringify(d))], byId, { seed, autoPay: [true, true] }); mulligan(G, 0, false); mulligan(G, 1, false); while(G.pending) resolve(G, 0);
+    const P = G.players[G.active]; const fp = [...P.hand, ...P.deck].find(x => x.card.dn === "Zetatech Faceplate"); (P.hand.includes(fp) ? P.hand : P.deck).splice((P.hand.includes(fp) ? P.hand : P.deck).indexOf(fp), 1);
+    for(const l of P.legends){ l.faceUp = true; l.spent = false; } P.legends[0].gear = [fp]; P.eddies = [];
+    const c = [...P.hand, ...P.deck].find(x => x.card.dn === "Floor It"); if(!P.hand.includes(c)){ P.deck.splice(P.deck.indexOf(c), 1); P.hand.push(c); } return { G, P, c }; };
+  { const { G, P, c } = mk(41); doAction(G, P.id, { t: "play", uid: c.uid }); while(G.pending && G.pending.kind !== "pay") resolve(G, 0);
+    ok(!G.pending && !P.legends[0].spent && P.legends.filter(l => l.spent).length === 1, "pagamento automatico: spende un'altra Leggenda e lascia pronta quella con la Faceplate"); while(G.pending) resolve(G, 0); }
+  { const { G, P, c } = mk(42); for(const l of P.legends.slice(1)) l.spent = true; doAction(G, P.id, { t: "play", uid: c.uid });
+    ok(G.pending && G.pending.kind === "pay" && G.pending.ctx.confirm, "pagamento automatico: chiede conferma prima di spendere la Leggenda con la Faceplate");
+    resolve(G, G.pending.options.length - 1); ok(!P.legends[0].spent && P.hand.includes(c), "annullando, la Leggenda resta pronta e la carta in mano"); }
+}
 console.log(`\n${passes} controlli OK, ${fails} falliti`);
 process.exit(fails ? 1 : 0);

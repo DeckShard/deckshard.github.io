@@ -3,7 +3,8 @@
    chat privata, blocco e segnalazione, feedback dalle Impostazioni.   */
 
 import { S, wipe } from "./store.js";
-import { $, $$, esc, toast } from "./ui.js";
+import { $, $$, esc, toast, filtersHTML, passes, bindFilters, sortCards } from "./ui.js";
+import { cardQty } from "./store.js";
 import * as cloud from "./cloud.js";
 import { DATA, thumbUrl } from "./data.js";
 import { openCard } from "./ui.js";
@@ -18,26 +19,16 @@ function miniAvatar(f, size = 38){
 const when = t => { const d = new Date(t), now = new Date(); return d.toDateString() === now.toDateString() ? d.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" }) : d.toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit" }) + " " + d.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" }); };
 
 /* ---------------------------------------------------------------- scheda Account (in cima a Social) */
-let pendingEmail = "", googleOn = null, rerender = () => {};
-async function googleEnabled(){
-  if(googleOn != null) return googleOn;
-  try{ const r = await fetch(cloud.SUPABASE_URL + "/auth/v1/settings", { headers: { apikey: cloud.SUPABASE_KEY } }); const j = await r.json(); googleOn = !!(j.external && j.external.google); }catch(e){ googleOn = false; }
-  return googleOn;
-}
+let rerender = () => {};
 export function accountHTML(){
   if(!cloud.cloudConfigured()) return "";
   const st = cloud.state;
   if(!st.user){
-    if(googleOn == null) googleEnabled().then(() => rerender());
     return `<div class="card acct" id="acct">
       <h3>Account</h3>
       <div class="sub">Accedi per avere collezione e mazzi su tutti i tuoi dispositivi, aggiungere amici e chattare. Senza account l'app continua a funzionare come ora, tutto resta su questo dispositivo.</div>
-      ${googleOn ? `<div style="margin-top:10px"><button class="btn acc2" id="acGoogle">Continua con Google</button></div>` : ""}
-      ${pendingEmail ? `<div class="sub" style="margin-top:10px">Abbiamo scritto a <b>${esc(pendingEmail)}</b>: tocca il link nella mail <b>da questo dispositivo</b>, oppure inserisci qui il codice che contiene.</div>
-        <div class="acrow"><input class="inp" id="acCode" inputmode="numeric" autocomplete="one-time-code" placeholder="Codice" maxlength="10"><button class="btn yel" id="acVerify">Conferma</button></div>
-        <button class="btn sm" id="acReset" style="margin-top:6px">Usa un'altra email</button>`
-      : `<div class="acrow"><input class="inp" id="acEmail" type="email" autocomplete="email" placeholder="La tua email"><button class="btn yel" id="acSend">Accedi via email</button></div>
-        <div class="sub" style="margin-top:4px">Ti arriva un link (e un codice) per entrare: nessuna password da ricordare.</div>`}
+      <div style="margin-top:10px"><button class="btn acc2" id="acGoogle">Continua con Google</button></div>
+      <div class="sub" style="margin-top:6px">L'email del tuo account Google non è mai visibile agli altri giocatori: vedono solo il nick che scegli.</div>
       ${st.error ? `<div class="sub bad" style="margin-top:6px">${esc(st.error)}</div>` : ""}
     </div>`;
   }
@@ -50,8 +41,6 @@ export function accountHTML(){
     <div class="field fcol" style="margin-top:8px"><label for="acNick">Nick pubblico<small>Così ti trovano gli amici</small></label><div class="acrow" style="margin:0"><input class="inp" id="acNick" value="${esc(p.nick || "")}" maxlength="24" autocomplete="off"><button class="btn sm" id="acNickSave">Salva</button></div></div>
     <div class="field"><label>Collezione visibile agli amici<small>Gli amici possono sfogliare le carte che hai (non i mazzi)</small></label>
       <span class="seg" id="acShow"><button data-v="1" aria-pressed="${!!p.show_collection}">Sì</button><button data-v="0" aria-pressed="${!p.show_collection}">No</button></span></div>
-    <div class="field"><label>Messaggi dagli amici<small>Solo chi hai accettato come amico può scriverti</small></label>
-      <span class="seg" id="acDm"><button data-v="1" aria-pressed="${p.dm_open !== false}">Sì</button><button data-v="0" aria-pressed="${p.dm_open === false}">No</button></span></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
       <button class="btn sm" id="acSync">Sincronizza ora</button>
       <button class="btn sm" id="acOut">Esci</button>
@@ -149,13 +138,8 @@ export function wireSocial(root, redraw){
     const t = e.target, id = s => t.closest(s);
     try{
       if(id("#acGoogle")){ await cloud.signInGoogle(); return; }
-      if(id("#acSend")){ const em = $("#acEmail").value.trim(); if(!/^\S+@\S+\.\S+$/.test(em)){ toast("Scrivi un indirizzo email valido"); return; }
-        t.closest("button").disabled = true; await cloud.sendLoginEmail(em); pendingEmail = em; cloud.state.error = null; redraw(); return; }
-      if(id("#acVerify")){ const code = $("#acCode").value.trim(); if(code.length < 6){ toast("Il codice ha 6 cifre"); return; } await cloud.verifyCode(pendingEmail, code); pendingEmail = ""; return; }
-      if(id("#acReset")){ pendingEmail = ""; redraw(); return; }
       if(id("#acNickSave")){ await cloud.setNick($("#acNick").value.trim()); toast("Nick salvato"); redraw(); return; }
       const sh = id("#acShow button"); if(sh){ await cloud.setProfileFlags({ show_collection: sh.dataset.v === "1" }); return; }
-      const dm = id("#acDm button"); if(dm){ await cloud.setProfileFlags({ dm_open: dm.dataset.v === "1" }); return; }
       if(id("#acSync")){ await cloud.syncNow(); toast("Sincronizzato"); return; }
       if(id("#acOut")){ if(confirm("Uscire dall'account? I dati restano anche su questo dispositivo.")){ await cloud.signOut(); } return; }
       if(id("#acDelete")){ if(confirm("Eliminare l'account? Profilo, amici, messaggi e dati salvati nel cloud vengono cancellati per sempre. Quello che c'è su questo dispositivo resta.")){ await cloud.deleteAccount(); toast("Account eliminato"); } return; }
@@ -172,8 +156,6 @@ export function wireSocial(root, redraw){
   root.addEventListener("keydown", e => {
     if(e.key !== "Enter") return;
     if(e.target.id === "frQ"){ e.preventDefault(); $("#frSearch").click(); }
-    if(e.target.id === "acEmail"){ e.preventDefault(); $("#acSend").click(); }
-    if(e.target.id === "acCode"){ e.preventDefault(); $("#acVerify").click(); }
     if(e.target.id === "acNick"){ e.preventDefault(); $("#acNickSave").click(); }
   });
 }
@@ -181,11 +163,12 @@ async function friendMenu(id){
   const f = cloud.friends.find(x => x.id === id); if(!f) return;
   const acts = [];
   if(f.show_collection) acts.push(["Guarda la collezione", async () => { const coll = await cloud.friendCollection(id); document.dispatchEvent(new CustomEvent("ncd:friendcoll", { detail: { nick: f.nick, coll: coll || {} } })); }]);
-  acts.push(["Rimuovi dagli amici", async () => { if(confirm(`Rimuovere ${f.nick} dagli amici?`)) await cloud.friendRemove(id); }]);
-  acts.push(["Blocca", async () => { if(confirm(`Bloccare ${f.nick}? Non potrà più trovarti, scriverti né chiederti l'amicizia.`)){ await cloud.blockUser(id); toast("Giocatore bloccato"); } }]);
-  acts.push(["Segnala", async () => { const why = prompt(`Perché segnali ${f.nick}?`); if(why != null){ await cloud.reportUser(id, null, why); toast("Segnalazione inviata"); } }]);
+  acts.push(["Rimuovi dagli amici", async () => { if(confirm(`Rimuovere ${f.nick} dagli amici?`)) await cloud.friendRemove(id); }, "Non sarete più amici: potrete richiedere l'amicizia in futuro."]);
+  acts.push(["Blocca", async () => { if(confirm(`Bloccare ${f.nick}? Non potrà più trovarti, scriverti né chiederti l'amicizia.`)){ await cloud.blockUser(id); toast("Giocatore bloccato"); } }, "Toglie l'amicizia; non potrà più trovarti nella ricerca, scriverti, sfidarti né chiederti l'amicizia."]);
+  acts.push(["Segnala", async () => { const why = prompt(`Perché segnali ${f.nick}?`); if(why != null){ await cloud.reportUser(id, null, why); toast("Segnalazione inviata"); } }, "Manda una segnalazione privata a chi gestisce l'app (per comportamenti scorretti): lui non lo saprà."]);
   const el = document.createElement("div"); el.id = "mergeAsk";
-  el.innerHTML = `<div class="box"><h3>${esc(f.nick)}</h3><div class="opts">${acts.map(([l], i) => `<button class="btn" data-a="${i}">${esc(l)}</button>`).join("")}<button class="btn" data-a="x">Chiudi</button></div></div>`;
+  // si chiude toccando fuori dal riquadro
+  el.innerHTML = `<div class="box fmenu"><h3>${esc(f.nick)}</h3><div class="opts">${acts.map(([l, , d], i) => `<button class="btn" data-a="${i}"><span>${esc(l)}</span>${d ? `<small>${esc(d)}</small>` : ""}</button>`).join("")}</div></div>`;
   el.addEventListener("click", async ev => { const b = ev.target.closest("[data-a]"); if(!b && ev.target !== el) return; el.remove(); if(b && b.dataset.a !== "x"){ try{ await acts[+b.dataset.a][1](); }catch(err){ toast(err.message, 4000); } } });
   document.body.appendChild(el);
 }
@@ -218,16 +201,42 @@ export function wireFeedback(root, version){
 /* azzera tutto: se c'è un account si esce prima, così il cloud non viene svuotato */
 export async function safeWipe(){ if(cloud.state.user){ try{ await cloud.signOut(); }catch(e){} } wipe(); }
 
-/* collezione di un amico (se l'ha resa visibile): le carte che possiede, con le copie */
+/* collezione di un amico (se l'ha resa visibile): ricerca, filtri come nella Collection, ordinamento,
+   e il confronto con la propria («mi mancano», «ha doppie») utile per gli scambi */
 document.addEventListener("ncd:friendcoll", e => {
   const { nick, coll } = e.detail;
   const byCard = new Map();
   for(const [pid, n] of Object.entries(coll || {})){ const p = DATA.byPrint.get(pid); if(!p || !n) continue; const c = p.card; const x = byCard.get(c.id) || { c, n: 0, p }; x.n += n; byCard.set(c.id, x); }
-  const list = [...byCard.values()].sort((a, b) => a.c.dn.localeCompare(b.c.dn));
+  const all = [...byCard.values()];
+  const F = { q: "", colors: new Set(), types: new Set(), cost: new Set(), rar: new Set(), cls: new Set(), sets: new Set(), owned: "", show: "all", sort: "name" };
   const el = document.createElement("div"); el.id = "mergeAsk"; el.className = "wide";
-  el.innerHTML = `<div class="box"><h3>Collezione di ${esc(nick)}</h3><p class="sub">${list.length} di ${DATA.cards.length} carte · ${list.reduce((a, x) => a + x.n, 0)} copie</p>
-    <div class="grid fc">${list.map(x => `<div class="gc" data-cid="${x.c.id}" data-pid="${x.p.id}"><img src="${thumbUrl(x.p.id)}" alt="${esc(x.c.dn)}" loading="lazy"><span class="qty">×${x.n}</span></div>`).join("") || `<div class="sub">Nessuna carta.</div>`}</div>
-    <div class="opts"><button class="btn" data-a="x">Chiudi</button></div></div>`;
-  el.addEventListener("click", ev => { const g = ev.target.closest(".gc"); if(g){ openCard(g.dataset.cid, g.dataset.pid); return; } if(ev.target.closest("[data-a]") || ev.target === el) el.remove(); });
-  document.body.appendChild(el);
+  el.innerHTML = `<div class="box fcoll"><h3>Collezione di ${esc(nick)}</h3><p class="sub">${all.length} di ${DATA.cards.length} carte · ${all.reduce((a, x) => a + x.n, 0)} copie</p>
+    <div class="search" style="padding:0;margin:8px 0 6px"><input class="inp" id="fcQ" type="search" placeholder="Cerca per nome, testo o tratto…" autocomplete="off"><button class="btn sm" id="fcFilt">Filtri</button></div>
+    <div class="filters" id="fcFilters" style="padding:0">${filtersHTML(F)}</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:4px 0 8px">
+      <span class="seg" id="fcShow"><button data-v="all" aria-pressed="true">Tutte</button><button data-v="missing" aria-pressed="false">Mi mancano</button><button data-v="extra" aria-pressed="false">Ha doppie</button></span>
+      <select class="inp" id="fcSort" aria-label="Ordina"><option value="name">Nome</option><option value="cost">Costo</option><option value="power">Potenza</option><option value="color">Colore</option><option value="pdesc">Prezzo ↓</option><option value="pasc">Prezzo ↑</option></select>
+      <span class="sub" id="fcCount"></span></div>
+    <div class="grid fc" id="fcGrid"></div></div>`;
+  const draw = () => {
+    const ok = new Set(all.map(x => x.c).filter(c => passes(c, F)).map(c => c.id));
+    let list = all.filter(x => ok.has(x.c.id));
+    if(F.show === "missing") list = list.filter(x => !cardQty(x.c));
+    if(F.show === "extra") list = list.filter(x => x.n >= 2);
+    const order = sortCards(list.map(x => x.c), F.sort).map(c => c.id), pos = new Map(order.map((id, i) => [id, i]));
+    list.sort((a, b) => pos.get(a.c.id) - pos.get(b.c.id));
+    el.querySelector("#fcCount").textContent = `${list.length} carte`;
+    el.querySelector("#fcGrid").innerHTML = list.map(x => `<div class="gc" data-cid="${x.c.id}" data-pid="${x.p.id}"><img src="${thumbUrl(x.p.id)}" alt="${esc(x.c.dn)}" loading="lazy"><span class="qty">×${x.n}</span></div>`).join("") || `<div class="sub">Nessuna carta con questi filtri.</div>`;
+  };
+  // si chiude toccando fuori dal riquadro
+  el.addEventListener("click", ev => {
+    const g = ev.target.closest(".gc"); if(g){ openCard(g.dataset.cid, g.dataset.pid); return; }
+    if(ev.target === el){ el.remove(); return; }
+    if(ev.target.closest("#fcFilt")){ el.querySelector("#fcFilters").classList.toggle("on"); return; }
+    const sh = ev.target.closest("#fcShow button"); if(sh){ F.show = sh.dataset.v; el.querySelectorAll("#fcShow button").forEach(b => b.setAttribute("aria-pressed", String(b === sh))); draw(); return; }
+  });
+  bindFilters(el.querySelector("#fcFilters"), F, () => { el.querySelector("#fcFilters").innerHTML = filtersHTML(F); draw(); });
+  el.querySelector("#fcQ").addEventListener("input", ev => { F.q = ev.target.value.trim(); draw(); });
+  el.querySelector("#fcSort").addEventListener("change", ev => { F.sort = ev.target.value; draw(); });
+  document.body.appendChild(el); draw();
 });

@@ -7,6 +7,7 @@
    minuto perde.                                                                  */
 
 import { client, state as cloud } from "./cloud.js";
+import { kitOf } from "./prerelease.js";
 
 const emit = (name, detail) => document.dispatchEvent(new CustomEvent(name, { detail }));
 let VER = "";
@@ -33,7 +34,8 @@ export const signedIn = () => !!(cloud.user);
 export const myId = () => cloud.user && cloud.user.id;
 
 /* il mazzo che viaggia nel database: solo ciò che serve al motore */
-export const deckPayload = d => ({ name: (d.name || "").slice(0, 60), legends: (d.legends || []).filter(Boolean).map(l => ({ cid: l.cid, pid: l.pid })), cards: (d.cards || []).filter(e => e.n > 0).map(e => ({ cid: e.cid, pid: e.pid, n: e.n })) });
+export const deckPayload = d => ({ name: (d.name || "").slice(0, 60), format: d.format === "sealed" ? "sealed" : "built", ...(d.format === "sealed" ? { kit: kitOf(d) } : {}),
+  legends: (d.legends || []).filter(Boolean).map(l => ({ cid: l.cid, pid: l.pid })), cards: (d.cards || []).filter(e => e.n > 0).map(e => ({ cid: e.cid, pid: e.pid, n: e.n })) });
 
 /* ------------------------------------------------------------ lobby */
 export let tables = [];

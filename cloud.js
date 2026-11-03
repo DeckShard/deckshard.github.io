@@ -106,6 +106,8 @@ export async function loadProfile(){
   const { data, error } = await c.from("profiles").select("*").eq("id", state.user.id).maybeSingle();
   if(error) throw error;
   state.profile = data;
+  // l'opzione «messaggi dagli amici» non esiste più: chi l'aveva chiusa torna a ricevere i messaggi degli amici
+  if(data && data.dm_open === false){ try{ await c.from("profiles").update({ dm_open: true }).eq("id", state.user.id); data.dm_open = true; }catch(e){} }
   return data;
 }
 const NICK_RX = /^[A-Za-z0-9_.-]{3,24}$/;

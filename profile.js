@@ -32,7 +32,16 @@ export const ACCENTS = [
   { id: "trauma", n: "Trauma Team (arancio e ghiaccio)", a: "#ff7a00", b: "#bfe9ff" },
   { id: "afterlife", n: "Afterlife (verde neon e rosso)", a: "#39ff14", b: "#ff1744" },
   { id: "kangtao", n: "Kang Tao (oro e giada)", a: "#ffcc33", b: "#00c48c" },
-  { id: "blackwall", n: "Blackwall (rosso e viola)", a: "#ff1e3c", b: "#8a2be2" }
+  { id: "blackwall", n: "Blackwall (rosso e viola)", a: "#ff1e3c", b: "#8a2be2" },
+  // aspetti chiari: basi tenui e colorate (mai bianco pieno), ognuno legato a una fazione o a un luogo del gioco
+  { id: "l-washi", light: true, n: "Arasaka Washi (carta di riso e rosso)", bg: "#e6ddd0", a: "#c41e2a", b: "#2d2d33" },
+  { id: "l-mox", light: true, n: "Lizzie's Bar (rosa Mox)", bg: "#f0d9e3", a: "#e0179d", b: "#00a9bb" },
+  { id: "l-trauma", light: true, n: "Trauma Team (ghiaccio e arancio)", bg: "#d9e6ee", a: "#ff7a00", b: "#2b7fb3" },
+  { id: "l-badlands", light: true, n: "Badlands (sabbia Aldecaldo)", bg: "#e6d8bf", a: "#d4620f", b: "#4f8a35" },
+  { id: "l-kangtao", light: true, n: "Kang Tao (giada e oro)", bg: "#d8e6dc", a: "#00a372", b: "#c99a00" },
+  { id: "l-samurai", light: true, n: "Samurai (giallo concerto)", bg: "#efe8b8", a: "#d6142a", b: "#14130a" },
+  { id: "l-netwatch", light: true, n: "NetWatch (lavanda e ciano)", bg: "#dedcef", a: "#6a3fe0", b: "#0094b3" },
+  { id: "l-militech", light: true, n: "Militech (cachi da campo)", bg: "#dfdfc9", a: "#7f9600", b: "#d9530a" }
 ];
 
 const wired = new Set();
@@ -78,7 +87,7 @@ export function renderProfile(){
 
     <div class="card">
       <h3>Identità</h3>
-      ${cloudState.user ? `<div class="field"><label>Nick<small>È il nick pubblico dell'account: si cambia nella scheda Account qui sopra</small></label><b>${esc(p.nick)}</b></div>`
+      ${cloudState.user ? ""   /* con l'account il nick è quello pubblico, già nella scheda Account */
         : `<div class="field"><label for="pfNick">Nick</label><input class="inp" id="pfNick" value="${esc(p.nick)}" placeholder="Il tuo handle" maxlength="24" autocomplete="nickname"></div>`}
       <div class="field"><label>Percorso di vita<small>Da dove vieni a Night City</small></label>
         <span class="seg" id="pfLife">${LIFEPATHS.map(x => `<button data-v="${x}" aria-pressed="${p.lifepath === x}">${x}</button>`).join("")}</span></div>
@@ -95,7 +104,7 @@ export function renderProfile(){
 
     <div class="card">
       <h3>Gioco organizzato</h3>
-      <div class="field"><label for="pfMelee">Nome utente Melee.gg<small>Solo un promemoria: resta sul dispositivo e viene mostrato nel profilo</small></label><input class="inp" id="pfMelee" value="${esc(p.melee)}" placeholder="nome utente" autocomplete="off"></div>
+      <div class="field"><label for="pfMelee">Nome utente Melee.gg<small>Solo un promemoria</small></label><input class="inp" id="pfMelee" value="${esc(p.melee)}" placeholder="nome utente" autocomplete="off"></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
         <a class="btn sm" href="https://cyberpunktcg.com/holophone" target="_blank" rel="noopener noreferrer">Holophone ↗</a>
         <a class="btn sm" href="https://melee.gg" target="_blank" rel="noopener noreferrer">Melee.gg ↗</a>
@@ -130,10 +139,10 @@ export function renderSettings(){
 
     <div class="card">
       <h3>Aspetto</h3>
-      <div class="field"><label>Tema<small>«Come il sistema» segue l'impostazione del dispositivo</small></label>
-        <span class="seg" id="pfTheme">${[["dark", "Scuro"], ["light", "Chiaro"], ["auto", "Come il sistema"]].map(([v, t]) => `<button data-v="${v}" aria-pressed="${(p.theme || "dark") === v}">${t}</button>`).join("")}</span></div>
-      <div class="field"><label>Colori d'accento<small>${esc(ACCENTS.find(a => a.id === p.accent)?.n || "Holophone")}</small></label>
-        <span class="swatches" id="pfAccent">${ACCENTS.map(a => `<button class="sw${(p.accent || "holophone") === a.id ? " sel" : ""}" data-v="${a.id}" title="${a.n}" aria-label="${a.n}" style="--a:${a.a};--b:${a.b}"></button>`).join("")}</span></div>
+      ${(() => { const cur = ACCENTS.find(a => a.id === (p.accent || "holophone")) || ACCENTS[0];
+        const sw = a => `<button class="sw${cur.id === a.id ? " sel" : ""}${a.light ? " lt" : ""}" data-v="${a.id}" title="${a.n}" aria-label="${a.n}" style="--a:${a.a};--b:${a.b}${a.bg ? `;--bgc:${a.bg}` : ""}"></button>`;
+        return `<div class="field fcol"><label>Aspetti scuri<small>${cur.light ? "" : esc(cur.n)}</small></label><span class="swatches" id="pfAccent">${ACCENTS.filter(a => !a.light).map(sw).join("")}</span></div>
+      <div class="field fcol"><label>Aspetti chiari<small>${cur.light ? esc(cur.n) : "Basi tenui ispirate alle fazioni, mai bianco pieno"}</small></label><span class="swatches" id="pfAccentL">${ACCENTS.filter(a => a.light).map(sw).join("")}</span></div>`; })()}
     </div>
 
     <div class="card">
@@ -199,7 +208,7 @@ function wire(root){
   root.addEventListener("change", e => { if(e.target.id === "pfNick") renderProfile(); });
   root.addEventListener("click", e => {
     const rerender = () => root.id === "p-settings" ? renderSettings() : renderProfile();
-    const seg = e.target.closest("#pfLife button, #pfFaction button, #pfTheme button, #pfLang button");
+    const seg = e.target.closest("#pfLife button, #pfFaction button, #pfLang button");
     if(seg){
       const k = { pfLife: "lifepath", pfFaction: "faction", pfTheme: "theme", pfLang: "lang" }[seg.parentElement.id];
       setP(k, S.profile[k] === seg.dataset.v && (k === "lifepath" || k === "faction") ? "" : seg.dataset.v);
@@ -211,7 +220,7 @@ function wire(root){
     const cv = e.target.closest("#pfCollView button"); if(cv){ S.settings.collView = cv.dataset.v; S.save("settings"); document.dispatchEvent(new CustomEvent("ncd:collection")); rerender(); return; }
     const cp = e.target.closest("#pfCollPick button"); if(cp){ S.settings.collPick = cp.dataset.v; S.save("settings"); document.dispatchEvent(new CustomEvent("ncd:collection")); rerender(); return; }
     if(e.target.closest("#pfFavClear")){ e.preventDefault(); S.settings.favPrints = {}; S.save("settings"); document.dispatchEvent(new CustomEvent("ncd:collection")); rerender(); return; }
-    const sw = e.target.closest("#pfAccent .sw"); if(sw){ setP("accent", sw.dataset.v); applyTheme(); rerender(); return; }
+    const sw = e.target.closest("#pfAccent .sw, #pfAccentL .sw"); if(sw){ setP("accent", sw.dataset.v); applyTheme(); rerender(); return; }
     const ch = e.target.closest("#pfChars button"); if(ch){
       const same = S.profile.fav === ch.dataset.fav;
       S.profile.fav = same ? "" : ch.dataset.fav; S.profile.favImg = same ? "" : ch.dataset.img; S.profile.favPos = 34; S.profile.favZoom = 150; S.save("profile");

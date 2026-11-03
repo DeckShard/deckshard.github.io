@@ -5,29 +5,28 @@ import { S, storageOk } from "./store.js";
 import { $, $$, toast } from "./ui.js";
 import { renderCollection } from "./collection.js";
 import { renderDeck } from "./deck.js";
-import { renderProfile, renderSettings } from "./profile.js";
+import { renderProfile, renderSettings, ACCENTS } from "./profile.js";
 import { renderSim, setChallenge } from "./sim.js";
 import { setOnlineVersion, invitesForMe, activeTables, T as onlineT } from "./online.js";
 import { renderRules } from "./rules.js";
 import { initI18n } from "./i18n.js";
 import { bootCloud, state as cloudState } from "./cloud.js";
 
-export const APP_VERSION = "1.6.0";
+export const APP_VERSION = "1.7.0";
 setOnlineVersion(APP_VERSION);
 
 const TABS = { collection: renderCollection, deck: renderDeck, profile: renderProfile, sim: renderSim, rules: renderRules, settings: renderSettings };
 
-/* tema (auto/chiaro/scuro) + accento, letti dal profilo */
+/* aspetto, letto dal profilo: ogni aspetto è scuro o chiaro (il vecchio «tema chiaro» non c'è più) */
 export function applyTheme(){
   const p = S.profile;
-  const dark = !(p.theme === "light" || (p.theme === "auto" && !matchMedia("(prefers-color-scheme: dark)").matches));
-  document.documentElement.dataset.theme = dark ? "dark" : "light";
-  if(p.accent && p.accent !== "holophone") document.documentElement.dataset.accent = p.accent; else delete document.documentElement.dataset.accent;
+  const pal = ACCENTS.find(a => a.id === p.accent) || ACCENTS[0];
+  document.documentElement.dataset.theme = pal.light ? "light" : "dark";
+  if(pal.id !== "holophone") document.documentElement.dataset.accent = pal.id; else delete document.documentElement.dataset.accent;
   // barre di sistema del telefono (stato e gesti): seguono la barra di navigazione dell'app, non un giallo fisso
-  const nav = getComputedStyle(document.documentElement).getPropertyValue("--navBg").trim() || (dark ? "#0b0b0e" : "#f3efe2");
+  const nav = getComputedStyle(document.documentElement).getPropertyValue("--navBg").trim() || "#0b0b0e";
   const meta = $("#themeColor"); if(meta) meta.content = nav;
 }
-matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", applyTheme);
 
 export function showTab(name, push = true){
   if(!TABS[name]) name = "collection";

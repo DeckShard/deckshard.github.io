@@ -173,9 +173,11 @@ await page.click("#btnSettings");
 ok(await page.locator("#p-settings.on").count() === 1 && (await page.locator("#p-settings h3").allTextContents()).join(",").includes("Prezzi"), "ingranaggio → Impostazioni con le sezioni");
 await page.click('#pfAccent .sw[data-v="netrunner"]');
 ok((await page.evaluate(() => document.documentElement.dataset.accent)) === "netrunner", "accento applicato");
-await page.click('#pfTheme [data-v="dark"]');
-ok((await page.evaluate(() => document.documentElement.dataset.theme)) === "dark", "tema scuro");
-await page.click('#pfTheme [data-v="light"]');
+ok(await page.locator("#pfTheme").count() === 0 && await page.locator("#pfAccentL .sw").count() >= 6, "niente più tema chiaro: aspetti scuri e chiari");
+await page.click('#pfAccentL .sw[data-v="l-mox"]');
+ok(await page.evaluate(() => document.documentElement.dataset.theme === "light" && document.documentElement.dataset.accent === "l-mox" && getComputedStyle(document.body).backgroundColor !== "rgb(255, 255, 255)"), "aspetto chiaro applicato (base colorata, non bianca)");
+await page.click('#pfAccent .sw[data-v="holophone"]');
+ok((await page.evaluate(() => document.documentElement.dataset.theme)) === "dark", "aspetto scuro");
 ok(/v\d+\.\d+/.test(await page.locator("#p-settings").textContent()) && (await page.locator("#metaLine").isVisible()), "versione nelle impostazioni e catalogo visibile nell'intestazione anche sul telefono");
 /* collezione: voci per carta / illustrazione / edizione e illustrazione fissata */
 {
@@ -340,6 +342,9 @@ await page.click('#rulesMode button[data-v="0"]');
 
 /* prerelease: apri il kit, costruisci, gioca contro il bot */
 await page.click('nav.tabs button[data-tab="sim"]');
+ok(await page.locator("#prOpen").count() === 0, "nella scheda Costruito niente Prerelease");
+await page.click('#simKind [data-v="sealed"]');
+ok((await page.locator("#simMode button").allTextContents()).join(",") === "Sfida IA,Online", "Prerelease: solo Sfida IA e Online");
 await page.click("#prOpen");
 ok(await page.locator("#prKit .pack").count() === 8, "kit aperto: 6 buste + Leggende + promo");
 ok(await page.locator("#prKit .bc").count() === 6 * 12 + 3 + 1, "76 carte nel kit");
@@ -351,8 +356,11 @@ await page.click('#deckBrowse [data-b="legends"]'); await page.waitForTimeout(30
 for(let i = 0; i < 3; i++){ await page.click(`#deckRows .row >> nth=${i}`); await page.waitForTimeout(250); }
 ok((await page.locator("#deckEdit .lslot img").count()) === 3, "3 Leggende scelte dal kit");
 await page.click('#deckBrowse [data-b="cards"]'); await page.waitForTimeout(300);
+// al massimo 3 colori: si filtra l'elenco sui 3 colori più presenti nel kit
+{ const top3 = await page.evaluate(async () => { const { DATA } = await import("./data.js"); const cnt = {}; for(const r of document.querySelectorAll("#deckRows .row")){ const c = DATA.byId.get(r.dataset.cid); cnt[c.color] = (cnt[c.color] || 0) + 1; } return Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a]).slice(0, 3); });
+  await page.click("#deckFilt"); for(const c of top3){ await page.click(`#deckFilters [data-fk="colors"][data-fv="${c}"]`); await page.waitForTimeout(100); } }
 let addedRows = 0;
-for(let k = 0; k < 40 && addedRows < 34; k++){
+for(let k = 0; k < 90 && addedRows < 60; k++){
   const rows = page.locator("#deckRows .row"); const n = await rows.count(); if(!n) break;
   const i = k % n; await rows.nth(i).click(); await page.waitForTimeout(120); addedRows++;
   const size = (await page.locator("#deckEdit .chip:has-text('carte')").first().textContent());
@@ -370,16 +378,21 @@ for(let i = 0; i < 5 && await page.locator("#simAsk [data-ask]").count(); i++){ 
 await page.click("#bMenu"); await page.click('.pop button:has-text("Esci")');
 
 /* tutorial: partita guidata */
+ok(await page.locator('#simDeck0 option[value^="starter:"]').count() === 0, "Prerelease: solo mazzi da kit nella scelta");
+await page.click('#simKind [data-v="built"]'); await page.click('#simMode [data-v="tutorial"]');
+ok((await page.locator("#simMode button").allTextContents()).join(",") === "Sfida IA,Offline,Online,Tutorial", "Costruito: Sfida IA, Offline, Online, Tutorial");
 await page.click("#simTutorial");
 await page.waitForSelector("#board:not([hidden])");
 await page.waitForSelector(".tutbar");
-ok((await page.locator(".tutbar .n").textContent()) === "1/12", "tutorial: primo passo");
+ok((await page.locator(".tutbar .n").textContent()) === "1/17" && await page.locator("[data-mull]").count() === 0 && await page.locator("#board .tuthl").count() >= 1, "tutorial: tour della plancia, pezzo evidenziato, mulligan in attesa");
+for(let i = 0; i < 5; i++){ await page.click("#tutNext"); await page.waitForTimeout(120); }
+ok(await page.locator("#board .tuthl").count() === 0 && await page.locator("#simAsk.mull .mc").count() === 6, "dopo il tour: mulligan con le carte grandi");
 await page.click('[data-mull="keep"]'); await page.waitForTimeout(300);
-{ const tn = await page.locator(".tutbar .n").textContent(); ok(/^(2|3)\/12/.test(tn), "tutorial: avanza dopo il mulligan (" + tn + ")"); }
+{ const tn = await page.locator(".tutbar .n").textContent(); ok(/^(7|8)\/17/.test(tn), "tutorial: avanza dopo il mulligan (" + tn + ")"); }
 ok(await page.locator("#tutSkip").count() === 0, "tutorial senza pulsante di chiusura");
 // il bot inizia (partita seedata); al mio turno: dado, poi i passi guidati con le azioni giuste sempre disponibili
-for(let i = 0; i < 80; i++){ if(await page.locator("#simAsk [data-ask]").count()){ await page.click("#simAsk [data-ask] >> nth=0"); } if(/^3\/12/.test(await page.locator(".tutbar .n").textContent().catch(() => ""))) break; await page.waitForTimeout(300); }
-ok(/^3\/12/.test(await page.locator(".tutbar .n").textContent()), "tutorial: passo della vendita raggiunto al mio turno");
+for(let i = 0; i < 80; i++){ if(await page.locator("#simAsk [data-ask]").count()){ await page.click("#simAsk [data-ask] >> nth=0"); } if(/^8\/17/.test(await page.locator(".tutbar .n").textContent().catch(() => ""))) break; await page.waitForTimeout(300); }
+ok(/^8\/17/.test(await page.locator(".tutbar .n").textContent()), "tutorial: passo della vendita raggiunto al mio turno");
 ok(await page.locator("#bEnd").count() === 0, "fine turno nascosto finché il passo non è completato");
 // vendita: la carta vendibile c'è sempre
 let soldT = false;
@@ -388,7 +401,7 @@ for(let k = 0; k < (await page.locator('[data-handrow] .bc').count()) && !soldT;
   if(await sb.count() && await sb.isEnabled()){ await sb.click(); soldT = true; } else await page.click("#board .bstrip .st");
 }
 await page.waitForTimeout(300);
-ok(soldT && /^4\/12/.test(await page.locator(".tutbar .n").textContent()), "venduta: passo 4 (gioca un'Unità)");
+ok(soldT && /^9\/17/.test(await page.locator(".tutbar .n").textContent()), "venduta: passo 4 (gioca un'Unità)");
 // l'Unità con potenza da ≤3 €$ (Dexter) c'è sempre; le altre Unità sono disattivate in questo passo
 let playedT = false;
 for(let k = 0; k < (await page.locator('[data-handrow] .bc').count()) && !playedT; k++){
@@ -398,25 +411,25 @@ for(let k = 0; k < (await page.locator('[data-handrow] .bc').count()) && !played
 for(let k = 0; k < 6 && /Paga \d+ €\$/.test(await page.locator(".bstrip .lg").textContent()); k++){ const ed = page.locator(".bz.mine [data-eddies].target"), lg = page.locator(".bz.mine [data-legend].target"); if(await ed.count()) await ed.click(); else if(await lg.count()) await lg.first().click(); await page.waitForTimeout(120); }
 for(let i = 0; i < 6 && await page.locator("#simAsk [data-ask]").count(); i++){ await page.click("#simAsk [data-ask] >> nth=-1"); await page.waitForTimeout(150); }
 await page.waitForTimeout(300);
-ok(playedT && /^5\/12/.test(await page.locator(".tutbar .n").textContent()), "giocata: passo 5 (chiama una Leggenda)");
+ok(playedT && /^10\/17/.test(await page.locator(".tutbar .n").textContent()), "giocata: passo 5 (chiama una Leggenda)");
 // passi 5→10: chiama, fine turno, secondo turno (dado, vendi, Bombus), attacca con Dexter, fine turno, reazione all'attacco del bot
 const step = async () => (await page.locator(".tutbar .n").textContent().catch(() => "")).split("/")[0];
 const payLoop = async () => { for(let k = 0; k < 8 && /Paga \d+ €\$/.test(await page.locator(".bstrip .lg").textContent()); k++){ const ed = page.locator(".bz.mine [data-eddies].target"), lg = page.locator(".bz.mine [data-legend].target"); if(await ed.count()) await ed.click(); else if(await lg.count()) await lg.first().click(); await page.waitForTimeout(120); } };
 const asks = async (sel = "#simAsk [data-ask] >> nth=0") => { for(let i = 0; i < 8 && await page.locator("#simAsk [data-ask]").count(); i++){ await page.click(sel); await page.waitForTimeout(150); } };
 await page.click('.bz.mine [data-legend] >> nth=0'); await page.click('.pop button:has-text("Chiama")'); await payLoop(); await asks(); await page.waitForTimeout(300);
-ok(await step() === "6", "chiamata: passo 6 (fine turno)");
+ok(await step() === "11", "chiamata: passo 6 (fine turno)");
 await page.click("#bEnd");
 // il bot gioca; al mio turno arriva la scelta del dado (le opzioni iniziano con «d»), poi si vende e si gioca Bombus
 let dieSeen = false;
 for(let i = 0; i < 80 && !dieSeen; i++){ const a = page.locator("#simAsk [data-ask]"); if(await a.count()){ const t = await a.first().textContent(); if(/^d\d+/.test(t)) dieSeen = true; await a.first().click(); } await page.waitForTimeout(300); }
 await page.waitForTimeout(400);
-ok(dieSeen && await step() === "7", "secondo turno: passo 7 (gioca Bombus)");
+ok(dieSeen && await step() === "12", "secondo turno: passo 7 (gioca Bombus)");
 { let s2 = false; for(let k = 0; k < (await page.locator('[data-handrow] .bc').count()) && !s2; k++){ await page.click(`[data-handrow] .bc >> nth=${k}`); const sb = page.locator('.pop button:has-text("Vendi")'); if(await sb.count() && await sb.isEnabled()){ await sb.click(); s2 = true; } else await page.click("#board .bstrip .st"); }
   let pb2 = false; for(let k = 0; k < (await page.locator('[data-handrow] .bc').count()) && !pb2; k++){ await page.click(`[data-handrow] .bc >> nth=${k}`); const pb = page.locator('.pop button:has-text("Gioca")'); if(await pb.count() && await pb.isEnabled()){ await pb.click(); pb2 = true; } else await page.click("#board .bstrip .st"); }
   await payLoop(); await asks(); await page.waitForTimeout(300); }
-ok(await step() === "8", "Bombus giocata: passo 8 (attacca)");
+ok(await step() === "13", "Bombus giocata: passo 8 (attacca)");
 await page.click('.bz.mine [data-field] .bc[title^="Dexter"]'); await page.click('.pop button:has-text("area Gig")'); await asks("#simAsk [data-ask] >> nth=-1"); await page.waitForTimeout(300);
-ok(await step() === "9", "attacco fatto: passo 9 (fine turno)");
+ok(await step() === "14", "attacco fatto: passo 9 (fine turno)");
 await page.click("#bEnd");
 let reacted = false;
 for(let i = 0; i < 80; i++){
@@ -425,7 +438,7 @@ for(let i = 0; i < 80; i++){
   if(await page.locator("#bEnd").count()) break;
   await page.waitForTimeout(400);
 }
-ok(reacted && ["11", "12"].includes(await step()), "bloccato con Bombus: passo 11 (" + await step() + ")");
+ok(reacted && ["16", "17"].includes(await step()), "bloccato con Bombus: passo 11 (" + await step() + ")");
 await page.click("#bMenu"); ok(await page.locator('.pop button:has-text("Abbandona il tutorial")').count() === 1 && await page.locator('.pop button:has-text("Mi arrendo")').count() === 0, "nel tutorial il menù ha «Abbandona il tutorial» al posto della resa");
 const lossesBefore = await page.evaluate(() => JSON.parse(localStorage.getItem("ncd:record") || "{}").losses || 0);
 await page.click('.pop button:has-text("Abbandona il tutorial")'); await page.waitForTimeout(300);
@@ -453,10 +466,10 @@ await desk.screenshot({ path: "/tmp/ncd-shot-desktop.png" });
     saveDeck({ id: "draft-test", name: "Bozza di prova", legends: [null, null, null], cards: [{ cid: c.id, pid: c.def.id, n: 1 }], notes: "" });
     location.hash = "#sim"; await new Promise(r => setTimeout(r, 400));
     const opts = [...document.querySelectorAll("#simDeck0 option")].map(o => o.textContent);
-    const note = document.querySelector("#simSetup .note").textContent;
+    const note = document.querySelector("#simSetup details .sub").textContent;
     return { hasDraft: opts.some(t => /Bozza di prova/.test(t)), note };
   });
-  ok(!sim.hasDraft && /1 bozza resta/.test(sim.note), "simulatore: le bozze non sono tra i mazzi giocabili (" + sim.note.slice(-80) + ")");
+  ok(!sim.hasDraft && /1 mazzo resta/.test(sim.note), "simulatore: le bozze non sono tra i mazzi giocabili (" + sim.note.slice(-80) + ")");
 }
 
 ok(errors.length === 0, "nessun errore JS: " + errors.slice(0, 3).join(" | "));

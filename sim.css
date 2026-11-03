@@ -189,3 +189,13 @@
    lo spazio in più va alla zona del giocatore, e nessuna delle due taglia le proprie carte */
 .bz.rival{flex:0 1 auto}
 .bz.mine{flex:1 1 auto}
+/* mulligan: le 6 carte grandi, leggibili senza zoom */
+#simAsk.mull{background:rgba(0,0,0,.72)}
+#simAsk.mull .box{max-width:min(980px,100%);background:var(--bg2)}
+#simAsk .mullrow{display:flex;gap:8px;overflow-x:auto;padding:6px 2px 8px;touch-action:pan-x}
+#simAsk .mc{flex:1 1 0;min-width:84px;max-width:150px;cursor:zoom-in}
+#simAsk .mc img{width:100%;aspect-ratio:733/1024;object-fit:cover;border-radius:7px;box-shadow:0 3px 10px rgba(0,0,0,.45);display:block;pointer-events:none}
+@media(max-height:460px){ #simAsk.mull{padding:6px} #simAsk.mull .box{max-height:100%;padding:8px 10px} #simAsk .mc{max-width:calc(var(--bh) * .36)} }
+/* tutorial: il pezzo della plancia di cui parla il passo */
+#board .tuthl{outline:3px solid var(--yel);outline-offset:2px;border-radius:6px;animation:tutpulse 1.2s ease-in-out infinite;position:relative;z-index:2}
+@keyframes tutpulse{0%,100%{outline-color:var(--yel)}50%{outline-color:transparent}}

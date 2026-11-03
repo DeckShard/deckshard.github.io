@@ -51,9 +51,30 @@ export function sealedDeckFromKit(kit, name){
   for(const pack of kit.packs) for(const p of pack) add(p);
   for(const p of kit.legendPack) add(p);
   if(kit.promo) add(kit.promo);
-  const deck = { id: newId(), name, format: "sealed", legends: [null, null, null], cards: [], notes: `Kit Prerelease ${setName(kit.set)} (seme ${kit.seed})`,
+  const deck = { id: newId(), name, format: "sealed", kit: { set: kit.set, seed: kit.seed }, legends: [null, null, null], cards: [], notes: `Kit Prerelease ${setName(kit.set)} (seme ${kit.seed})`,
     pool: [...pool.entries()].map(([pid, n]) => ({ pid, cid: DATA.byPrint.get(pid).card.id, n })) };
   return deck;
+}
+
+/* mazzi Prerelease «veri»: il kit (espansione + seme) si riapre identico, quindi si può controllare che
+   ogni carta del mazzo sia davvero uscita da quel kit. Un mazzo da 30 carte costruito a mano non passa. */
+export function kitOf(d){
+  if(!d) return null;
+  if(d.kit && d.kit.set && d.kit.seed != null) return d.kit;
+  const m = /\(seme (-?\d+)\)/.exec(d.notes || ""); if(!m || !d.pool) return null;   // mazzi creati prima che il kit venisse salvato
+  const set = d.pool.map(e => DATA.byPrint.get(e.pid)).find(p => p && p.set !== "prereleaseretail")?.set;
+  return set ? { set, seed: +m[1] } : null;
+}
+export function verifySealed(d){
+  if(!d || d.format !== "sealed") return false;
+  const k = kitOf(d); const kit = k && openKit(k.set, k.seed); if(!kit) return false;
+  const cnt = new Map(), add = p => { const c = DATA.byPrint.get(p.id); if(c) cnt.set(c.card.id, (cnt.get(c.card.id) || 0) + 1); };
+  for(const pk of kit.packs) for(const p of pk) add(p); for(const p of kit.legendPack) add(p); if(kit.promo) add(kit.promo);
+  const legs = (d.legends || []).filter(Boolean), n = (d.cards || []).reduce((a, e) => a + e.n, 0);
+  if(legs.length !== 3 || n < 30) return false;
+  if(legs.some(l => !cnt.get(l.cid)) || new Set(legs.map(l => l.cid)).size !== 3) return false;
+  if(d.cards.some(e => e.n > (cnt.get(e.cid) || 0))) return false;
+  return new Set(d.cards.map(e => DATA.byId.get(e.cid)?.color).filter(Boolean)).size <= 3;
 }
 
 /* mazzo del bot: 3 Leggende dal suo kit, i 3 colori più ricchi, le carte migliori fino a ≥30 */

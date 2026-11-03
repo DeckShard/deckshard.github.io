@@ -7,10 +7,10 @@ import { $, $$, esc, toast, openLens, openCard } from "./ui.js";
 import { createGame, mulligan, resolve, legalActions, doAction, applyMove, moveOf, power, powerIn, ready, readyEddies, streetCred, canAttack, canPay, manual, rival, hasKw, hasSpend } from "./engine.js";
 import { botDecide, botStep } from "./bot.js";
 import { starterDeck, isLegal, deckSize, openDeck } from "./deck.js";
-import { prereleaseSetupHTML, wirePrerelease } from "./prerelease.js";
+import { prereleaseSetupHTML, wirePrerelease, verifySealed } from "./prerelease.js";
 import * as ON from "./online.js";
 import { state as cloudState, friends as cloudFriends } from "./cloud.js";
-import { startTutorial, tutorialStep, tutorialBarHTML, tutorialActive, stopTutorial, tutorialAllows, ensureHand, TUTORIAL_SEED } from "./tutorial.js";
+import { startTutorial, tutorialStep, tutorialBarHTML, tutorialActive, stopTutorial, tutorialAllows, ensureHand, TUTORIAL_SEED, tutorialTour, tutorialHighlight } from "./tutorial.js";
 
 /* Strumenti manuali (spendi/prepara, ±potenza, sconfiggi, ±1 sui Gig, pesca…):
    permettono di applicare a mano gli effetti che il motore non interpreta,
@@ -45,37 +45,58 @@ function res(i){ const r = resolve(G, i); if(online()) ON.send({ k: "r", i: i ==
 function doMull(pi, d){ if(G.players[pi].mulliganed) return; mulligan(G, pi, d); if(online()) ON.send({ k: "m", p: pi, d: d ? 1 : 0 }); }
 
 /* ------------------------------------------------------------ setup (pagina) */
+/* Il setup ha due schede: «Costruito» (mazzi del deckbuilder e starter) e «Prerelease» (solo mazzi
+   aperti da un kit). Le modalità: Sfida IA, Offline (due giocatori, un dispositivo), Online, Tutorial;
+   nel Prerelease solo Sfida IA e Online, sempre contro mazzi Prerelease. */
+let kind = null;   // "built" | "sealed"
+let oppWarn = false;   // online Prerelease: mazzo dell'avversario che non corrisponde a un kit
+const MODES = { built: [["bot", "Sfida IA"], ["hot", "Offline"], ["online", "Online"], ["tutorial", "Tutorial"]], sealed: [["bot", "Sfida IA"], ["online", "Online"]] };
+export function simKind(){ return kind || S.settings.simKind || "built"; }
 export function renderSim(){
   const root = $("#simSetup");
   if(!wired){ wire(); wired = true; }
-  // si gioca solo con mazzi completi: le bozze (non valide nel deckbuilder) restano fuori
-  const decks = S.decks.filter(isLegal).sort((a, b) => (b.updated || 0) - (a.updated || 0));
-  const drafts = S.decks.length - decks.length;
-  const opts = (sel0, sealedToo = true) => `<option value="starter:theheistretailstarterdeck">Starter «The Heist»</option><option value="starter:embracingpowerretailstarterdeck">Starter «Embracing Power»</option>` +
-    decks.filter(d => sealedToo || d.format !== "sealed").map(d => `<option value="${d.id}"${d.id === sel0 ? " selected" : ""}>${d.format === "sealed" ? "🎲 " : ""}${esc(d.name)} (${deckSize(d)} carte)</option>`).join("");
-  const sel0 = decks.find(d => d.id === S.settings.simDeck0), sealed0 = !!(sel0 && sel0.format === "sealed");
-  if(sealed0 && mode === "hot") mode = "bot";
+  kind = simKind();
+  if(!MODES[kind].some(([v]) => v === mode)) mode = "bot";
+  // si gioca solo con mazzi completi: le bozze (non valide nel deckbuilder) restano fuori;
+  // nel Costruito niente mazzi Prerelease, nel Prerelease solo quelli aperti davvero da un kit
+  const legal = S.decks.filter(isLegal).sort((a, b) => (b.updated || 0) - (a.updated || 0));
+  const built = legal.filter(d => d.format !== "sealed"), sealed = legal.filter(d => d.format === "sealed" && verifySealed(d));
+  const drafts = S.decks.filter(d => (kind === "sealed") === (d.format === "sealed")).length - (kind === "sealed" ? sealed : built).length;
+  const opt = (d, sel) => `<option value="${d.id}"${d.id === sel ? " selected" : ""}>${esc(d.name)} (${deckSize(d)} carte)</option>`;
+  const starters = sel => [["theheistretailstarterdeck", "The Heist"], ["embracingpowerretailstarterdeck", "Embracing Power"]].map(([c, n]) => `<option value="starter:${c}"${sel === "starter:" + c ? " selected" : ""}>Starter «${n}»</option>`).join("");
+  const builtOpts = sel => starters(sel) + built.map(d => opt(d, sel)).join("");
+  const sel = kind === "sealed" ? (sealed.some(d => d.id === S.settings.simSealed) ? S.settings.simSealed : sealed[0]?.id) : S.settings.simDeck0;
+  const lbl = t => `<label style="font-size:12px;font-weight:700;color:var(--mute)">${t}</label>`;
+  const deck0 = kind === "sealed"
+    ? (sealed.length ? `<div>${lbl("Il tuo mazzo Prerelease")}<select class="inp" id="simDeck0">${sealed.map(d => opt(d, sel)).join("")}</select></div>` : `<div class="note" style="margin:0">Non hai ancora un mazzo Prerelease completo: apri un kit qui sotto e costruiscilo nel deckbuilder.</div>`)
+    : `<div>${lbl(mode === "hot" ? "Mazzo del giocatore 1" : "Il tuo mazzo")}<select class="inp" id="simDeck0">${builtOpts(sel)}</select></div>`;
+  const deck1 = kind === "sealed" || mode === "online" || mode === "tutorial" ? ""
+    : `<div>${lbl(mode === "bot" ? "Mazzo dell'IA" : "Mazzo del giocatore 2")}<select class="inp" id="simDeck1">${builtOpts(S.settings.simDeck1 || "starter:embracingpowerretailstarterdeck")}</select></div>`;
+  const resume = G && G.winner == null && !gOnline ? `<button class="btn" id="simResume">Riprendi la partita in corso</button>` : "";
+  let body;
+  if(mode === "tutorial") body = `<div class="tutlist">
+      <div class="tutitem"><div><b>Partita guidata</b><span>Conosci la plancia, poi una partita contro l'IA passo per passo: vendere, giocare, chiamare, attaccare, reagire.</span></div><button class="btn acc2" id="simTutorial">Inizia</button></div>
+    </div>${resume ? `<div style="margin-top:10px">${resume}</div>` : ""}`;
+  else if(mode === "online") body = `<div class="simdecks" style="margin-top:10px">${deck0}</div>${kind === "sealed" && !sealed.length ? "" : onlineLobbyHTML()}`;
+  else body = `<div class="simdecks" style="margin-top:10px">${deck0}${deck1}</div>
+      ${kind === "sealed" && !sealed.length ? "" : `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;align-items:center">
+        <button class="btn acc2" id="simStart">▶ Inizia la partita</button>${resume}
+        <span class="chip">${S.record.wins || 0} vittorie · ${S.record.losses || 0} sconfitte contro l'IA</span></div>`}
+      ${kind === "sealed" && sealed.length ? `<p class="sub" style="margin:8px 0 0">L'IA gioca con il kit che ha aperto lei, abbinato al tuo mazzo.</p>` : ""}`;
   root.innerHTML = `
     <div class="card">
       <h2>Simulator</h2>
-      <div class="sub">Partita completa con le regole di base applicate dal motore: fasi, Eddies, Leggende, attacchi, Blocker, furto dei Gig, Street Cred, overtime. Gli effetti di tutte le carte sono applicati dal motore; il registro mostra ogni innesco con la carta che lo produce.</div>
-      <div class="field"><label>Modalità</label><span class="seg" id="simMode"><button data-v="bot" aria-pressed="${mode === "bot"}">Contro il bot</button><button data-v="hot" aria-pressed="${mode === "hot"}" ${sealed0 ? "disabled" : ""}>In due, stesso dispositivo</button><button data-v="online" aria-pressed="${mode === "online"}">Online</button></span></div>
-      <div class="simdecks" style="margin-top:10px">
-        <div><label style="font-size:12px;font-weight:700;color:var(--mute)">Il tuo mazzo</label><select class="inp" id="simDeck0">${opts(S.settings.simDeck0)}</select></div>
-        ${mode === "online" ? "" : `<div><label style="font-size:12px;font-weight:700;color:var(--mute)">${mode === "bot" ? "Mazzo del bot" : "Mazzo del giocatore 2"}</label>
-          ${sealed0 ? `<div class="inp" style="opacity:.85">🎲 Bot del Prerelease: gioca con il kit che ha aperto lui</div><select id="simDeck1" hidden><option value="${S.settings.simDeck0}"></option></select>` : `<select class="inp" id="simDeck1">${opts(S.settings.simDeck1 || "starter:embracingpowerretailstarterdeck", false)}</select>`}</div>`}
-      </div>
-      ${mode === "online" ? onlineLobbyHTML() : `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;align-items:center">
-        <button class="btn acc2" id="simStart">▶ Inizia la partita</button>
-        ${G && G.winner == null && mode !== "online" && !gOnline ? `<button class="btn" id="simResume">Riprendi la partita in corso</button>` : ""}
-        <span class="chip">${S.record.wins || 0} vittorie · ${S.record.losses || 0} sconfitte</span>
-      </div>`}
-      <div class="field" style="margin-top:8px"><label>Pagamento degli Eddies<small>Manuale: scegli ogni volta cosa spendere. Automatico: paga da solo e chiede solo se deve spendere una Leggenda con un'abilità Spend ancora utilizzabile.</small></label>
-        <span class="seg" id="simPay"><button data-v="0" aria-pressed="${!S.profile.autoPay}">Manuale</button><button data-v="1" aria-pressed="${!!S.profile.autoPay}">Automatico</button></span></div>
-      ${mode === "online" ? "" : `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><button class="btn sm" id="simTutorial">Tutorial: partita guidata</button></div>`}
-      <p class="note" style="margin:12px 0 0"><b>Sul telefono</b> la plancia è orizzontale: ruota il dispositivo (o lascia che l'app la ruoti da sola). Tocca una carta per le azioni, <b>tieni premuto</b> per ingrandirla con lo zoom. Si gioca solo con i mazzi completi (3 Leggende, 40–50 carte entro i limiti RAM, o le regole del sealed)${drafts ? `: ${drafts} ${drafts === 1 ? "bozza resta" : "bozze restano"} nel deckbuilder finché non ${drafts === 1 ? "è" : "sono"} in regola` : ""}.</p>
+      <div class="sub">Sfida un'IA uscita dal Blackwall, oppure i tuoi choom.</div>
+      <div class="simkind" id="simKind"><button data-v="built" aria-pressed="${kind === "built"}">Costruito</button><button data-v="sealed" aria-pressed="${kind === "sealed"}">Prerelease</button></div>
+      <div class="simmode"><span class="seg" id="simMode">${MODES[kind].map(([v, t]) => `<button data-v="${v}" aria-pressed="${mode === v}">${t}</button>`).join("")}</span></div>
+      ${body}
+      <details class="fold" style="margin-top:12px"><summary>Info aggiuntive</summary><div class="sub" style="margin-top:6px">
+        <p style="margin:0 0 6px">Le regole sono applicate dal motore: fasi, Eddies, Leggende, attacchi, Blocker, furto dei Gig, Street Cred e overtime; gli effetti di tutte le carte sono eseguiti e il registro (≡) mostra ogni innesco con la carta che lo produce.</p>
+        <p style="margin:0 0 6px"><b>Sul telefono</b> la plancia è orizzontale: ruota il dispositivo (o lascia che l'app la ruoti da sola). Tocca una carta per le azioni, <b>tieni premuto</b> per ingrandirla.</p>
+        <p style="margin:0 0 6px">${kind === "sealed" ? "Nel Prerelease si gioca solo con mazzi aperti da un kit: almeno 30 carte di massimo 3 colori, senza limiti di RAM. Online si affrontano solo altri mazzi Prerelease." : "Si gioca solo con i mazzi completi: 3 Leggende, 40–50 carte entro i limiti RAM."}${drafts > 0 ? ` ${drafts} ${drafts === 1 ? "mazzo resta" : "mazzi restano"} nel deckbuilder finché non ${drafts === 1 ? "è completo" : "sono completi"}.` : ""}</p>
+        <p style="margin:0">Il pagamento degli Eddies (manuale o automatico) si sceglie nelle Impostazioni.</p></div></details>
     </div>
-    ${prereleaseSetupHTML()}`;
+    ${kind === "sealed" ? prereleaseSetupHTML() : ""}`;
 }
 function deckFrom(v){
   if(v.startsWith("starter:")){ const code = v.slice(8); return starterDeck(code, code.includes("heist") ? "Starter The Heist" : "Starter Embracing Power"); }
@@ -84,14 +105,15 @@ function deckFrom(v){
 
 /* ------------------------------------------------------------ partita */
 function start(opts = {}){
-  let d0 = opts.deck0 || deckFrom($("#simDeck0").value), d1 = opts.deck1 || deckFrom($("#simDeck1").value);
+  const v0 = $("#simDeck0")?.value, v1 = $("#simDeck1")?.value;
+  let d0 = opts.deck0 || (v0 && deckFrom(v0)), d1 = opts.deck1 || (v1 && deckFrom(v1));
   if(gOnline && G && G.winner == null){ toast("Hai una partita online in corso: finiscila o abbandonala prima", 3500); return; }
-  if(mode === "online") mode = "bot";
+  if(mode === "online" || mode === "tutorial") mode = "bot";
   if(d0 && d0.format === "sealed" && d0.botDeck && !opts.deck1){ d1 = d0.botDeck; mode = "bot"; }
   else if(d1 && d1.format === "sealed" && d1.botDeck && !opts.deck1){ /* mazzo sealed scelto come avversario: va bene, lo gioca il bot o il secondo giocatore */ }
   if(!d0 || !d1){ toast("Scegli due mazzi"); return; }
   for(const d of [d0, d1]) if(d.legends.filter(Boolean).length < 3 || deckSize(d) < 10){ toast(`«${d.name}»: servono 3 Leggende e un mazzo con carte`); return; }
-  S.settings.simDeck0 = $("#simDeck0").value; S.settings.simDeck1 = $("#simDeck1").value; S.save("settings");
+  if(!opts.deck0){ if(simKind() === "sealed") S.settings.simSealed = v0; else { S.settings.simDeck0 = v0; if(v1) S.settings.simDeck1 = v1; } S.save("settings"); }
   if(gOnline) ON.detach();
   gmode = mode; gOnline = false;
   human = mode === "bot" ? [true, false] : [true, true];
@@ -109,10 +131,12 @@ function start(opts = {}){
 }
 const mulliganPending = () => G ? [0, 1].find(k => human[k] && !G.players[k].mulliganed) : null;
 function mulliganHTML(){
-  const i = mulliganPending(); if(i == null) return "";
+  const i = mulliganPending(); if(i == null || tutorialTour()) return "";
   const P = G.players[i];
-  return `<div id="simAsk"><div class="box"><h3>${esc(P.name)}: tieni questa mano?</h3>
-    <div style="display:flex;gap:4px;flex-wrap:wrap;margin:8px 0">${P.hand.map(c => `<div class="bc" data-zoom="${c.pid}"><img src="${thumbUrl(c.pid)}" alt="${esc(c.card.dn)}"></div>`).join("")}</div>
+  // carte grandi: è la prima scelta della partita e va fatta a colpo d'occhio (tocca una carta per lo zoom)
+  return `<div id="simAsk" class="mull"><div class="box"><h3>${esc(P.name)}: tieni questa mano?</h3>
+    <div class="mullrow">${P.hand.map(c => `<div class="mc" data-zoom="${c.pid}" title="${esc(c.card.dn)}"><img src="${thumbUrl(c.pid)}" data-full="${imgUrl(c.pid)}" alt="${esc(c.card.dn)}" draggable="false"></div>`).join("")}</div>
+    <div class="sub" style="margin:0 0 8px">Tocca una carta per ingrandirla. Con il mulligan rimescoli la mano nel mazzo e peschi 6 carte nuove.</div>
     <div class="opts"><button class="btn yel" data-mull="keep">Tengo</button><button class="btn" data-mull="redo">Mulligan (ripesco 6)</button></div></div></div>`;
 }
 function openBoard(){
@@ -174,7 +198,7 @@ function onlineLobbyHTML(){
         <div><h4>Entra con un codice</h4><div style="display:flex;gap:6px"><input class="inp code" id="onlCode" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD"><button class="btn yel" id="onlJoin">Entra</button></div></div>
         <div><h4>Sfida un amico</h4>${friends.length ? `<div style="display:flex;gap:6px"><select class="inp" id="onlFriend">${friends.map(f => `<option value="${f.id}"${challenge && challenge.id === f.id ? " selected" : ""}>${esc(f.nick)}${cloudState.online.has(f.id) ? " ●" : ""}</option>`).join("")}</select><button class="btn acc2" id="onlChallenge">Sfida</button></div>` : `<p class="sub">Aggiungi amici dalla scheda Social per sfidarli direttamente.</p>`}</div>
       </div>`}
-    ${inv.length ? `<h4 class="frh">Sfide ricevute</h4><div class="frlist">${inv.map(t => `<div class="frow2"><div class="nm"><b>${nickOf(t, "host")}</b><span>ti sfida · tavolo ${fmtCode(t.code)}</span></div><button class="btn sm yel" data-onlaccept="${esc(t.code)}">Accetta</button><button class="btn sm" data-onlrefuse="${t.id}">Rifiuta</button></div>`).join("")}</div>` : ""}
+    ${inv.length ? `<h4 class="frh">Sfide ricevute</h4><div class="frlist">${inv.map(t => `<div class="frow2"><div class="nm"><b>${nickOf(t, "host")}</b><span>ti sfida · tavolo ${fmtCode(t.code)}${t.fmt === "sealed" ? " · Prerelease" : " · Costruito"}</span></div><button class="btn sm yel" data-onlaccept="${esc(t.code)}" data-fmt="${t.fmt || "built"}">Accetta</button><button class="btn sm" data-onlrefuse="${t.id}">Rifiuta</button></div>`).join("")}</div>` : ""}
     ${act.length ? `<h4 class="frh">Partite in corso</h4><div class="frlist">${act.map(t => `<div class="frow2"><div class="nm"><b>${esc(opp(t) || "?")}</b><span>tavolo ${fmtCode(t.code)} · ${t.moves} mosse</span></div><button class="btn sm acc2" data-onlresume="${t.id}">${ON.T.row && ON.T.row.id === t.id && G && gOnline ? "Torna alla plancia" : "Riprendi"}</button></div>`).join("")}</div>` : ""}
     ${done.length ? `<h4 class="frh">Ultime partite</h4><div class="frlist">${done.map(t => `<div class="frow2"><div class="nm"><b>${esc(opp(t) || "?")}</b><span>${resultTxt(t)}</span></div></div>`).join("")}</div>` : ""}
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;align-items:center"><span class="chip">Online: ${rec.w || 0} vittorie · ${rec.l || 0} sconfitte · ${rec.d || 0} patte</span></div>
@@ -183,6 +207,7 @@ function onlineLobbyHTML(){
 }
 function onlineBadgeHTML(){
   if(!ON.T.row || G.winner != null) return "";
+  if(oppWarn) return `<b class="onl warn" title="Le carte del mazzo avversario non corrispondono al kit Prerelease dichiarato">⚠ mazzo avversario non verificato</b>`;
   const idle = ON.otherIdle(), R = G.players[1 - me()];
   if(ON.T.error && /fetch|network|Failed/i.test(ON.T.error)) return `<b class="onl warn">⚠ connessione assente</b>`;
   if(idle >= 25) return `<b class="onl warn">⚠ ${esc(R.name)} non risponde: vinci tra ${Math.max(0, 60 - idle)}s</b>`;
@@ -253,6 +278,8 @@ ON.setOnlineHooks({
   start(row, seat, nicks, moves){
     clearTimeout(botTimer); stopTutorial();
     gmode = "online"; mode = "online"; gOnline = true; gSeat = seat; human = [seat === 0, seat === 1];
+    // Prerelease: il mazzo dell'avversario deve venire davvero da un kit (si riapre e si confronta)
+    const opp = seat === 0 ? row.guest_deck : row.host_deck; oppWarn = !!(opp && opp.format === "sealed" && !verifySealed({ ...opp, format: "sealed" }));
     sel = null; targeting = null; pop = null; handoff = false; showLog = false; lastSeen = { turn: 0, seen: 0 };
     buildOnline(moves.map(m => m.move));
     if(location.hash !== "#sim") location.hash = "#sim";
@@ -282,7 +309,7 @@ async function lobbyClick(e){
   if((b = t.closest("#onlChallenge"))){ const id = $("#onlFriend").value, f = cloudFriends.find(x => x.id === id); const d = deck(); if(d) busy(b, async () => { await ON.createTable(d, S.profile.autoPay, id); ON.T.inviteNick = f && f.nick; challenge = null; }); return; }
   if((b = t.closest("#onlCancel"))){ busy(b, () => ON.cancelTable(ON.T.row.id)); return; }
   if(t.closest("#onlShare")){ const code = ON.T.row && ON.T.row.code; const text = `Giochiamo a Cyberpunk TCG su DeckShard: codice del tavolo ${code} — ${location.origin + location.pathname}#sim`; try{ if(navigator.share) await navigator.share({ text }); else { await navigator.clipboard.writeText(code); toast("Codice copiato"); } }catch(err){} return; }
-  if((b = t.closest("[data-onlaccept]"))){ const d = deck(); if(d){ const code = b.dataset.onlaccept; busy(b, () => ON.joinTable(code, d, S.profile.autoPay)); } return; }
+  if((b = t.closest("[data-onlaccept]"))){ if((b.dataset.fmt || "built") !== simKind()){ toast(b.dataset.fmt === "sealed" ? "È una sfida Prerelease: passa alla scheda Prerelease e scegli un tuo mazzo Prerelease" : "È una sfida con mazzi costruiti: passa alla scheda Costruito", 4500); return; } const d = deck(); if(d){ const code = b.dataset.onlaccept; busy(b, () => ON.joinTable(code, d, S.profile.autoPay)); } return; }
   if((b = t.closest("[data-onlrefuse]"))){ const id = b.dataset.onlrefuse; busy(b, () => ON.cancelTable(id)); return; }
   if((b = t.closest("[data-onlresume]"))){ const id = b.dataset.onlresume; if(ON.T.row && ON.T.row.id === id && G && gOnline){ openBoard(); render(); return; } busy(b, () => ON.resumeTable(id)); return; }
 }
@@ -392,16 +419,17 @@ function render(){
     ${peekPid ? `<div id="peek">${peekInner(peekPid)}</div>` : ""}
     ${handoff ? `<div class="handoff"><h2>Passa il dispositivo a ${esc(G.players[G.active].name)}</h2><p>Il tuo rivale non guarda, promesso.</p><button class="btn yel" id="bHand">Sono pronto</button></div>` : ""}`;
   fitBoard(board, H);
+  const hl = tutorialHighlight(); if(hl) $$("#board " + hl.split(",").join(", #board ")).forEach(x => x.classList.add("tuthl"));
   if(showLog){ const l = $("#simLog"); l.scrollTop = l.scrollHeight; }
   // scelta tra carte: subito la miniatura, poi l'immagine grande appena è scaricata (leggibile anche il testo)
-  $$("#simAsk .pk img[data-full]").forEach(img => { const full = img.dataset.full, pre = new Image(); pre.onload = () => { if(img.isConnected) img.src = full; }; pre.src = full; });
+  $$("#simAsk .pk img[data-full], #simAsk .mc img[data-full]").forEach(img => { const full = img.dataset.full, pre = new Image(); pre.onload = () => { if(img.isConnected) img.src = full; }; pre.src = full; });
   if(tutorialActive() && tutorialStep(G, me())) { /* passo completato: la barra si aggiorna al prossimo ridisegno */ setTimeout(() => { if(G) render(); }, 0); }
 }
 
 /* richieste del motore (dado, blocco, furto, bersaglio…) */
 function askHTML(){
   const p = G.pending, P = G.players[p.player];
-  const titles = { die: "Quale dado tiri dal fixer?", block: `${esc(P.name)}: come reagisci?`, steal: "Quale Gig rubi?", target: "Scegli il bersaglio", discard: "Scegli la carta da scartare", gigpick: "Quale Gig?", gigvalue: "Nuovo valore", pickcard: "Scegli la carta", choice: "Scegli un effetto", yesno: "Vuoi farlo?", pay: p.ctx && p.ctx.confirm ? `Per pagare ${p.ctx.cost} €$ devi spendere una Leggenda con abilità` : `Come paghi? ${p.ctx ? `${p.ctx.paid}/${p.ctx.cost} €$ pagati` : ""}` };
+  const titles = { die: "Quale dado tiri dal fixer?", block: `${esc(P.name)}: come reagisci?`, steal: "Quale Gig rubi?", target: "Scegli il bersaglio", discard: "Scegli la carta da scartare", gigpick: "Quale Gig?", gigvalue: "Nuovo valore", pickcard: "Scegli la carta", choice: "Scegli un effetto", yesno: "Vuoi farlo?", pay: p.ctx && p.ctx.confirm ? `Per pagare ${p.ctx.cost} €$ serve una Leggenda che ha un effetto quando la spendi (abilità {Spend} o un Gear come Zetatech Faceplate): la spendo?` : `Come paghi? ${p.ctx ? `${p.ctx.paid}/${p.ctx.cost} €$ pagati` : ""}` };
   const ctx = p.kind === "block" && p.ctx.attacker ? `<p style="color:var(--ink2);margin:0 0 8px">${esc(p.ctx.attacker.card.dn)} (${powerIn(G, G.players[G.active], p.ctx.attacker, { attacking: true })}) attacca ${p.ctx.target ? esc(p.ctx.target.card.dn) + " (" + shownPower(p.ctx.target) + ")" : "la tua area Gig"}. Puoi bloccare, chiamare una Leggenda o usare una carta Quick, anche più volte.</p>` : "";
   // in due sullo stesso dispositivo: la decisione del difensore si apre solo dopo un tocco, così l'attaccante non vede le sue carte
   if(gmode === "hot" && p.player !== G.active && reactCover !== p) return `<div id="simAsk"><div class="box"><h3>Reazione di ${esc(P.name)}</h3><p>${esc(G.players[G.active].name)}, passa il dispositivo: le opzioni del rivale compaiono solo dopo il suo tocco.</p><div class="opts"><button class="btn yel" data-react="1">Sono ${esc(P.name)}, mostra le opzioni</button></div></div></div>`;
@@ -544,7 +572,7 @@ function wire(){
   const root = $("#simSetup");
   root.addEventListener("click", e => {
     const m = e.target.closest("#simMode button"); if(m && !m.disabled){ mode = m.dataset.v; renderSim(); return; }
-    const pb = e.target.closest("#simPay button"); if(pb){ S.profile.autoPay = pb.dataset.v === "1"; S.save("profile"); renderSim(); return; }
+    const kb = e.target.closest("#simKind button"); if(kb){ kind = kb.dataset.v; S.settings.simKind = kind; S.save("settings"); renderSim(); return; }
     if(e.target.closest("#simStart")){ start(); return; }
     if(mode === "online"){ lobbyClick(e); }
     if(e.target.closest("#simResume")){ openBoard(); render(); tick(); }
@@ -557,11 +585,13 @@ function wire(){
     if(ev === "ncd:table" && gOnline && G && !$("#board").hidden) render();
   });
   document.addEventListener("ncd:tablechat", () => { if(chatOpen()) refreshTableChat(); else if(gOnline && G && !$("#board").hidden) render(); });
-  root.addEventListener("change", e => { if(e.target.id === "simDeck0"){ S.settings.simDeck0 = e.target.value; S.save("settings"); renderSim(); } if(e.target.id === "simDeck1"){ S.settings.simDeck1 = e.target.value; S.save("settings"); } });
-  document.addEventListener("ncd:playdeck", e => { const d = S.decks.find(x => x.id === e.detail); if(!d || !isLegal(d)){ toast("Il mazzo non è ancora in regola: completalo nel deckbuilder"); return; } S.settings.simDeck0 = e.detail; S.save("settings"); renderSim(); if(d.format === "sealed") start(); });
+  root.addEventListener("change", e => { if(e.target.id === "simDeck0"){ S.settings[simKind() === "sealed" ? "simSealed" : "simDeck0"] = e.target.value; S.save("settings"); renderSim(); } if(e.target.id === "simDeck1"){ S.settings.simDeck1 = e.target.value; S.save("settings"); } });
+  document.addEventListener("ncd:playdeck", e => { const d = S.decks.find(x => x.id === e.detail); if(!d || !isLegal(d)){ toast("Il mazzo non è ancora in regola: completalo nel deckbuilder"); return; } kind = d.format === "sealed" ? "sealed" : "built"; S.settings.simKind = kind; S.settings[kind === "sealed" ? "simSealed" : "simDeck0"] = e.detail; S.save("settings");
+    if(kind === "sealed" && !verifySealed(d)){ toast("Questo mazzo non corrisponde a un kit Prerelease aperto nell'app"); renderSim(); return; }
+    if(mode === "tutorial") mode = "bot"; renderSim(); if(d.format === "sealed"){ mode = "bot"; start(); } });
   root.addEventListener("click", e => { const z = e.target.closest(".pkg [data-zoom]"); if(z) openLens(imgUrl(z.dataset.zoom)); });
   wirePrerelease(root, id => { location.hash = "#deck"; openDeck(id); toast("Scegli 3 Leggende e almeno 30 carte, poi «Gioca»", 4000); });
-  root.addEventListener("click", e => { if(e.target.closest("#simTutorial")){ mode = "bot"; human = [true, false]; startTutorial(); start({ deck0: starterDeck("theheistretailstarterdeck", "Tutorial"), deck1: starterDeck("embracingpowerretailstarterdeck", "Bot") }); } });
+  root.addEventListener("click", e => { if(e.target.closest("#simTutorial")){ mode = "bot"; human = [true, false]; startTutorial(); start({ deck0: starterDeck("theheistretailstarterdeck", "Tutorial"), deck1: starterDeck("embracingpowerretailstarterdeck", "Bot") }); mode = "tutorial"; } });
 
   const board = $("#board");
   // pressione lunga: zoom

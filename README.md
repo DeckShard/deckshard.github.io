@@ -64,7 +64,7 @@ Nota sul Gear: il motore somma la potenza del Gear a quella dell'Unità equipagg
 
 ## Account, sincronizzazione e social
 
-L'app funziona tutta in locale anche senza account. Dalla scheda **Social** si accede con un link via email (o con Google, quando è configurato) e da quel momento collezione, mazzi, profilo, impostazioni e record si sincronizzano tra tutti i dispositivi, anche in tempo reale. Al primo accesso su un dispositivo che ha già dati si sceglie se unirli all'account (per ogni stampa si tiene il numero più alto, i mazzi di entrambi), tenere quelli dell'account o quelli del dispositivo; poi vince la modifica più recente sezione per sezione.
+L'app funziona tutta in locale anche senza account. Dalla scheda **Social** si accede con Google (l'accesso via email è stato tolto: il server email gratuito di Supabase scrive solo agli indirizzi del progetto) e da quel momento collezione, mazzi, profilo, impostazioni e record si sincronizzano tra tutti i dispositivi, anche in tempo reale. Al primo accesso su un dispositivo che ha già dati si sceglie se unirli all'account (per ogni stampa si tiene il numero più alto, i mazzi di entrambi), tenere quelli dell'account o quelli del dispositivo; poi vince la modifica più recente sezione per sezione.
 
 Il servizio è [Supabase](https://supabase.com) (piano gratuito, server a Francoforte): `supabase.sql` crea tabelle, funzioni e regole di sicurezza (Row Level Security) e si può rieseguire. La chiave nel codice è quella pubblica: ciò che un utente può fare lo decidono le regole del database (nessuno legge i dati altrui, si scrive solo agli amici, i blocchi valgono nei due sensi, il feedback non è leggibile dall'app). Il workflow notturno chiama `ping` per evitare che il progetto gratuito vada in pausa.
 
@@ -72,9 +72,15 @@ Social: nick pubblico unico, ricerca dei giocatori, richieste di amicizia, lista
 
 ## Tavoli online
 
+Il **Simulator** ha due schede. **Costruito**: mazzi del deckbuilder e starter, con le modalità Sfida IA, Offline (due giocatori sullo stesso dispositivo), Online e Tutorial. **Prerelease**: si apre il kit, si costruisce il mazzo sealed e si gioca contro l'IA (che apre un kit a sua volta) oppure online, solo contro altri mazzi Prerelease. Un mazzo Prerelease salva espansione e seme del kit: il kit si riapre identico e si controlla che ogni carta venga davvero da lì (`verifySealed` in `prerelease.js`), quindi un mazzo da 30 carte costruito a mano non entra nella scheda; online il database rifiuta i tavoli di formato diverso e il telefono avverte se il mazzo avversario non corrisponde al suo kit. Le informazioni di dettaglio stanno in «Info aggiuntive»; il pagamento degli Eddies si sceglie nelle Impostazioni.
+
 Nel Simulator, modalità **Online** (serve l'account): «Crea un tavolo» dà un codice di 4 caratteri (senza 0/O e 1/I) da passare all'avversario, che lo inserisce in «Entra con un codice»; oppure si **sfida un amico** dalla lobby o con il pulsante «Sfida» nella lista amici, e la sfida gli arriva in tempo reale (avviso e badge sul Simulator). Appena il secondo giocatore entra la partita parte da sola su entrambi i telefoni.
 
 Come funziona: una partita è seme + mazzi + elenco ordinato di mosse (`game_tables`, `game_moves`). Ogni telefono applica le stesse mosse con lo stesso motore e ottiene lo stesso stato; il database accetta una mossa solo se è la successiva, quindi l'ordine è unico, e in caso di conflitto (i due mulligan insieme) la partita si ricostruisce dal registro. Per lo stesso motivo una partita si **riprende** dopo un riavvio o da un altro dispositivo («Partite in corso» nella lobby). I due giocatori devono avere la stessa versione dell'app. Ogni telefono manda un segnale ogni 10 secondi: **chi tace per più di un minuto perde** (l'avversario vede il conto alla rovescia). Dal menù ⋯: chat del tavolo (non salvata), **proposta di patta**, abbandono. Il risultato deciso dal motore lo registra il telefono di chi perde, così nessuno può dichiararsi vincitore da solo. Il record online (vittorie, sconfitte, patte) è separato da quello contro il bot.
+
+## Aspetto
+
+Nelle Impostazioni si sceglie un aspetto: 14 scuri (Holophone, Samurai, Netrunner, Arasaka, Nomad…) e 8 chiari con basi tenui e colorate, mai bianco pieno (Arasaka Washi, Lizzie's Bar, Trauma Team, Badlands, Kang Tao, Samurai, NetWatch, Militech). Il vecchio interruttore chiaro/scuro non c'è più: è l'aspetto a decidere.
 
 ## Lingua
 

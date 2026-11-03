@@ -4,8 +4,14 @@
 
 import { streetCred, power, hasKw } from "./engine.js";
 
+/* i primi passi (tour) presentano la plancia, con il pezzo di cui si parla evidenziato; il mulligan arriva dopo */
 const STEPS = [
-  { t: "Benvenuto. Questa è una partita guidata: segui i passi nella barra. Prima decidi se tenere la mano: con 6 carte di costo basso di solito si tiene.", done: G => G.players.every(p => p.mulliganed) },
+  { t: "Benvenuto, choom. Questa è la plancia: in alto c'è il rivale (il bot), in basso ci sei tu. Al centro la barra del turno, con «Fine turno», il registro ≡ e il menù ⋯.", tour: true, info: true, hl: ".bstrip" },
+  { t: "Le tue pile: Mazzo, €$ (gli Eddies, la moneta del gioco: pronti/totali) e Trash (le carte scartate o sconfitte: toccalo per vederle).", tour: true, info: true, hl: ".bz.mine .brow:not(.field):not(.hand) .stack" },
+  { t: "Le tue 3 Leggende, coperte. Una Leggenda pronta vale 1 €$ per pagare; puoi anche chiamarla (scoprirla, 1 €$) per usarne gli effetti, e alcune possono scendere in campo con Go Solo.", tour: true, info: true, hl: ".bz.mine [data-legend]" },
+  { t: "I dadi. Quelli tratteggiati sono il tuo fixer: a ogni inizio turno ne tiri uno e diventa un Gig (dado pieno). Il numero dopo ☆ è lo Street Cred, la somma dei Gig. Chi inizia un turno con 7 Gig vince; attaccando si rubano i Gig del rivale.", tour: true, info: true, hl: ".bz.mine .dice" },
+  { t: "Il campo, dove giocano le tue Unità, e sotto la mano. Tocca una carta per le azioni, tienila premuta per ingrandirla, oppure trascinala dalla mano sul campo per giocarla.", tour: true, info: true, hl: ".bz.mine .brow.field, .bz.mine .brow.hand" },
+  { t: "Ora decidi se tenere la mano: con 6 carte di costo basso di solito si tiene. Il mulligan rimescola la mano nel mazzo e ne pesca 6 nuove.", done: G => G.players.every(p => p.mulliganed) },
   { t: "Il bot inizia: osserva il suo turno. Al tuo inizio di turno scegli quale dado tirare dal fixer: i dadi grandi danno più Street Cred (☆), il d20 va sempre per ultimo.", done: (G, me) => G.active === me && G.phase === "main" && G.players[me].gigs.length >= 1 },
   { t: "Vendi una carta: trascina sulla pila €$ una carta con il simbolo di vendita (o toccala → «Vendi»). Vale 1 €$ per turno, qualunque fosse il suo costo.", done: (G, me) => G.players[me].eddies.length >= 1 },
   { t: "Gioca un'Unità con potenza (per esempio Dexter DeShawn): trascinala sulla tua metà di plancia o toccala → «Gioca», e paga toccando Eddies o Leggende. Entra con Lag: attaccherà dal prossimo turno.", done: (G, me) => G.players[me].field.some(u => power(u) >= 1) },
@@ -23,6 +29,9 @@ export const tutorialActive = () => active;
 export function startTutorial(){ active = true; idx = 0; }
 export function stopTutorial(){ active = false; }
 export const TUTORIAL_SEED = 20771;
+/* durante il tour della plancia il mulligan aspetta, e il pezzo di cui si parla è evidenziato */
+export const tutorialTour = () => active && !!STEPS[idx].tour;
+export const tutorialHighlight = () => active ? STEPS[idx].hl || "" : "";
 /* la mano del tutorial deve sempre permettere i passi: una carta vendibile, un'Unità
    con potenza da 3 €$ o meno e Secondhand Bombus (l'Unità con Blocker) */
 export function ensureHand(G, me){
@@ -40,7 +49,7 @@ export function ensureHand(G, me){
 /* azioni permesse nel passo corrente: nei passi "fai X" si può fare solo X (e reagire) */
 export function tutorialAllows(kind, card){
   if(!active) return true;
-  const only = { 2: "sell", 3: "playUnit", 4: "call", 5: "end", 6: "playBlocker", 7: "attack", 8: "end" }[idx];
+  const only = { 7: "sell", 8: "playUnit", 9: "call", 10: "end", 11: "playBlocker", 12: "attack", 13: "end" }[idx];
   if(!only) return true;
   if(kind === "react" || kind === "pay") return true;
   if(only === "playUnit") return kind === "play" && card && card.card.type === "Unit" && (card.card.power ?? 0) >= 1;
@@ -51,7 +60,7 @@ export function tutorialAllows(kind, card){
 export function tutorialStep(G, me, force = false){
   if(!active || !G) return false;
   const s = STEPS[idx];
-  if(force || s.done(G, me)){ if(s.last){ if(force) stopTutorial(); return force; } idx++; return true; }
+  if(force || (s.done && s.done(G, me))){ if(s.last){ if(force) stopTutorial(); return force; } idx++; return true; }
   return false;
 }
 export function tutorialBarHTML(G, me){
