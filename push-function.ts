@@ -1,13 +1,18 @@
 // DeckShard · Edge Function «push» (Supabase → Edge Functions → nome: push)
 // Manda le notifiche push quando arriva un messaggio, una sfida o una richiesta d'amicizia.
 // La chiamano tre Database Webhook (INSERT su messages, game_tables, friendships).
+// Impostazioni della funzione: «Verify JWT» SPENTO (la funzione non si fida del contenuto ricevuto:
+// rilegge ogni evento dal database; e il GET restituisce solo la chiave pubblica).
 // Con GET restituisce la chiave pubblica VAPID che serve al telefono per iscriversi.
 // Le chiavi VAPID le genera da sola al primo avvio e le salva nella tabella push_keys,
 // che nessun utente può leggere: non ci sono segreti da copiare a mano.
 // Tutto con WebCrypto (RFC 8291 per la cifratura, RFC 8292 per VAPID), senza librerie esterne.
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+// chiave segreta del progetto: le nuove «sb_secret_…» (SUPABASE_SECRET_KEYS) o, in mancanza, la vecchia service_role
+const SERVICE_KEY = (() => { try{ const k = JSON.parse(Deno.env.get("SUPABASE_SECRET_KEYS") || "{}"); const v = k.default || Object.values(k)[0]; if(v) return String(v); }catch(_e){ /* formato inatteso */ } return Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || ""; })();
+// le chiavi «sb_secret_» non sono JWT: vanno solo nell'intestazione apikey
+const AUTH_HEADERS: Record<string, string> = SERVICE_KEY.startsWith("sb_") ? { apikey: SERVICE_KEY } : { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` };
 const SUBJECT = "mailto:deckshard.app@gmail.com";
 const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-client-info", "Access-Control-Allow-Methods": "GET, POST, OPTIONS" };
 
@@ -19,7 +24,7 @@ const concat = (...parts: Uint8Array[]) => { const out = new Uint8Array(parts.re
 const json = (o: unknown, status = 200) => new Response(JSON.stringify(o), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 
 async function rest(path: string, init: RequestInit = {}){
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, { ...init, headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, "Content-Type": "application/json", Prefer: "return=representation", ...(init.headers || {}) } });
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, { ...init, headers: { ...AUTH_HEADERS, "Content-Type": "application/json", Prefer: "return=representation", ...(init.headers || {}) } });
   if(!r.ok) throw new Error(`${path}: ${r.status} ${await r.text()}`);
   const t = await r.text(); return t ? JSON.parse(t) : null;
 }
@@ -80,23 +85,28 @@ const TEXT = {
   en: { msg: (n: string) => n, deck: "🃏 Sent you a deck", reqT: "Friend request", req: (n: string) => `${n} wants to add you to their crew`, ch: (n: string, c: string) => `${n} challenges you to a game · table ${c}`, chT: "Challenge!" }
 };
 const recent = (t: string) => Date.now() - new Date(t).getTime() < 5 * 60 * 1000;
-const nickOf = async (id: string) => ((await rest(`profiles?id=eq.${id}&select=nick`))[0] || {}).nick || "Choom";
+// nick e avatar di chi scrive: il telefono mostra il suo ritratto al posto del logo (Android; iPhone usa sempre l'icona dell'app)
+async function who(id: string){
+  const p = (await rest(`profiles?id=eq.${id}&select=nick,avatar`))[0] || {}, a = p.avatar || {};
+  const img = typeof a.img === "string" && /^\.\/img\/[\w-]+\.webp$/.test(a.img) ? a.img : "";
+  return { nick: p.nick || "Choom", ava: { img, pos: Number(a.pos ?? 34), zoom: Number(a.zoom ?? 150), name: String(a.fav || p.nick || "") } };
+}
 async function describe(p: any){
   const r = p && p.record; if(!p || p.type !== "INSERT" || !r) return null;
   if(p.table === "messages"){
     const m = (await rest(`messages?id=eq.${Number(r.id)}&select=id,sender,recipient,body,created_at`))[0]; if(!m || !recent(m.created_at)) return null;
-    const nick = await nickOf(m.sender), isDeck = /#d=/.test(m.body);
-    return { to: m.recipient, kind: "messages", tag: `msg-${m.sender}`, url: "./#profile", make: (t: any) => ({ title: t.msg(nick), body: isDeck ? t.deck : String(m.body).slice(0, 140) }) };
+    const { nick, ava } = await who(m.sender), isDeck = /#d=/.test(m.body);
+    return { to: m.recipient, kind: "messages", tag: `msg-${m.sender}`, url: "./#profile", ava, make: (t: any) => ({ title: t.msg(nick), body: isDeck ? t.deck : String(m.body).slice(0, 140) }) };
   }
   if(p.table === "friendships"){
     const f = (await rest(`friendships?a=eq.${r.a}&b=eq.${r.b}&select=a,b,status,created_at`))[0]; if(!f || f.status !== "pending" || !recent(f.created_at)) return null;
-    const nick = await nickOf(f.a);
-    return { to: f.b, kind: "requests", tag: `req-${f.a}`, url: "./#profile", make: (t: any) => ({ title: t.reqT, body: t.req(nick) }) };
+    const { nick, ava } = await who(f.a);
+    return { to: f.b, kind: "requests", tag: `req-${f.a}`, url: "./#profile", ava, make: (t: any) => ({ title: t.reqT, body: t.req(nick) }) };
   }
   if(p.table === "game_tables"){
     const g = (await rest(`game_tables?id=eq.${r.id}&select=id,host,invited,code,status,created_at`))[0]; if(!g || !g.invited || g.invited === g.host || g.status !== "waiting" || !recent(g.created_at)) return null;
-    const nick = await nickOf(g.host);
-    return { to: g.invited, kind: "challenges", tag: `table-${g.id}`, url: "./#sim", make: (t: any) => ({ title: t.chT, body: t.ch(nick, g.code) }) };
+    const { nick, ava } = await who(g.host);
+    return { to: g.invited, kind: "challenges", tag: `table-${g.id}`, url: "./#sim", ava, make: (t: any) => ({ title: t.chT, body: t.ch(nick, g.code) }) };
   }
   return null;
 }
@@ -112,7 +122,7 @@ Deno.serve(async req => {
     for(const s of subs){
       if(s.prefs && s.prefs[ev.kind] === false) continue;
       const t = (TEXT as any)[s.lang] || TEXT.it, content = ev.make(t);
-      const res = await sendPush(s, { ...content, url: ev.url, tag: ev.tag });
+      const res = await sendPush(s, { ...content, url: ev.url, tag: ev.tag, ava: ev.ava });
       if(res.status === 404 || res.status === 410) await rest(`push_subs?endpoint=eq.${encodeURIComponent(s.endpoint)}`, { method: "DELETE" });   // telefono non più iscritto
       else if(res.ok) sent++;
     }

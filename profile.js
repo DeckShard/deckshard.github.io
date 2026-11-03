@@ -4,7 +4,7 @@
 
 import { DATA, imgUrl, thumbUrl, RARITY_IT, TYPE_IT } from "./data.js";
 import { S, DEFAULT_PROFILE, exportAll, importAll, wipe, storageOk } from "./store.js";
-import { $, $$, esc, toast } from "./ui.js";
+import { $, $$, esc, toast, pickMatters } from "./ui.js";
 import { applyTheme, APP_VERSION } from "./app.js";
 import { accountHTML, friendsHTML, wireSocial, feedbackHTML, wireFeedback, safeWipe } from "./social.js";
 import { state as cloudState, pushSupported, pushNeedsInstall, enablePush, disablePush } from "./cloud.js";
@@ -172,6 +172,7 @@ export function renderSettings(){
         <span class="seg" id="pfCollView">${[["card", "Per carta"], ["art", "Per illustrazione"], ["print", "Per edizione"]].map(([v, t]) => `<button data-v="${v}" aria-pressed="${(S.settings.collView || "card") === v}">${t}</button>`).join("")}</span></div>
       ${(S.settings.collView || "card") === "card" ? `<div class="field"><label>Illustrazione mostrata<small>Tra le stampe che possiedi di ogni carta. Nella scheda di una carta puoi fissarne una con «☆ Mostra in Collection»: vince su questa regola.</small></label>
         <span class="seg" id="pfCollPick">${[["rarest", "La più rara"], ["common", "La meno rara"], ["newest", "La più recente"]].map(([v, t]) => `<button data-v="${v}" aria-pressed="${(S.settings.collPick || "rarest") === v}">${t}</button>`).join("")}</span></div>
+      ${(n => `<div class="sub" style="margin-top:6px">${n ? `Cambia l'illustrazione di <b>${n} ${n === 1 ? "carta" : "carte"}</b>: le altre le possiedi in una sola stampa (o le hai fissate).` : "Per ora non cambia nulla: di ogni carta possiedi una sola stampa (o l'hai fissata). Conta quando ne hai più versioni, ad esempio la Rara e la Secret."}</div>`)(pickMatters())}
       ${Object.keys(S.settings.favPrints || {}).length ? `<div class="sub" style="margin-top:6px">${Object.keys(S.settings.favPrints).length} carte con illustrazione fissata · <a href="#" id="pfFavClear">togli tutte</a></div>` : ""}` : ""}
     </div>
 

@@ -30,9 +30,25 @@ export function shownPrint(c, among){
   if(fav && !among){ const p = DATA.byPrint.get(fav); if(p && p.card === c) return p; }
   const pool = (among || c.prints).filter(p => p.img && (among ? true : qtyOf(p.id)));
   if(!pool.length) return among ? among[0] : c.def;
-  const mode = S.settings.collPick || "rarest";
-  const score = p => mode === "newest" ? setRank(p.set) * 1000 + (parseInt(String(p.num).replace(/\D/g, "")) || 0) : (RARITY_ORDER[p.rarity] ?? 0) * (mode === "common" ? -1 : 1);
-  return pool.reduce((a, b) => score(b) > score(a) ? b : a);
+  return pool.reduce(pickBetter(S.settings.collPick || "rarest"));
+}
+/* a parità: prima le stampe in inglese, poi la più recente (così la scelta non si blocca sulla prima trovata) */
+const age = p => setRank(p.set) * 1000 + (parseInt(String(p.num).replace(/\D/g, "")) || 0);
+const en = p => p.lang === "en" ? 1 : 0;
+const pickBetter = mode => {
+  const score = p => mode === "newest" ? en(p) * 1e8 + age(p) * 100 + (RARITY_ORDER[p.rarity] ?? 0)
+    : (RARITY_ORDER[p.rarity] ?? 0) * (mode === "common" ? -1 : 1) * 1e9 + en(p) * 1e8 + age(p);
+  return (a, b) => score(b) > score(a) ? b : a;
+};
+/* quante carte cambiano davvero con la scelta (le altre: una sola stampa posseduta, o illustrazione fissata) */
+export function pickMatters(){
+  let n = 0; const fav = S.settings.favPrints || {};
+  for(const c of DATA.cards){
+    if(fav[c.id]) continue;
+    const pool = c.prints.filter(p => p.img && qtyOf(p.id)); if(pool.length < 2) continue;
+    if(new Set(["rarest", "common", "newest"].map(m => pool.reduce(pickBetter(m)).id)).size > 1) n++;
+  }
+  return n;
 }
 export function tileHTML(c, pid, opts = {}){
   const p = pid ? DATA.byPrint.get(pid) : (opts.owned ? shownPrint(c) : c.def);
