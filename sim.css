@@ -235,11 +235,13 @@
 html[data-motion="reduce"] #oppFeed,html[data-motion="reduce"] .bc.justnow{animation:none}
 
 /* Gear sotto la carta (stile Arena): chiusi ne spunta un margine a destra, aperti stanno di fianco */
-#board .bcw{--hx:1;position:relative;display:inline-flex;flex:0 0 auto;width:calc(var(--cw) * (var(--hx) + .2 * var(--gn)));transition:width .22s ease}
+#board .bcw{--hx:1;--sx:.3;position:relative;display:inline-flex;flex:0 0 auto;width:calc(var(--cw) * (var(--hx) + var(--sx) * var(--gn)));transition:width .22s ease}
 #board .bcw.hspent{--hx:1.4}
 #board .bcw.open{width:calc(var(--cw) * (var(--hx) + 1.06 * var(--gn)))}
 #board .bcw > .bc.host{position:relative;z-index:3;margin:0}
-#board .bcw > .gearc{position:absolute;top:0;left:0;z-index:calc(3 - var(--gi));margin:0;transform:translateX(calc(var(--cw) * (var(--hx) - 1 + .2 * var(--gi)))) scale(.92);transform-origin:left center;transition:transform .22s ease;filter:brightness(.8)}
+#board .bcw > .gearc{position:absolute;top:0;left:0;z-index:calc(3 - var(--gi));margin:0;transform:translateX(calc(var(--cw) * (var(--hx) - 1 + var(--sx) * var(--gi)))) scale(.92);transform-origin:left center;transition:transform .22s ease;filter:brightness(.8)}
+/* il margine che spunta è il bersaglio per aprire il ventaglio: zona di tocco più larga di quella visibile */
+#board .bcw:not(.open) > .gearc::after{content:"";position:absolute;inset:-6px -10px -6px 0}
 #board .bcw.open > .gearc{transform:translateX(calc(var(--cw) * (var(--hx) + .06 + 1.06 * (var(--gi) - 1))));z-index:4;filter:none}
 #board .bcw.open > .gearc{box-shadow:0 0 0 1px var(--acc2Fill, var(--acc2))}
 #board .bc .gn{position:absolute;left:2px;bottom:2px;font-size:calc(9px * var(--bz,1));font-weight:800;padding:0 3px;border-radius:2px;background:rgba(0,0,0,.75);color:#fff;line-height:1.4}
@@ -264,3 +266,44 @@ html[data-motion="reduce"] #board .bcw,html[data-motion="reduce"] #board .bcw > 
 #board .bc.spent .pw,#board .bc.spent .gn{transform:rotate(-90deg)}
 #board .bcw > .bc.host.spent{margin-left:calc(var(--cw) * .2);margin-right:calc(var(--cw) * .2)}
 html[data-motion="reduce"] #board .bc{transition:none}
+
+/* ------------------------------------------------------------ struttura: righe centrali (.bmain), colonna (beta) e pannello del registro */
+#board .bmain{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;min-width:0}
+#board.rail{flex-direction:row}
+#board.rail .railbox{flex:0 0 var(--railw);width:var(--railw);display:flex;flex-direction:column;justify-content:space-between;padding:4px 6px;border-right:1px solid var(--line2);background:color-mix(in srgb,var(--bg) 70%,black);overflow:hidden}
+#board.rail .rs{display:flex;flex-direction:column;gap:3px;min-height:0}
+#board.rail .rs .who{font-size:calc(10px * var(--bz));letter-spacing:.14em;color:var(--mute);text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#board.rail .rs.rival .who{order:0} #board.rail .rs.mine{justify-content:flex-end}
+#board.rail .rs .cnt{display:grid;grid-template-columns:1fr 1fr;gap:3px}
+#board.rail .rs .stack{width:auto;aspect-ratio:auto;height:calc(24px * var(--bz));flex-direction:row;justify-content:space-between;gap:4px;padding:0 6px;border-radius:4px}
+#board.rail .rs .stack b{font-size:calc(13px * var(--bz))} #board.rail .rs .stack small{font-size:calc(8px * var(--bz));letter-spacing:.08em}
+#board.rail .rs .res{display:flex;gap:4px;align-items:center}
+#board.rail .rs .res .stack{flex:0 0 auto;width:calc(var(--cw) * .62);height:calc(var(--cw) * .66);flex-direction:column;justify-content:center;gap:0;padding:0}
+#board.rail .rs .res .legs{display:flex;gap:4px;flex:1 1 auto;justify-content:space-around;padding:0 2px}
+#board.rail .rs .res .legs .bc,#board.rail .rs .res .legs .bcw{flex:0 0 auto;width:calc(var(--cw) * .45)}
+#board.rail .rs .res .legs .bcw{--sx:0} #board.rail .rs .res .legs .bcw > .gearc{display:none} #board.rail .rs .res .legs .bcw.open{width:calc(var(--cw) * .45)}
+/* nella colonna le Leggende spese restano inclinate (32°), non a 90°: sono piccole e in uno spazio stretto */
+#board.rail .rs .legs .bc.spent{transform:rotate(32deg);margin:0}
+#board.rail .rs .legs .bc.spent.sel{transform:rotate(32deg) translateY(-4px)}
+#board.rail .rs .legs .bc.spent .pw{transform:none}
+#board.rail .rs .legs .bc.back{font-size:calc(12px * var(--bz))}
+#board.rail .rs .dice{display:grid;grid-template-columns:repeat(4,1fr);gap:2px;min-height:0;margin-top:1px}
+#board.rail .rs .die{font-size:calc(9px * var(--bz));padding:1px 2px;justify-content:center;gap:1px;border-radius:5px} #board.rail .rs .die small{font-size:calc(7px * var(--bz))}
+#board.rail .rs .die.fx{opacity:.45}
+#board.rail .rs .cred{grid-column:1/-1;font-size:calc(11px * var(--bz));font-weight:800;text-align:center;color:var(--ink);padding:1px 0;line-height:1.2}
+#board.rail .rs .rhand{display:flex;gap:2px;align-items:center;margin-top:1px}
+#board.rail .rs .rhand i{width:calc(10px * var(--bz));height:calc(14px * var(--bz));border-radius:2px;background:repeating-linear-gradient(45deg,#1a1a22 0 3px,#2a2a36 3px 6px);border:1px solid var(--line2);flex:0 0 auto}
+#board.rail .rs .rhand span{font-size:calc(10px * var(--bz));color:var(--mute);margin-left:4px;white-space:nowrap}
+#board.rail .bz.mine{justify-content:flex-start}
+#board.rail .bz.rival{justify-content:flex-end}
+#board .logpanel{flex:0 0 var(--logw);width:var(--logw);border-left:1px solid var(--line2);background:color-mix(in srgb,var(--bg) 70%,black);display:flex;flex-direction:column;padding:10px;min-height:0}
+#board .logpanel h4{margin:0 0 6px;font-size:11px;letter-spacing:.14em;color:var(--mute);text-transform:uppercase}
+#board .logpanel .lgl{flex:1 1 auto;overflow:auto;font-size:12.5px;color:var(--ink2);min-height:0}
+#board .logpanel .lgl .e{padding:3px 0;border-bottom:1px solid color-mix(in srgb,var(--line2) 50%,transparent)}
+#board .logpanel .lgl .e.trigger{color:var(--acc2)} #board .logpanel .lgl .e.fight{color:var(--ink)} #board .logpanel .lgl .e.turn{color:var(--acc);font-weight:700}
+#board .logpanel .btn{margin-top:8px}
+
+/* copie volanti delle animazioni (vendita, Trash) */
+#flyLayer{position:absolute;inset:0;z-index:45;pointer-events:none;overflow:visible}
+#board .bc.fly{position:absolute;pointer-events:none;margin:0;transform-origin:center;box-shadow:0 6px 18px rgba(0,0,0,.6);backface-visibility:hidden}
+#board .bc{backface-visibility:hidden}

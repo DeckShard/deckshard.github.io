@@ -126,7 +126,11 @@ Nel Simulator si scelgono solo i mazzi in regola (3 Leggende, 40–50 carte entr
 
 **Ritmo dell'avversario**: Impostazioni → Simulator → «Velocità delle mosse avversarie» (Lenta, Normale, Veloce, Istantanea). L'IA fa una mossa alla volta con la pausa scelta; online le mosse dell'avversario arrivate a raffica scorrono allo stesso ritmo (nel frattempo la plancia non accetta mosse). Ogni mossa compare per qualche istante in un riquadro sulla plancia e le carte appena entrate si illuminano.
 
-**Gear sulla plancia**: come in Arena, le carte equipaggiate stanno sotto l'Unità (o la Leggenda) e ne spunta un margine con il numero ⚙; il primo tocco sull'Unità le apre di fianco, ognuna si tocca (Ingrandisci, Scheda carta) o si guarda con la pressione lunga; il secondo tocco apre il menù dell'Unità.
+**Gear sulla plancia**: come in Arena, le carte equipaggiate stanno sotto l'Unità (o la Leggenda) e ne spunta un margine con il numero ⚙. Un tocco sull'Unità apre subito il suo menù (che elenca anche i Gear); un tocco sul margine del Gear apre il ventaglio, dove ogni Gear si tocca (Ingrandisci, Scheda carta) o si guarda con la pressione lunga. Le Unità e le Leggende spese sono girate di 90° (gli Eddies restano contatori).
+
+**Animazioni**: la plancia si ridisegna a ogni mossa, ma ogni carta parte da dov'era e scivola nella nuova posizione (tecnica FLIP, `snapBoard`/`animateBoard` in `sim.js`): una carta giocata va dalla mano al campo, una venduta vola sulla pila €$ e poi si gira, una sconfitta va nel Trash, una spesa ruota, una Leggenda chiamata si gira; le carte dell'avversario arrivano dalla sua mano. Due velocità in Impostazioni → Simulator: le tue mosse e quelle avversarie (per l'IA e l'avversario online la stessa impostazione regola anche la pausa tra una mossa e l'altra); «Istantanea» o «Animazioni ridotte» tolgono i movimenti. Il riquadro testuale delle mosse avversarie si può spegnere.
+
+**Plancia a colonna (beta)**: Impostazioni → Simulator → Plancia. Contatori (Mazzo, Trash, €$), le tre Leggende come carte piccole accanto agli €$ (spese: inclinate di 32°), i Gig in una griglia fino a 12 dadi e i dorsi della mano avversaria stanno in una colonna a sinistra; le righe centrali restano solo per le carte, che sul telefono diventano quasi il doppio. Su schermi larghi (≥1100 px) registro e chat del tavolo stanno in un pannello fisso a destra. La plancia classica resta quella predefinita.
 
 Il **matchmaking** è in preparazione: tabelle e funzioni sono nel database ma spente; piano e passi in `MATCHMAKING.md`.
 

@@ -168,8 +168,14 @@ export function renderSettings(){
 
     <div class="card">
       <h3>Simulator</h3>
-      <div class="field fcol"><label>Velocità delle mosse avversarie<small>Quanto aspetta l'IA (o l'avversario online) tra una mossa e l'altra. Ogni mossa compare per qualche istante sulla plancia e le carte appena entrate si illuminano. «Istantanea» è il ritmo di prima.</small></label>
+      <div class="field fcol"><label>Plancia<small>«A colonna» (beta): contatori, Leggende e dadi in una colonna a sinistra, così le carte in campo e in mano sono più grandi, soprattutto sul telefono; su schermi larghi il registro resta aperto a destra.</small></label>
+        <span class="seg" id="pfLayout">${[["classic", "Classica"], ["rail", "A colonna (beta)"]].map(([v, t]) => `<button data-v="${v}" aria-pressed="${(S.settings.boardLayout || "classic") === v}">${t}</button>`).join("")}</span></div>
+      <div class="field fcol"><label>Velocità delle mosse avversarie<small>Quanto aspetta l'IA (o l'avversario online) tra una mossa e l'altra, e quanto durano le animazioni delle sue carte. «Istantanea»: niente pause né movimenti.</small></label>
         <span class="seg" id="pfOppSpeed">${[["slow", "Lenta"], ["normal", "Normale"], ["fast", "Veloce"], ["instant", "Istantanea"]].map(([v, t]) => `<button data-v="${v}" aria-pressed="${(S.settings.oppSpeed || "normal") === v}">${t}</button>`).join("")}</span></div>
+      <div class="field fcol"><label>Velocità delle tue animazioni<small>Le carte che giochi, vendi o spendi si muovono sulla plancia. «Istantanea»: la plancia cambia e basta, come prima.</small></label>
+        <span class="seg" id="pfAnimMine">${[["slow", "Lenta"], ["normal", "Normale"], ["fast", "Veloce"], ["instant", "Istantanea"]].map(([v, t]) => `<button data-v="${v}" aria-pressed="${(S.settings.animMine || "normal") === v}">${t}</button>`).join("")}</span></div>
+      <div class="field"><label>Riquadro delle mosse avversarie<small>Il testo di ogni mossa dell'avversario al centro della plancia</small></label>
+        <span class="seg" id="pfOppFeed">${[["1", "Sì"], ["0", "No"]].map(([v, t]) => `<button data-v="${v}" aria-pressed="${(S.settings.oppFeed !== false ? "1" : "0") === v}">${t}</button>`).join("")}</span></div>
     </div>
 
     <div class="card">
@@ -252,6 +258,9 @@ function wire(root){
       return;
     }
     const os = e.target.closest("#pfOppSpeed button"); if(os){ S.settings.oppSpeed = os.dataset.v; S.save("settings"); rerender(); return; }
+    const ly = e.target.closest("#pfLayout button"); if(ly){ S.settings.boardLayout = ly.dataset.v; S.save("settings"); rerender(); return; }
+    const am = e.target.closest("#pfAnimMine button"); if(am){ S.settings.animMine = am.dataset.v; S.save("settings"); rerender(); return; }
+    const of = e.target.closest("#pfOppFeed button"); if(of){ S.settings.oppFeed = of.dataset.v === "1"; S.save("settings"); rerender(); return; }
     const ax = e.target.closest("#pfText button, #pfContrast button, #pfMotion button"); if(ax){
       const a = S.settings.a11y = { ...(S.settings.a11y || {}) }, id = ax.parentElement.id, v = ax.dataset.v;
       if(id === "pfText") a.text = v; if(id === "pfContrast") a.contrast = v === "1"; if(id === "pfMotion") a.motion = v;

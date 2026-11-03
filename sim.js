@@ -30,9 +30,9 @@ function markDropZones(c){
   if(c.isLegendDrag){ const f = $(`#board [data-field="${M.id}"]`); if(f) f.classList.add("candrop"); return; }
   if(c.card.type === "Gear"){
     $$(`#board [data-field="${M.id}"] .bc`).forEach(x => x.classList.add("candrop"));
-    for(const l of M.legends) if(l.faceUp && !l.onField && !l.removed){ const el = $(`#board .bz.mine [data-legend][data-uid="${l.uid}"]`); if(el) el.classList.add("candrop"); }
+    for(const l of M.legends) if(l.faceUp && !l.onField && !l.removed){ const el = $(`#board [data-legend][data-uid="${l.uid}"]`); if(el) el.classList.add("candrop"); }
   } else { const f = $(`#board [data-field="${M.id}"]`); if(f) f.classList.add("candrop"); }
-  if(c.card.eddiable && !M.sold){ const e = $(`#board .bz.mine [data-eddies]`); if(e) e.classList.add("candrop"); }
+  if(c.card.eddiable && !M.sold){ const e = $(`#board [data-eddies="${M.id}"]`); if(e) e.classList.add("candrop"); }
 }
 /* avviso dentro la plancia (il toast globale non segue la rotazione) */
 function note(msg){ noteMsg = msg; clearTimeout(noteT); noteT = setTimeout(() => { noteMsg = ""; const n = $("#noteMsg"); if(n) n.remove(); }, 2600); render(); }
@@ -40,9 +40,98 @@ const names = () => [S.profile.nick || "Tu", gmode === "bot" ? "IA" : "Giocatore
 
 /* tutte le mosse passano da qui: in una partita online vengono anche inviate all'avversario */
 const online = () => gOnline && ON.T.row;
-function act(pi, a){ const m = moveOf(a); const r = doAction(G, pi, m); if(online()){ ON.send({ k: "a", p: pi, a: m }); clockMark(); } return r; }
-function res(i){ const r = resolve(G, i); if(online()){ ON.send({ k: "r", i: i == null ? -1 : i }); clockMark(); } return r; }
-function doMull(pi, d){ if(G.players[pi].mulliganed) return; mulligan(G, pi, d); if(online()){ ON.send({ k: "m", p: pi, d: d ? 1 : 0 }); clockMark(); } }
+function act(pi, a){ animWho = "mine"; const m = moveOf(a); const r = doAction(G, pi, m); if(online()){ ON.send({ k: "a", p: pi, a: m }); clockMark(); } return r; }
+function res(i){ animWho = "mine"; const r = resolve(G, i); if(online()){ ON.send({ k: "r", i: i == null ? -1 : i }); clockMark(); } return r; }
+function doMull(pi, d){ if(G.players[pi].mulliganed) return; animWho = "mine"; mulligan(G, pi, d); if(online()){ ON.send({ k: "m", p: pi, d: d ? 1 : 0 }); clockMark(); } }
+
+/* ------------------------------------------------------------ animazioni delle carte
+   La plancia si ridisegna da zero a ogni mossa; prima del ridisegno si annota dov'era ogni carta e dopo
+   ogni carta parte dalla vecchia posizione e scivola nella nuova (una carta spesa ruota, una Leggenda
+   chiamata si gira). Le carte sparite diventano una copia che vola dove sono finite: venduta → pila
+   €$ e poi si gira; sconfitta o scartata → Trash. Le carte nuove arrivano dal mazzo (o dalla mano
+   dell'avversario). Durata: Impostazioni → Simulator, separata per le tue mosse e per quelle avversarie;
+   «Istantanea» o «Animazioni ridotte» = nessun movimento.                                              */
+let animWho = null;   // chi ha fatto l'ultima mossa: "mine" | "opp" | null (ridisegno senza animazione)
+/* la plancia si ridisegna anche a metà animazione (tick, selezioni): le copie volanti vivono in uno strato
+   che sopravvive al ridisegno, e le animazioni delle carte si riapplicano all'elemento nuovo dal punto in cui erano */
+const flyLayer = document.createElement("div"); flyLayer.id = "flyLayer";
+const liveAnims = new Map();   // uid → { kf, opts, at }
+function animEl(el, kf, opts){ const uid = +el.dataset.uid; el.animate(kf, opts); if(uid) liveAnims.set(uid, { kf, opts, at: performance.now() }); }
+function reapplyAnims(board, fresh){
+  const now = performance.now();
+  for(const [uid, a] of liveAnims){
+    const gone = now - a.at >= a.opts.duration; if(gone){ liveAnims.delete(uid); continue; }
+    if(fresh.has(uid)) continue;
+    const el = board.querySelector(`[data-uid="${uid}"]`); if(!el) continue;
+    const an = el.animate(a.kf, a.opts); an.currentTime = now - a.at;
+  }
+}
+const ANIM_MS = { instant: 0, fast: 220, normal: 380, slow: 650 };
+const animMs = () => { if(!animWho || document.documentElement.dataset.motion === "reduce") return 0; const k = animWho === "mine" ? (ANIM_MS[S.settings.animMine] != null ? S.settings.animMine : "normal") : oppSpeed(); return ANIM_MS[k] || 0; };
+function localRect(board, el){
+  let x = 0, y = 0, n = el;
+  while(n && n !== board){ x += n.offsetLeft; y += n.offsetTop; n = n.offsetParent; if(!n || n === document.body) return null; }
+  for(let a = el.parentElement; a && a !== board; a = a.parentElement){ x -= a.scrollLeft; y -= a.scrollTop; }
+  return { x, y, w: el.offsetWidth, h: el.offsetHeight, cx: x + el.offsetWidth / 2, cy: y + el.offsetHeight / 2 };
+}
+function snapBoard(board){
+  if(!G || board.hidden || !animMs()) return null;
+  const m = new Map();
+  for(const el of board.querySelectorAll("[data-uid]")){ const r = localRect(board, el); if(!r) continue; const img = el.querySelector(":scope > img"); m.set(+el.dataset.uid, { ...r, src: img ? img.getAttribute("src") : "", spent: el.classList.contains("spent"), back: el.classList.contains("back"), t: getComputedStyle(el).transform }); }
+  return { m, eddies: G.players.map(P => P.eddies.length), trash: G.players.map(P => P.trash.length) };
+}
+function animateBoard(board, prev){
+  board.appendChild(flyLayer);
+  const ms = animMs(); animWho = null; const fresh = new Set();
+  if(!ms || !prev || !G){ reapplyAnims(board, fresh); return; }
+  const ease = "cubic-bezier(.2,.7,.2,1)", seen = new Set();
+  const anchor = (kind, pid) => { const el = board.querySelector(`[data-${kind}="${pid}"]`); return el ? localRect(board, el) : null; };
+  const srcOf = (kind, pid) => anchor(kind, pid) || anchor("deck", pid);
+  const tf = t => t && t !== "none" ? t : "";
+  for(const el of board.querySelectorAll("[data-uid]")){
+    const uid = +el.dataset.uid; seen.add(uid); const now = localRect(board, el); if(!now) continue;
+    const was = prev.m.get(uid), endT = tf(getComputedStyle(el).transform) || "none";
+    if(was){
+      if(was.back !== el.classList.contains("back")){ fresh.add(uid); animEl(el, [{ transform: `${tf(endT)} rotateY(90deg)` }, { transform: `${tf(endT)} rotateY(0deg)` }], { duration: ms, easing: ease }); continue; }
+      const dx = was.cx - now.cx, dy = was.cy - now.cy, sx = was.w / now.w, sy = was.h / now.h;
+      if(Math.abs(dx) < 1 && Math.abs(dy) < 1 && Math.abs(sx - 1) < .02 && was.spent === el.classList.contains("spent")) continue;
+      fresh.add(uid); animEl(el, [{ transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy}) ${tf(was.t)}` }, { transform: endT }], { duration: ms, easing: ease });
+      continue;
+    }
+    // carta nuova: arriva dal mazzo (mia) o dalla mano/mazzo dell'avversario
+    const owner = el.closest("[data-field], [data-handrow], [data-side], .bz"); let pid = null;
+    if(owner){ pid = owner.dataset.field ?? owner.dataset.handrow ?? owner.dataset.side; if(pid == null) pid = owner.classList.contains("mine") ? me() : 1 - me(); }
+    if(pid == null || el.dataset.legend) continue;
+    const from = +pid === me() ? anchor("deck", pid) : srcOf("handc", pid); if(!from) continue;
+    fresh.add(uid); animEl(el, [{ transform: `translate(${from.cx - now.cx}px, ${from.cy - now.cy}px) scale(${Math.min(1, from.w / now.w)})`, opacity: .2 }, { transform: endT, opacity: 1 }], { duration: ms, easing: ease });
+  }
+  reapplyAnims(board, fresh);
+  // copie volanti
+  const fly = (from, to, src, kind) => {
+    if(!from || !to) return;
+    const g = document.createElement("div"); g.className = "bc fly"; g.style.cssText = `left:${from.x}px;top:${from.y}px;width:${from.w}px;height:${from.h}px`;
+    if(src) g.innerHTML = `<img src="${src}" alt="">`; flyLayer.appendChild(g);
+    const dx = to.cx - from.cx, dy = to.cy - from.cy, sc = Math.min(1, to.w / from.w, to.h / from.h);
+    const kf = kind === "sell" ? [{ transform: "none", opacity: 1 }, { transform: `translate(${dx}px, ${dy}px) scale(${sc}) rotateY(0deg)`, opacity: 1, offset: .62 }, { transform: `translate(${dx}px, ${dy}px) scale(${sc}) rotateY(90deg)`, opacity: .9 }]
+      : kind === "trash" ? [{ transform: "none", opacity: 1 }, { transform: `translate(${dx}px, ${dy}px) scale(${sc * .8}) rotate(12deg)`, opacity: 0 }]
+      : [{ transform: "none", opacity: 1 }, { transform: "scale(.6)", opacity: 0 }];
+    const a = g.animate(kf, { duration: kind === "sell" ? ms * 1.6 : ms * 1.1, easing: ease, fill: "forwards" }); a.onfinish = () => g.remove(); setTimeout(() => g.remove(), ms * 2 + 100);
+  };
+  const grown = G.players.map((P, i) => ({ e: P.eddies.slice(prev.eddies[i]), t: P.trash.slice(prev.trash[i]) }));
+  for(const [uid, was] of prev.m){
+    if(seen.has(uid) || was.back) continue;
+    const ePl = G.players.find(P => P.eddies.some(e => e.uid === uid)), tPl = G.players.find(P => P.trash.some(c => c.uid === uid));
+    if(ePl){ fly(was, anchor("eddies", ePl.id), was.src, "sell"); grown[ePl.id].e = grown[ePl.id].e.filter(e => e.uid !== uid); }
+    else if(tPl){ fly(was, anchor("trash", tPl.id), was.src, "trash"); grown[tPl.id].t = grown[tPl.id].t.filter(c => c.uid !== uid); }
+    else fly(was, was, was.src, "fade");
+  }
+  // vendite e scarti dell'avversario (la sua mano non si vede): dalla mano alla pila
+  for(const P of G.players){
+    if(P.id === me()) continue;
+    for(const e of grown[P.id].e) fly(srcOf("handc", P.id), anchor("eddies", P.id), e.pid ? thumbUrl(e.pid) : "", "sell");
+    for(const c of grown[P.id].t) fly(srcOf("handc", P.id), anchor("trash", P.id), c.pid ? thumbUrl(c.pid) : "", "trash");
+  }
+}
 
 /* ------------------------------------------------------------ orologi dei tavoli con limite di tempo
    Dopo ogni mossa si annota chi deve muovere (una decisione in sospeso o il giocatore di turno) e il
@@ -206,6 +295,7 @@ function closeBoard(){
 /* ------------------------------------------------------------ ritmo delle azioni dell'avversario
    Impostazioni → Simulatore: l'IA (e l'avversario online) fa una mossa alla volta, con una pausa
    regolabile; ogni mossa compare in un riquadro sulla plancia e le carte appena entrate lampeggiano. */
+const boardLayout = () => S.settings.boardLayout === "rail" ? "rail" : "classic";
 const OPP_SPEED = { instant: [650, 0], fast: [1100, 700], normal: [1800, 1300], slow: [2800, 2300] };
 const oppSpeed = () => OPP_SPEED[S.settings.oppSpeed] ? S.settings.oppSpeed : "normal";
 const oppDelay = online => OPP_SPEED[oppSpeed()][online ? 1 : 0];
@@ -214,6 +304,7 @@ const fieldUids = () => new Set(G.players.flatMap(P => [...P.field, ...P.legends
 const snapBefore = () => ({ last: G.log[G.log.length - 1], uids: fieldUids() });
 function showOpp(b){
   if(!G || oppSpeed() === "instant") return;
+  if(S.settings.oppFeed === false){ const now = fieldUids(); flashUids = new Set([...now].filter(u => !b.uids.has(u))); clearTimeout(feedT); feedT = setTimeout(() => { flashUids = new Set(); document.querySelectorAll("#board .justnow").forEach(x => x.classList.remove("justnow")); }, 2200); return; }
   const i = b.last ? G.log.lastIndexOf(b.last) : -1, lines = G.log.slice(i + 1).map(e => e.text).filter(Boolean);
   const now = fieldUids(); flashUids = new Set([...now].filter(u => !b.uids.has(u)));
   if(!lines.length && !flashUids.size) return;
@@ -224,7 +315,7 @@ function showOpp(b){
 function drainOpp(){
   if(oppQT || !oppQ.length || !G) return;
   const [m, seat] = oppQ.shift(), b = snapBefore();
-  applyMoveAs(G, seat, m); clockMark();
+  animWho = "opp"; applyMoveAs(G, seat, m); clockMark();
   if(targeting && !G.players[me()].hand.some(c => c.uid === targeting.uid) && !G.players[me()].field.some(u => u.uid === targeting.uid)) targeting = null;
   if(m.k !== "m") showOpp(b);
   render(); tick();
@@ -242,7 +333,7 @@ function tick(){
     // decisione del bot (fuori dal suo turno, es. blocco): già risolta da ask()
   }
   if(!human[G.active] && G.phase === "main" && !G.pending){
-    botTimer = setTimeout(() => { const b = snapBefore(); const more = botStep(G, G.active); showOpp(b); render(); if(G.winner != null) finish(); if(more || G.active !== undefined) tick(); }, oppDelay(false));
+    botTimer = setTimeout(() => { const b = snapBefore(); animWho = "opp"; const more = botStep(G, G.active); showOpp(b); render(); if(G.winner != null) finish(); if(more || G.active !== undefined) tick(); }, oppDelay(false));
     return;
   }
   render();
@@ -427,9 +518,10 @@ const me = () => gmode === "bot" ? 0 : gmode === "online" ? gSeat : G.active;   
 /* se le righe non ci stanno (browser con le barre visibili, schermi bassi) le carte si rimpiccioliscono
    finché tutto entra: altrimenti la zona in basso taglia le proprie Unità dall'alto */
 function fitBoard(board, H){
+  const main = board.querySelector(".bmain") || board;
   for(let i = 0; i < 4; i++){
     let need = 0;
-    for(const z of board.children){
+    for(const z of main.children){
       const pos = getComputedStyle(z).position; if(pos === "absolute" || pos === "fixed" || z.hidden) continue;
       if(z.classList.contains("bz")){ let off = 0, full = 0; for(const r of z.children){ if(!r.classList.contains("brow")) continue; off += r.offsetHeight; full += Math.max(r.offsetHeight, r.scrollHeight); } need += z.offsetHeight - off + full; }
       else need += z.offsetHeight;
@@ -468,8 +560,9 @@ function legendHTML(l, mine){
   const cls = payable ? " target" : "";
   if(l.removed) return `<div class="bc back" data-uid="${l.uid}" style="opacity:.35">✕</div>`;
   if(l.onField) return `<div class="bc back up" data-uid="${l.uid}" style="opacity:.5"><div class="n">in campo</div></div>`;
-  if(!l.faceUp) return `<div class="bc back${l.spent ? " spent" : ""}${cls}" data-uid="${l.uid}" data-legend="1">?</div>`;
-  return cardHTML(l, cls, "").replace('class="bc ', 'class="bc leg ').replace(`data-uid="${l.uid}"`, `data-uid="${l.uid}" data-legend="1"`);
+  const lo = mine ? me() : 1 - me();
+  if(!l.faceUp) return `<div class="bc back${l.spent ? " spent" : ""}${cls}" data-uid="${l.uid}" data-legend="1" data-lo="${lo}">?</div>`;
+  return cardHTML(l, cls, "").replace('class="bc ', 'class="bc leg ').replace(`data-uid="${l.uid}"`, `data-uid="${l.uid}" data-legend="1" data-lo="${lo}"`);
 }
 const dieHTML = (g, cls = "") => `<span class="die d${g.sides} ${cls}" data-gig="${g.uid || ""}"><small>d${g.sides}</small>${g.value ?? ""}</span>`;
 
@@ -493,23 +586,42 @@ function render(){
   const cs = getComputedStyle(board), H = board.clientHeight - (parseFloat(cs.paddingTop) || 0) - (parseFloat(cs.paddingBottom) || 0);
   board.style.setProperty("--bh", H + "px");
   if(drag){ drag = null; killGhosts(); }   // un ridisegno durante un trascinamento lo annulla, senza lasciare copie in giro
+  const prevSnap = snapBoard(board);
   // carte grandi quanto lo schermo permette (anche su un monitor da PC), senza superare la larghezza utile;
   // --bz ingrandisce in proporzione scritte, dadi e pile (resta 1 sui telefoni)
-  const W = board.clientWidth, cw = Math.max(24, Math.min(150, (H - 110) / (1.4 * 4.15 + 0.6), (W - 320) / 9));
-  board.style.setProperty("--cw", cw.toFixed(1) + "px");
+  // plancia «a colonna» (beta, Impostazioni → Simulator): contatori, Leggende e dadi in una colonna a sinistra,
+  // le righe centrali solo per le carte; su schermi larghi registro e chat in un pannello a destra
+  const rail = boardLayout() === "rail", W = board.clientWidth, logW = rail && W >= 1100 ? 300 : 0;
+  let cw;
+  if(rail){ cw = Math.max(24, Math.min(150, (H - 70) / 4.81, (W - logW - 60) / 9.8)); }
+  else cw = Math.max(24, Math.min(150, (H - 110) / (1.4 * 4.15 + 0.6), (W - 320) / 9));
+  const railW = rail ? Math.max(150, Math.round(cw * 2.3)) : 0;
+  board.classList.toggle("rail", rail); board.classList.toggle("logp", logW > 0);
+  board.style.setProperty("--cw", cw.toFixed(1) + "px"); board.style.setProperty("--railw", railW + "px"); board.style.setProperty("--logw", logW + "px");
   board.style.setProperty("--bz", Math.max(1, Math.min(2.2, cw / 52)).toFixed(3));
-  board.innerHTML = `${feed.length ? `<div id="oppFeed" role="status" aria-live="polite">${feed.map(t => `<div>${esc(t)}</div>`).join("")}</div>` : ""}
-    <div class="bz rival">
-      <div class="brow">
-        <div class="stack" title="Mazzo"><b>${R.deck.length}</b><small>mazzo</small></div>
-        <div class="stack" title="Mano"><b>${R.hand.length}</b><small>mano</small></div>
-        <div class="stack ed${readyEddies(R) ? "" : " lo"}${pm && pm.player === R.id && payOpt(o => o.kind === "eddie") >= 0 ? " target" : ""}" data-eddies="${R.id}" title="Eddies"><b>${readyEddies(R)}/${R.eddies.length}</b><small>€$</small></div>
-        <div class="stack" data-trash="${R.id}" title="Trash"><b>${R.trash.length}</b><small>trash</small></div>
-        <div style="display:flex;gap:3px">${R.legends.map(l => legendHTML(l, false)).join("")}</div>
+  const stacksHTML = (P, mine) => `
+        <div class="stack" title="Mazzo" data-deck="${P.id}"><b>${P.deck.length}</b><small>mazzo</small></div>
+        ${mine ? "" : `<div class="stack" title="Mano" data-handc="${P.id}"><b>${P.hand.length}</b><small>mano</small></div>`}
+        <div class="stack ed${readyEddies(P) ? "" : " lo"}${pm && pm.player === P.id && payOpt(o => o.kind === "eddie") >= 0 ? " target" : ""}" data-eddies="${P.id}" title="Eddies: pronti/totali"><b>${readyEddies(P)}/${P.eddies.length}</b><small>€$</small></div>
+        <div class="stack" data-trash="${P.id}" title="Trash"><b>${P.trash.length}</b><small>trash</small></div>
+        <div class="legs" style="display:flex;gap:3px">${P.legends.map(l => legendHTML(l, mine)).join("")}</div>
         <div style="flex:1"></div>
-        <div class="dice" data-owner="${R.id}">${R.gigs.map(g => dieHTML(g)).join("")}${R.fixer.map(s => dieHTML({ sides: s }, "fx")).join("")}<span class="cred">☆ ${streetCred(R)} · ${R.gigs.length} Gig</span></div>
-      </div>
-      <div class="brow field" data-field="${R.id}"><span class="lbl">${esc(R.name)}</span>${R.field.map(u => cardHTML(u, (targeting && targeting.kind === "attack" && u.spent) ? "target" : "")).join("") || `<span style="color:var(--mute)">nessuna Unità</span>`}</div>
+        <div class="dice" data-owner="${P.id}">${P.gigs.map(g => dieHTML(g)).join("")}${P.fixer.map(s => dieHTML({ sides: s }, "fx")).join("")}<span class="cred">☆ ${streetCred(P)} · ${P.gigs.length} Gig</span></div>`;
+  const railSideHTML = (P, mine) => `<div class="rs ${mine ? "mine" : "rival"}" data-side="${P.id}">
+        <div class="who">${esc(P.name)}</div>
+        <div class="cnt"><div class="stack" title="Mazzo" data-deck="${P.id}"><b>${P.deck.length}</b><small>mazzo</small></div><div class="stack" data-trash="${P.id}" title="Trash"><b>${P.trash.length}</b><small>trash</small></div></div>
+        <div class="res"><div class="stack ed${readyEddies(P) ? "" : " lo"}${pm && pm.player === P.id && payOpt(o => o.kind === "eddie") >= 0 ? " target" : ""}" data-eddies="${P.id}" title="Eddies: pronti/totali"><b>${readyEddies(P)}/${P.eddies.length}</b><small>€$</small></div><div class="legs">${P.legends.map(l => legendHTML(l, mine)).join("")}</div></div>
+        <div class="dice" data-owner="${P.id}">${P.gigs.map(g => dieHTML(g)).join("")}${P.fixer.map(s => dieHTML({ sides: s }, "fx")).join("")}<span class="cred">☆ ${streetCred(P)} · ${P.gigs.length} Gig</span></div>
+        ${mine ? "" : `<div class="rhand" data-handc="${P.id}" title="Carte in mano">${"<i></i>".repeat(Math.min(10, P.hand.length))}<span>${P.hand.length} in mano</span></div>`}
+      </div>`;
+  const rivalFieldHTML = `<div class="brow field" data-field="${R.id}"><span class="lbl">${esc(R.name)}</span>${R.field.map(u => cardHTML(u, (targeting && targeting.kind === "attack" && u.spent) ? "target" : "")).join("") || `<span style="color:var(--mute)">nessuna Unità</span>`}</div>`;
+  const logPanelHTML = logW ? `<div class="logpanel"><h4>Registro</h4><div class="lgl">${G.log.slice(-60).map(e => `<div class="e ${e.kind}">${esc(e.text)}</div>`).join("")}</div>${gmode === "online" ? `<button class="btn sm" id="bChat2">💬 Chat del tavolo${ON.T.chatUnread && !chatOpen() ? ` (${ON.T.chatUnread})` : ""}</button>` : ""}</div>` : "";
+  board.innerHTML = `${feed.length ? `<div id="oppFeed" role="status" aria-live="polite">${feed.map(t => `<div>${esc(t)}</div>`).join("")}</div>` : ""}
+    ${rail ? `<div class="railbox">${railSideHTML(R, false)}${railSideHTML(M, true)}</div>` : ""}
+    <div class="bmain">
+    <div class="bz rival">
+      ${rail ? "" : `<div class="brow">${stacksHTML(R, false)}</div>`}
+      ${rivalFieldHTML}
     </div>
 
     <div class="bstrip">
@@ -518,22 +630,17 @@ function render(){
       ${myTurn && human[M.id] && tutorialAllows("end") ? `<button class="btn sm yel" id="bEnd">Fine turno</button>` : ""}
       ${pm ? `${payOpt(o => o.kind === "alleddies") >= 0 ? `<button class="btn sm acc2" id="bPayAll">Tutto con Eddies</button>` : ""}<button class="btn sm" id="bPayCancel">Annulla</button>` : targeting ? `<button class="btn sm" id="bCancel">Annulla</button>` : ""}
       ${gmode === "online" ? `<span id="onlBadge">${onlineBadgeHTML()}</span><button class="btn sm icon" id="bChat" title="Chat del tavolo">💬${ON.T.chatUnread && !chatOpen() ? `<span class="nbadge">${ON.T.chatUnread}</span>` : ""}</button>` : ""}
-      <button class="btn sm icon" id="bLog" title="Registro">≡</button>
+      ${logW ? "" : `<button class="btn sm icon" id="bLog" title="Registro">≡</button>`}
       <button class="btn sm icon" id="bMenu" title="Menù">⋯</button>
     </div>
 
     <div class="bz mine">
       <div class="brow field" data-field="${M.id}"><span class="lbl">${esc(M.name)}</span>${M.field.map(u => cardHTML(u, targeting && targeting.kind === "gear" ? "target" : "")).join("") || `<span style="color:var(--mute)">nessuna Unità in campo</span>`}</div>
-      <div class="brow">
-        <div class="stack" title="Mazzo"><b>${M.deck.length}</b><small>mazzo</small></div>
-        <div class="stack ed${readyEddies(M) ? "" : " lo"}${pm && pm.player === M.id && payOpt(o => o.kind === "eddie") >= 0 ? " target" : ""}" data-eddies="${M.id}" title="Eddies: pronti/totali"><b>${readyEddies(M)}/${M.eddies.length}</b><small>€$</small></div>
-        <div class="stack" data-trash="${M.id}" title="Trash"><b>${M.trash.length}</b><small>trash</small></div>
-        <div style="display:flex;gap:3px">${M.legends.map(l => legendHTML(l, true)).join("")}</div>
-        <div style="flex:1"></div>
-        <div class="dice" data-owner="${M.id}">${M.gigs.map(g => dieHTML(g)).join("")}${M.fixer.map(s => dieHTML({ sides: s }, "fx")).join("")}<span class="cred">☆ ${streetCred(M)} · ${M.gigs.length} Gig</span></div>
-      </div>
+      ${rail ? "" : `<div class="brow">${stacksHTML(M, true)}</div>`}
       <div class="brow hand" data-handrow="${M.id}"><span class="lbl">mano · ${ready(M)} €$</span>${handHTML || `<span style="color:var(--mute)">mano vuota</span>`}</div>
     </div>
+    </div>
+    ${logPanelHTML}
     ${tutorialActive() ? tutorialBarHTML(G, me()) : ""}
     ${showLog ? `<div id="simLog"><div style="display:flex;justify-content:space-between;align-items:center"><b>Registro</b><button class="btn sm icon" id="bLogClose">✕</button></div>${G.log.slice(-80).map(e => `<div class="e ${e.kind}">${esc(e.text)}</div>`).join("")}</div>` : ""}
     ${mulliganPending() != null ? mulliganHTML() : pm ? "" : G.pending && human[G.pending.player] ? askHTML() : ""}
@@ -542,6 +649,7 @@ function render(){
     ${peekPid ? `<div id="peek">${peekInner(peekPid)}</div>` : ""}
     ${handoff ? `<div class="handoff"><h2>Passa il dispositivo a ${esc(G.players[G.active].name)}</h2><p>Il tuo rivale non guarda, promesso.</p><button class="btn yel" id="bHand">Sono pronto</button></div>` : ""}`;
   fitBoard(board, H);
+  animateBoard(board, prevSnap);
   const hl = tutorialHighlight(); if(hl) $$("#board " + hl.split(",").join(", #board ")).forEach(x => x.classList.add("tuthl"));
   if(showLog){ const l = $("#simLog"); l.scrollTop = l.scrollHeight; }
   // scelta tra carte: subito la miniatura, poi l'immagine grande appena è scaricata (leggibile anche il testo)
@@ -633,7 +741,6 @@ function fieldCard(el, owner){
     if(targeting.kind === "gear" && mine){ after(act(M.id, { t: "play", uid: targeting.uid, target: u.uid })); return; }
     if(targeting.kind === "attack" && !mine){ after(act(M.id, { t: "attack", uid: targeting.uid, target: { kind: "unit", uid: u.uid } })); return; }
   }
-  if((u.gear || []).length && gearOpen !== u.uid){ gearOpen = u.uid; render(); return; }   // primo tocco: Gear di fianco
   const items = [];
   if(mine && myTurn){
     const can = canAttack(G, M, u) && tutorialAllows("attack");
@@ -650,6 +757,7 @@ function fieldCard(el, owner){
       { label: "Sconfiggi", cls: "danger", fn: () => { manual.defeat(G, owner, u.uid); after(); } });
   }
   items.push({ label: "Ingrandisci", fn: () => openLens(imgUrl(u.pid)) }, { label: "Scheda carta", fn: () => openCard(u.cid, u.pid) });
+  for(const g of u.gear || []) items.push({ label: `Gear: ${g.card.dn} (ingrandisci)`, fn: () => openLens(imgUrl(g.pid)) });
 
   openPop(el, items, `${u.card.dn} · potenza ${shownPower(u)}`);
 }
@@ -658,7 +766,6 @@ function legendCard(el, owner){
   const M = G.players[me()], mine = owner === M.id;
   const myTurn = G.active === M.id && G.phase === "main" && !G.pending && G.winner == null && human[M.id];
   if(targeting && targeting.kind === "gear" && mine && l.faceUp && !l.onField && !l.removed && myTurn){ after(act(M.id, { t: "play", uid: targeting.uid, target: l.uid })); return; }
-  if((l.gear || []).length && l.faceUp && gearOpen !== l.uid && !payMode()){ gearOpen = l.uid; render(); return; }
   const items = [], idx = P.legends.indexOf(l);
   if(mine && myTurn && !l.removed && !l.onField){
     if(!l.faceUp) items.push({ label: "Chiama questa Leggenda (1 €$)", cls: "acc", disabled: P.called || !canPay(P, 1) || !tutorialAllows("call"), fn: () => after(act(M.id, { t: "call", idx })) });
@@ -667,7 +774,7 @@ function legendCard(el, owner){
     if(MANUAL) items.push({ label: l.spent ? "Prepara (manuale)" : "Spendi come 1 €$ (manuale)", fn: () => { manual.toggleSpent(G, owner, l.uid); after(); } });
     if(MANUAL && !l.faceUp) items.push({ label: "Scopri senza chiamare (manuale)", fn: () => { manual.flip(G, owner, idx); after(); } });
   }
-  if(l.faceUp){ items.push({ label: "Ingrandisci", fn: () => openLens(imgUrl(l.pid)) }, { label: "Scheda carta", fn: () => openCard(l.cid, l.pid) }); }
+  if(l.faceUp){ items.push({ label: "Ingrandisci", fn: () => openLens(imgUrl(l.pid)) }, { label: "Scheda carta", fn: () => openCard(l.cid, l.pid) }); for(const g of l.gear || []) items.push({ label: `Gear: ${g.card.dn} (ingrandisci)`, fn: () => openLens(imgUrl(g.pid)) }); }
   if(!items.length) items.push({ label: "Leggenda coperta: nessuno sa quale sia", disabled: true, fn: () => {} });
   openPop(el, items, l.faceUp ? l.card.dn : "Leggenda coperta");
 }
@@ -745,11 +852,11 @@ function wire(){
 
   const dropTarget = (x, y) => {
     const M = G.players[me()], el = document.elementFromPoint(x, y); if(!el) return null;
-    const ed = el.closest(".bz.mine [data-eddies]"); if(ed) return { kind: "sell", el: ed };
+    const ed = el.closest(`[data-eddies="${M.id}"]`); if(ed) return { kind: "sell", el: ed };
     let bc = el.closest(".bc"); if(bc && bc.dataset.gearOf) bc = bc.closest("[data-w]").querySelector(".bc.host") || bc;
     if(bc && bc.closest(`[data-field="${M.id}"]`)) return { kind: "unit", el: bc, uid: +bc.dataset.uid };
-    if(bc && bc.dataset.legend && bc.closest(".bz.mine")){ const l = M.legends.find(l => l.uid === +bc.dataset.uid); if(l && l.faceUp && !l.onField && !l.removed) return { kind: "legend", el: bc, uid: l.uid }; if(l && !l.faceUp) return { kind: "facedown", el: null }; }
-    const zone = el.closest(".bz.mine"); if(zone && !el.closest("[data-handrow]")) return { kind: "field", el: zone.querySelector(`[data-field="${M.id}"]`) };
+    if(bc && bc.dataset.legend && +bc.dataset.lo === M.id){ const l = M.legends.find(l => l.uid === +bc.dataset.uid); if(l && l.faceUp && !l.onField && !l.removed) return { kind: "legend", el: bc, uid: l.uid }; if(l && !l.faceUp) return { kind: "facedown", el: null }; }
+    const zone = el.closest(".bz.mine"); if(zone && !el.closest("[data-handrow], .rs")) return { kind: "field", el: zone.querySelector(`[data-field="${M.id}"]`) };
     return null;
   };
   board.addEventListener("pointerdown", e => {
@@ -757,7 +864,7 @@ function wire(){
     if(!e.isPrimary || !G || G.winner != null) return;
     const M = G.players[me()]; if(G.active !== M.id || G.phase !== "main" || G.pending || !human[M.id] || oppBusy()) return;
     const el = e.target.closest("[data-handrow] .bc");
-    const lg = !el && e.target.closest(".bz.mine [data-legend]");
+    const lg = !el && e.target.closest(`[data-legend][data-lo="${M.id}"]`);
     if(lg){   // una Leggenda scoperta con Go Solo si trascina in plancia
       const l = M.legends.find(x => x.uid === +lg.dataset.uid);
       if(!l || !l.faceUp || l.onField || l.removed || !(l.card.kw || []).includes("Go Solo")) return;
@@ -837,9 +944,9 @@ function wire(){
     const zoom = t.closest("[data-zoom]"); if(zoom){ openLens(imgUrl(zoom.dataset.zoom)); return; }
     const pk = t.closest("[data-pick]"); if(pk && G.pending){ pickSel = { p: G.pending, i: +pk.dataset.pick }; render(); return; }
     const ask = t.closest("[data-ask]"); if(ask){ if(G.pending && G.pending.kind === "block" && human[G.pending.player]) G.tutReacted = true; res(+ask.dataset.ask); render(); tick(); return; }
-    const gc = t.closest("[data-gear-of]"); if(gc){ gearCard(gc); return; }
+    const gc = t.closest("[data-gear-of]"); if(gc){ const host = +gc.dataset.gearOf; if(gearOpen !== host){ gearOpen = host; render(); } else gearCard(gc); return; }
     const hand = t.closest("[data-hand=\"1\"]"); if(hand){ handCard(hand, G.players[me()]); return; }
-    const leg = t.closest("[data-legend]"); if(leg){ const owner = leg.closest(".bz").classList.contains("mine") ? me() : 1 - me(); legendCard(leg, owner); return; }
+    const leg = t.closest("[data-legend]"); if(leg){ legendCard(leg, +leg.dataset.lo); return; }
     const bc = t.closest(".bc"); if(bc){ const f = bc.closest("[data-field]"); if(f){ fieldCard(bc, +f.dataset.field); return; } }
     const gig = t.closest("[data-gig]"); if(gig && gig.dataset.gig){ gigChip(gig, +gig.closest("[data-owner]").dataset.owner); return; }
     const trash = t.closest("[data-trash]"); if(trash){ const P = G.players[+trash.dataset.trash]; showAsk(`Trash di ${P.name} (${P.trash.length})`, P.trash.slice(-24).map(c => ({ label: c.card.dn, pid: c.pid })), null, [{ label: "Chiudi", fn: () => {} }]); return; }
@@ -854,7 +961,7 @@ function pidOf(el){
   return null;
 }
 /* per i collaudi automatici: stessa strada dei tocchi sulla plancia */
-window.__ncdSim = { chat: () => openTableChat(), G: () => G, seat: () => me(), clocks: () => clocks(),
+window.__ncdSim = { chat: () => openTableChat(), G: () => G, seat: () => me(), clocks: () => clocks(), render: () => render(),
   // solo in locale (collaudi): una partita online finta, senza server
   ...(/^(127\.0\.0\.1|localhost)$/.test(location.hostname) ? { fakeOnline: (row, moves) => { ON.T.row = row; ON.T.seat = 0; ON.T.nicks = ["A", "B"]; ON.T.ended = null; ON.T.stamps = moves.map(m => m.at); hooksForTest.start(row, 0, ["A", "B"], moves.map(m => ({ move: m.move, seat: m.seat }))); } } : {}), act: a => { const r = act(me(), a); after(r); return r; }, res: i => { res(i); render(); tick(); } };
 /* per la Home: partita da riprendere e scorciatoia alla lobby online */
