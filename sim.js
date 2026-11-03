@@ -170,7 +170,7 @@ const mmss = s => { s = Math.max(0, Math.ceil(s)); return `${Math.floor(s / 60)}
 function clockHTML(){
   const c = clocks(); if(!c) return "";
   const mine = me(), parts = [];
-  if(c.o.match) parts.push(`<span class="clk${c.on === mine ? " on" : ""}">Tu ${mmss(c.o.match * 60 - c.used[mine])}</span><span class="clk${c.on === 1 - mine ? " on" : ""}">Avv. ${mmss(c.o.match * 60 - c.used[1 - mine])}</span>`);
+  if(c.o.match) parts.push(`<span class="clk${c.on === mine ? " on" : ""}">Tuo tempo ${mmss(c.o.match * 60 - c.used[mine])}</span><span class="clk${c.on === 1 - mine ? " on" : ""}">Suo tempo ${mmss(c.o.match * 60 - c.used[1 - mine])}</span>`);
   if(c.o.turn && c.on != null){ const left = c.on === c.act ? c.o.turn - c.turnUsed : Math.min(60, c.o.turn) - c.decision; parts.push(`<span class="clk turn${left < 15 ? " low" : ""}">${c.on === mine ? "Tuo" : "Suo"} turno ${mmss(left)}</span>`); }
   return `<span class="clocks" title="Tempo rimasto">${parts.join("")}</span>`;
 }
@@ -266,17 +266,17 @@ function start(opts = {}){
   human = mode === "bot" ? [true, false] : [true, true];
   const nm = names();
   const tut = tutorialActive();
-  G = createGame([{ ...d0, name: nm[0] }, { ...d1, name: nm[1] }], DATA.byId, { bot0: !human[0], bot1: !human[1], autoPay: [!!S.profile.autoPay, !!S.profile.autoPay], seed: tut ? TUTORIAL_SEED : undefined, first: tut ? 1 : undefined });
+  G = createGame([{ ...d0, name: nm[0] }, { ...d1, name: nm[1] }], DATA.byId, { bot0: !human[0], bot1: !human[1], autoPay: [!!S.profile.autoPay, !!S.profile.autoPay], seed: tut ? TUTORIAL_SEED : undefined, first: tut ? 1 : undefined, chooseFirst: !tut });
   if(tut) ensureHand(G, 0);
   G.decide = botDecide; G.mulliganAsked = [false, false];
   sel = null; targeting = null; pop = null; handoff = false; lastSeen = { turn: 0, seen: 0 };
   $("#board").innerHTML = ""; openBoard();
   // mulligan: ai bot no; agli umani lo chiede la plancia (vedi mulliganHTML: fa parte
   // dello stato, così un ridisegno — es. l'ingresso a schermo intero — non lo perde)
-  for(const i of [0, 1]) if(!human[i]) mulligan(G, i, false);
+  for(const i of [0, 1]) if(!human[i] && G.phase === "mulligan") mulligan(G, i, false);
   render(); tick();
 }
-const mulliganPending = () => G ? [0, 1].find(k => human[k] && !G.players[k].mulliganed) : null;
+const mulliganPending = () => G && G.phase === "mulligan" ? [0, 1].find(k => human[k] && !G.players[k].mulliganed) : null;
 function mulliganHTML(){
   const i = mulliganPending(); if(i == null || tutorialTour()) return "";
   const P = G.players[i];
@@ -333,11 +333,15 @@ const oppBusy = () => gOnline && (oppQ.length > 0);
 function tick(){
   clearTimeout(botTimer);
   if(!G) return;
+  // mulligan dei bot: appena si sa chi inizia (dopo la scelta di chi ha vinto il tiro)
+  if(G.phase === "mulligan") for(const i of [0, 1]) if(!human[i] && !G.players[i].mulliganed) mulligan(G, i, false);
   if(mulliganPending() != null){ render(); return; }
   if(G.winner != null){ finish(); render(); return; }
   if(gmode === "online"){ render(); return; }   // l'avversario gioca dal suo telefono
   if(G.pending){ if(human[G.pending.player]) { render(); return; } // decisione umana in attesa
-    // decisione del bot (fuori dal suo turno, es. blocco): già risolta da ask()
+    // decisione del bot rimasta in sospeso (es. la scelta di chi inizia, fatta prima che il bot fosse collegato): la prende ora
+    const pd = G.pending, o = botDecide(G, pd.player, pd.kind, pd.options, pd.ctx || {}); markMove("opp"); resolve(G, Math.max(0, pd.options.indexOf(o)));
+    render(); tick(); return;
   }
   if(!human[G.active] && G.phase === "main" && !G.pending){
     botTimer = setTimeout(() => { const b = snapBefore(); markMove("opp"); const more = botStep(G, G.active); showOpp(b); render(); if(G.winner != null) finish(); if(more || G.active !== undefined) tick(); }, oppDelay(false));
@@ -586,7 +590,7 @@ function render(){
   const pendingTxt = pm ? "" : G.pending ? (human[G.pending.player] ? `${G.players[G.pending.player].name} deve scegliere…` : gmode === "online" ? `${G.players[G.pending.player].name} sta decidendo…` : "l'IA decide…") : "";
   const payTxt = pm ? `<b style="color:var(--acc2)">Paga ${pm.ctx.cost} €$ (${pm.ctx.paid}/${pm.ctx.cost}): tocca un Eddie o una Leggenda</b>` : "";
   const waitMull = G.phase === "mulligan" && gmode === "online" && G.players[me()].mulliganed;
-  const status = G.winner != null ? `Fine: ${esc(G.reason)}` : waitMull ? `Mulligan: in attesa di ${esc(R.name)}` : myTurn ? "Il tuo turno" : human[G.active] || gmode === "online" ? `Turno di ${esc(G.players[G.active].name)}` : "Turno dell'IA…";
+  const status = G.winner != null ? `Fine: ${esc(G.reason)}` : G.phase === "roll" ? (G.pending && human[G.pending.player] ? "Hai vinto il tiro: scegli chi inizia" : `${esc(G.players[G.pending ? G.pending.player : 0].name)} ha vinto il tiro e sceglie…`) : waitMull ? `Mulligan: in attesa di ${esc(R.name)}` : myTurn ? "Il tuo turno" : human[G.active] || gmode === "online" ? `Turno di ${esc(G.players[G.active].name)}` : "Turno dell'IA…";
   const last = G.log.slice(-1)[0];
   // misura delle carte dall'altezza disponibile: 2 righe rivale + campo + pile + mano (1,15×) + barra e margini
   // altezza utile: senza i margini di sicurezza (su iPhone in orizzontale la barra della home toglie ~20px)
@@ -667,7 +671,7 @@ function render(){
 /* richieste del motore (dado, blocco, furto, bersaglio…) */
 function askHTML(){
   const p = G.pending, P = G.players[p.player];
-  const titles = { die: "Quale dado tiri dal fixer?", block: `${esc(P.name)}: come reagisci?`, steal: "Quale Gig rubi?", target: "Scegli il bersaglio", discard: "Scegli la carta da scartare", gigpick: "Quale Gig?", gigvalue: "Nuovo valore", pickcard: "Scegli la carta", choice: "Scegli un effetto", yesno: "Vuoi farlo?", pay: p.ctx && p.ctx.confirm ? `Per pagare ${p.ctx.cost} €$ serve una Leggenda che ha un effetto quando la spendi (abilità {Spend} o un Gear come Zetatech Faceplate): la spendo?` : `Come paghi? ${p.ctx ? `${p.ctx.paid}/${p.ctx.cost} €$ pagati` : ""}` };
+  const titles = { die: "Quale dado tiri dal fixer?", block: `${esc(P.name)}: come reagisci?`, steal: "Quale Gig rubi?", target: "Scegli il bersaglio", discard: "Scegli la carta da scartare", gigpick: "Quale Gig?", gigvalue: "Nuovo valore", pickcard: "Scegli la carta", choice: "Scegli un effetto", yesno: "Vuoi farlo?", pay: p.ctx && p.ctx.confirm ? `Per pagare ${p.ctx.cost} €$ serve una Leggenda che ha un effetto quando la spendi (abilità {Spend} o un Gear come Zetatech Faceplate): la spendo?` : `Come paghi? ${p.ctx ? `${p.ctx.paid}/${p.ctx.cost} €$ pagati` : ""}` , ...(p.ctx && p.ctx.goFirst ? { choice: "Hai vinto il tiro iniziale: chi inizia?" } : {}) };
   const ctx = p.kind === "block" && p.ctx.attacker ? `<p style="color:var(--ink2);margin:0 0 8px">${esc(p.ctx.attacker.card.dn)} (${powerIn(G, G.players[G.active], p.ctx.attacker, { attacking: true })}) attacca ${p.ctx.target ? esc(p.ctx.target.card.dn) + " (" + shownPower(p.ctx.target) + ")" : "la tua area Gig"}. Puoi bloccare, chiamare una Leggenda o usare una carta Quick, anche più volte.</p>` : "";
   // in due sullo stesso dispositivo: la decisione del difensore si apre solo dopo un tocco, così l'attaccante non vede le sue carte
   if(gmode === "hot" && p.player !== G.active && reactCover !== p) return `<div id="simAsk"><div class="box"><h3>Reazione di ${esc(P.name)}</h3><p>${esc(G.players[G.active].name)}, passa il dispositivo: le opzioni del rivale compaiono solo dopo il suo tocco.</p><div class="opts"><button class="btn yel" data-react="1">Sono ${esc(P.name)}, mostra le opzioni</button></div></div></div>`;

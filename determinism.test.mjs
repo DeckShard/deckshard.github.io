@@ -11,7 +11,7 @@ for(let seed = 1; seed <= 120; seed++){
   const rng = mulberry32(seed * 104729);
   const pick = (arr, n) => { const a = arr.slice(); const out = []; while(out.length < n && a.length) out.push(a.splice(Math.floor(rng() * a.length), 1)[0]); return out; };
   const mkDeck = name => ({ name, legends: pick(legends, 3).map(c => ({ cid: c.id, pid: c.def.id })), cards: pick(others, 20).map(c => ({ cid: c.id, pid: c.def.id, n: 2 })) });
-  const decks = [mkDeck("Host"), mkDeck("Guest")], opts = { seed: seed * 31, autoPay: [rng() < .5, rng() < .5] };
+  const decks = [mkDeck("Host"), mkDeck("Guest")], opts = { seed: seed * 31, autoPay: [rng() < .5, rng() < .5], chooseFirst: true, ...(seed % 3 === 0 ? { first: seed % 2 } : {}) };   // come online: chi vince il tiro sceglie
   const json = JSON.parse(JSON.stringify(decks));       // come arrivano dal database
   const G = createGame(decks, byId, opts), log = [];
   // chi fa la mossa (come lo registra il database): il giocatore di turno, o chi deve decidere
@@ -22,6 +22,12 @@ for(let seed = 1; seed <= 120; seed++){
       if(applyMoveAs(G, 1 - seat, bad) || snap(G) !== before){ forgedOk++; } }
     log.push({ seat, m: JSON.parse(JSON.stringify(m)) }); if(!applyMoveAs(G, seat, m) && m.k !== "a") { /* le azioni non valide restano senza effetto */ }
   };
+  // il vincitore del tiro sceglie chi inizia (a volte l'avversario); un mulligan mandato prima non vale
+  if(G.phase !== "roll" || !G.pending) { fails++; console.log("seed", seed, "manca la scelta iniziale"); }
+  if(opts.first != null && G.pending.player !== opts.first){ fails++; console.log("seed", seed, "vince il tiro il giocatore sbagliato"); }
+  { const early = { k: "m", p: 1 - G.pending.player, d: 0 }; if(applyMoveAs(G, 1 - G.pending.player, early) || G.players[1 - G.pending.player].mulliganed){ fails++; console.log("seed", seed, "mulligan accettato prima della scelta"); } }
+  play({ k: "r", i: rng() < .4 ? 1 : 0 });
+  if(G.phase !== "mulligan"){ fails++; console.log("seed", seed, "dopo la scelta non si passa al mulligan"); }
   // i due mulligan in ordine casuale (online arrivano in ordine qualsiasi)
   const order = rng() < .5 ? [0, 1] : [1, 0];
   for(const p of order) play({ k: "m", p, d: rng() < .3 ? 1 : 0 });

@@ -40,6 +40,7 @@ export function botDecide(G, pi, kind, options, ctx){
       return options[options.length - 1];   // «Nessuna» / «Ok, vanno in fondo al mazzo»
     }
     case "choice": {
+      if(ctx.goFirst) return options[0];   // vinto il tiro: l'IA inizia (tempo e primo Gig)
       if(ctx.reveal) return (ctx.reveal.reduce((a, c) => a + (c.card.cost ?? 0), 0) >= 7 ? options[1] : options[0]) || options[0];   // Fool on the Hill: nega le carte care
       if(ctx.typeChoice){ const cnt = {}; for(const c of P.deck) cnt[c.card.type] = (cnt[c.card.type] || 0) + 1; return options.reduce((a, b) => (cnt[b.v] || 0) > (cnt[a.v] || 0) ? b : a); }
       if(!options[0].alt) return options[0];

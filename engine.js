@@ -50,16 +50,27 @@ export function createGame(decks, cardsById, opts = {}){
   // con opts.first (partite online: lo decide il database) si ritira finché il tiro non dà quel risultato,
   // così il registro resta coerente su entrambi i telefoni
   let a, b, n = 0; do { a = rollDie(20, rng); b = rollDie(20, rng); } while(a === b || (opts.first != null && (a > b ? 0 : 1) !== opts.first && ++n < 200));
-  G.first = opts.first != null ? opts.first : (a > b ? 0 : 1); G.active = G.first;
-  say(G, `Tiro iniziale: ${G.players[0].name} ${a} – ${G.players[1].name} ${b}. Inizia ${G.players[G.first].name}.`);
+  const winner = opts.first != null ? opts.first : (a > b ? 0 : 1);
   for(const P of G.players){ draw(G, P, 6, true); }
-  // chi inizia spende le 2 Leggende più a sinistra e non le prepara al primo turno
-  const F = G.players[G.first]; F.legends[0].spent = true; F.legends[1].spent = true; F.skipReadyLegends = true;
-  G.phase = "mulligan";
+  const begin = first => {
+    G.first = first; G.active = first;
+    // chi inizia spende le 2 Leggende più a sinistra e non le prepara al primo turno
+    const F = G.players[first]; F.legends[0].spent = true; F.legends[1].spent = true; F.skipReadyLegends = true;
+    G.phase = "mulligan";
+  };
+  if(opts.chooseFirst){
+    // come dal vivo: chi vince il tiro sceglie se iniziare o far iniziare l'avversario
+    G.phase = "roll";
+    say(G, `Tiro iniziale: ${G.players[0].name} ${a} – ${G.players[1].name} ${b}. ${G.players[winner].name} vince il tiro e sceglie chi inizia.`);
+    ask(G, winner, "choice", [{ label: "Inizio io", v: winner }, { label: `Inizia ${G.players[1 - winner].name}`, v: 1 - winner }], o => { const f = o ? o.v : winner; say(G, `${G.players[winner].name} decide: inizia ${G.players[f].name}.`); begin(f); }, { goFirst: true });
+  } else {
+    say(G, `Tiro iniziale: ${G.players[0].name} ${a} – ${G.players[1].name} ${b}. Inizia ${G.players[winner].name}.`);
+    begin(winner);
+  }
   return G;
 }
 export function mulligan(G, pi, doIt){
-  const P = G.players[pi];
+  const P = G.players[pi]; if(G.phase !== "mulligan") return false;   // prima si decide chi inizia
   if(doIt){ P.deck.push(...P.hand); P.hand = []; shuffle(P.deck, G.rng); draw(G, P, 6, true); say(G, `${P.name} fa mulligan.`); }
   P.mulliganed = true;
   if(G.players.every(p => p.mulliganed)) startTurn(G);

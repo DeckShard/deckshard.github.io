@@ -123,7 +123,7 @@ async function startFromRow(row){
 export function setupOf(row){
   return {
     decks: [{ ...row.host_deck, name: T.nicks[0] || "Host" }, { ...row.guest_deck, name: T.nicks[1] || "Ospite" }],
-    opts: { seed: Number(row.seed), autoPay: [!!row.host_autopay, !!row.guest_autopay], ...(row.first === 0 || row.first === 1 ? { first: row.first } : {}) }
+    opts: { seed: Number(row.seed), autoPay: [!!row.host_autopay, !!row.guest_autopay], chooseFirst: true, ...(row.first === 0 || row.first === 1 ? { first: row.first } : {}) }   // first: chi vince il tiro (e sceglie)
   };
 }
 /* il posto di chi ha fatto la mossa lo dice il database (chi l'ha inserita), non la mossa */

@@ -3,6 +3,8 @@
 import { chromium } from "playwright";
 const BASE = process.env.BASE || "http://127.0.0.1:8751";
 let fails = 0, passes = 0;
+/* tiro iniziale: se l'ha vinto il giocatore, sceglie chi inizia (prima opzione) e poi arriva il mulligan */
+const openingChoice = async () => { await page.waitForSelector("#simAsk"); for(let k = 0; k < 3 && !(await page.locator('[data-mull="keep"]').count()); k++){ if(await page.locator("#simAsk [data-ask]").count()) await page.click("#simAsk [data-ask] >> nth=0"); await page.waitForTimeout(250); } };
 const ok = (c, m) => { if(c) passes++; else { fails++; console.log("  ✘", m); } };
 const errors = [];
 const browser = await chromium.launch({ executablePath: process.env.CHROME || "/opt/pw-browsers/chromium-1194/chrome-linux/chrome" });
@@ -212,9 +214,12 @@ ok((await page.locator("#p-settings h3").allTextContents()).join(",").includes("
 await page.click('nav.tabs button[data-tab="sim"]'); await page.waitForTimeout(300);
 ok((await page.locator("#simStart").textContent()).includes("Start the game"), "English: simulatore tradotto");
 await page.selectOption("#simDeck0", "starter:theheistretailstarterdeck"); await page.selectOption("#simDeck1", "starter:embracingpowerretailstarterdeck"); await page.click("#simStart");
-await page.waitForSelector("#simAsk"); ok((await page.locator("#simAsk h3").textContent()).includes("keep this hand"), "English: mulligan tradotto");
+await page.waitForSelector("#simAsk");
+// se il tiro iniziale l'ha vinto il giocatore, prima sceglie chi inizia (tradotto anche quello)
+if(await page.locator("#simAsk [data-ask]").count()){ ok((await page.locator("#simAsk h3").textContent()).includes("opening roll"), "English: scelta di chi inizia tradotta"); await page.click("#simAsk [data-ask] >> nth=0"); await page.waitForSelector('[data-mull="keep"]'); }
+ok((await page.locator("#simAsk h3").textContent()).includes("keep this hand"), "English: mulligan tradotto");
 await page.click('[data-mull="keep"]'); for(let i = 0; i < 40; i++){ if(await page.locator("#simAsk [data-ask]").count()) await page.click("#simAsk [data-ask] >> nth=0"); if(await page.locator("#bEnd").count()) break; await page.waitForTimeout(300); }
-ok(/Your turn/.test(await page.locator(".bstrip").textContent()) && /rolls? a d\d+ from the fixer|draws? 1\./.test(await page.locator(".bstrip").textContent()), "English: barra e registro tradotti (" + (await page.locator(".bstrip .lg").textContent()).slice(0, 60) + ")");
+ok(/Your turn/.test(await page.locator(".bstrip").textContent()) && /rolls? a d\d+ from the fixer|draws? 1\.|goes first\./.test(await page.locator(".bstrip").textContent()), "English: barra e registro tradotti (" + (await page.locator(".bstrip .lg").textContent()).slice(0, 60) + ")");
 await page.click("#bMenu"); await page.click('.pop button:has-text("Leave the board")');
 await page.click("#btnSettings"); await page.waitForTimeout(300); await page.click('#pfLang button[data-v="it"]'); await page.waitForFunction(() => document.documentElement.lang === "it" && document.querySelector("#p-settings h3")); await page.waitForTimeout(500);
 ok((await page.locator("#p-settings h3").allTextContents()).join(",").includes("Aspetto"), "ritorno all'italiano");
@@ -225,7 +230,7 @@ await page.selectOption("#simDeck0", "starter:theheistretailstarterdeck");
 await page.selectOption("#simDeck1", "starter:embracingpowerretailstarterdeck");
 await page.click("#simStart");
 await page.waitForSelector("#board:not([hidden])");
-await page.waitForSelector("#simAsk");
+await openingChoice();
 ok((await page.locator("#simAsk h3").textContent()).includes("tieni"), "mulligan chiesto");
 // un ridisegno (es. ingresso a schermo intero) non deve far sparire il mulligan
 await page.setViewportSize({ width: 412, height: 900 }); await page.waitForTimeout(200);
@@ -325,7 +330,7 @@ ok((await page.locator("#simSetup .chip").first().textContent()).includes("1 sco
 /* hot-seat: passaggio del dispositivo */
 await page.click('#simMode [data-v="hot"]');
 await page.click("#simStart");
-await page.waitForSelector("#simAsk");
+await openingChoice();
 await page.click('[data-mull="keep"]'); await page.waitForSelector('[data-mull="keep"]'); await page.click('[data-mull="keep"]');
 await page.waitForTimeout(200);
 if(await page.locator("#simAsk [data-ask]").count()) await page.click("#simAsk [data-ask]");
@@ -378,7 +383,7 @@ console.log("  sealed:", legalTxt2.replace(/\s+/g, " ").slice(0, 160));
 ok(/\d+ colori su un massimo di 3|Troppi colori/.test(legalTxt2), "controllo dei colori nel sealed");
 await page.click("#deckPlay");
 await page.waitForSelector("#board:not([hidden])");
-await page.waitForSelector('[data-mull="keep"]');
+await openingChoice();
 ok(await page.locator(".bz.rival .lbl").count() === 1 && (await page.locator(".bz.rival .lbl").textContent()).includes("IA"), "partita sealed contro il bot avviata");
 await page.click('[data-mull="keep"]'); await page.waitForTimeout(300);
 for(let i = 0; i < 5 && await page.locator("#simAsk [data-ask]").count(); i++){ await page.click("#simAsk [data-ask]"); await page.waitForTimeout(200); }
