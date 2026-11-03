@@ -132,7 +132,7 @@
 .simdecks select{width:100%}
 
 /* ---------- deckbuilder: due colonne su schermo largo ---------- */
-@media(min-width:1000px){ #deckEdit{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start} #deckEdit>.card+.card{margin-top:0} #deckBrowser{order:-1;position:sticky;top:64px;max-height:calc(100dvh - 80px);overflow:auto} }
+@media(min-width:1000px){ #deckEdit{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start} #deckEdit>.card+.card{margin-top:0} #deckBrowser{position:sticky;top:64px;max-height:calc(100dvh - 80px);overflow:auto} }
 
 /* ---------- tutorial e prerelease ---------- */
 .tutbar{position:absolute;left:50%;top:6px;transform:translateX(-50%);z-index:49;display:flex;align-items:center;gap:8px;max-width:min(680px,94%);
@@ -221,3 +221,4 @@
 #board #simLog{font-size:calc(12.5px * var(--bz));width:min(calc(360px * var(--bz)),70%)}
 #board .winbox .box{max-width:calc(420px * var(--bz))} #board .winbox h2{font-size:calc(28px * var(--bz))} #board .handoff h2{font-size:calc(26px * var(--bz))}
 #board .tutbar{max-width:min(calc(680px * var(--bz)),94%)}
+#board .wflav{font-style:italic;color:var(--ink2);margin:2px 0 6px}

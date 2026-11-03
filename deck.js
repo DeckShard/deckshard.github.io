@@ -320,7 +320,7 @@ function renderEditor(){
         <span class="chip">${n} carte</span><span class="chip" title="Carte con il simbolo €$: si possono vendere per 1 Eddie">vendibili ${sellable} (${n ? Math.round(sellable / n * 100) : 0}%)</span><span class="chip">valore ${eur(deckValue(d))}</span>
         ${miss.copies ? `<span class="chip bad">mancano ${miss.copies} copie ≈ ${eur(miss.cost)}${miss.unpriced ? " + " + miss.unpriced + " senza prezzo" : ""}</span>` : `<span class="chip good">hai tutte le carte</span>`}
       </div>
-      ${groups || `<div class="empty">Aggiungi carte dall'elenco qui sotto: tocca il nome per +1, la miniatura per scegliere l'artwork.</div>`}
+      ${groups || `<div class="empty">Aggiungi carte dall'elenco delle carte: tocca il nome per +1, la miniatura per scegliere l'artwork.</div>`}
     </div>
 
     <div class="card flush" id="deckBrowser">
@@ -354,7 +354,7 @@ function renderBrowser(){
     const left = d.format === "sealed" ? poolCount(d, c.id) - (browse === "legends" ? (inDeck ? 1 : 0) : (inDeck || 0)) : 0;
     const html = rowHTML(c, pe ? pe.pid : null, right, extra, false, d.format === "sealed" ? `${left}x` : "");
     return d.format !== "sealed" && !cardQty(c) ? html.replace('class="row"', 'class="row unowned" title="Non in collezione"') : html;   // non posseduta: miniatura in bianco e nero
-  }).join("") || `<div class="empty">Nessuna carta con questi filtri.</div>`;
+  }).join("") || `<div class="empty">Il tuo fixer non trova niente con questi filtri.</div>`;
 }
 
 /* aggiunte/rimozioni */
@@ -400,14 +400,14 @@ function wire(){
     if(e.target.closest("#deckNew")){ const d = { id: newId(), name: "Nuovo mazzo", legends: [null, null, null], cards: [], notes: "" }; saveDeck(d); CUR = d; browse = "legends"; renderDeck(); return; }
     if(e.target.closest("#deckImport")){ promptImport(); return; }
     const st = e.target.closest("[data-starter]"); if(st){ const d = starterDeck(st.dataset.starter, st.dataset.name); saveDeck(d); CUR = d; browse = "cards"; renderDeck(); toast("Bozza creata: controlla le quantità"); return; }
-    const del = e.target.closest("[data-ddel]"); if(del){ e.stopPropagation(); const d = S.decks.find(x => x.id === del.dataset.ddel); if(d && confirm(`Eliminare «${d.name}»?`)){ deleteDeck(d.id); renderDeck(); toast("Mazzo eliminato"); } return; }
+    const del = e.target.closest("[data-ddel]"); if(del){ e.stopPropagation(); const d = S.decks.find(x => x.id === del.dataset.ddel); if(d && confirm(`Eliminare «${d.name}»?`)){ deleteDeck(d.id); renderDeck(); toast("Mazzo mandato al trash"); } return; }
     const r = e.target.closest("[data-deck]"); if(r){ browse = "cards"; openDeck(r.dataset.deck); }
   });
   ed.addEventListener("click", e => {
     if(e.target.closest("#deckBack")){ closeEditor(); return; }
     if(e.target.closest("#deckErrorsOk")){ delete CUR.importErrors; save(); renderEditor(); return; }
     if(e.target.closest("#deckCopy")){ const t = exportText(CUR); (navigator.clipboard?.writeText(t) || Promise.reject()).then(() => toast("Lista copiata negli appunti")).catch(() => prompt("Copia la lista:", t)); return; }
-    if(e.target.closest("#deckDup")){ const d = JSON.parse(JSON.stringify(CUR)); d.id = newId(); d.name += " (copia)"; saveDeck(d); CUR = d; renderEditor(); toast("Mazzo duplicato"); return; }
+    if(e.target.closest("#deckDup")){ const d = JSON.parse(JSON.stringify(CUR)); d.id = newId(); d.name += " (copia)"; saveDeck(d); CUR = d; renderEditor(); toast("Mazzo clonato"); return; }
     if(e.target.closest("#deckDel")){ if(confirm(`Eliminare «${CUR.name}»?`)){ deleteDeck(CUR.id); closeEditor(); } return; }
     if(e.target.closest("#deckPlay")){ location.hash = "#sim"; document.dispatchEvent(new CustomEvent("ncd:playdeck", { detail: CUR.id })); return; }
     const rm = e.target.closest("[data-lrm]"); if(rm){ e.stopPropagation(); CUR.legends[+rm.dataset.lrm] = null; save(); renderEditor(); return; }

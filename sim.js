@@ -36,7 +36,7 @@ function markDropZones(c){
 }
 /* avviso dentro la plancia (il toast globale non segue la rotazione) */
 function note(msg){ noteMsg = msg; clearTimeout(noteT); noteT = setTimeout(() => { noteMsg = ""; const n = $("#noteMsg"); if(n) n.remove(); }, 2600); render(); }
-const names = () => [S.profile.nick || "Tu", gmode === "bot" ? "Bot" : "Giocatore 2"];
+const names = () => [S.profile.nick || "Tu", gmode === "bot" ? "IA" : "Giocatore 2"];
 
 /* tutte le mosse passano da qui: in una partita online vengono anche inviate all'avversario */
 const online = () => gOnline && ON.T.row;
@@ -202,7 +202,7 @@ function onlineLobbyHTML(){
     ${act.length ? `<h4 class="frh">Partite in corso</h4><div class="frlist">${act.map(t => `<div class="frow2"><div class="nm"><b>${esc(opp(t) || "?")}</b><span>tavolo ${fmtCode(t.code)} · ${t.moves} mosse</span></div><button class="btn sm acc2" data-onlresume="${t.id}">${ON.T.row && ON.T.row.id === t.id && G && gOnline ? "Torna alla plancia" : "Riprendi"}</button></div>`).join("")}</div>` : ""}
     ${done.length ? `<h4 class="frh">Ultime partite</h4><div class="frlist">${done.map(t => `<div class="frow2"><div class="nm"><b>${esc(opp(t) || "?")}</b><span>${resultTxt(t)}</span></div></div>`).join("")}</div>` : ""}
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;align-items:center"><span class="chip">Online: ${rec.w || 0} vittorie · ${rec.l || 0} sconfitte · ${rec.d || 0} patte</span></div>
-    <p class="note" style="margin:10px 0 0">Si gioca con le regole del motore, come contro il bot. <b>Se chiudi l'app o resti senza rete per più di un minuto, la partita va all'avversario.</b> Dal menù ⋯ della plancia puoi proporre la patta, abbandonare o scrivere nella chat del tavolo.</p>
+    <p class="note" style="margin:10px 0 0">Si gioca con le regole del motore, come contro l'IA. <b>Se chiudi l'app o resti senza rete per più di un minuto, la partita va all'avversario.</b> Dal menù ⋯ della plancia puoi proporre la patta, abbandonare o scrivere nella chat del tavolo.</p>
   </div>`;
 }
 function onlineBadgeHTML(){
@@ -364,10 +364,10 @@ function render(){
     const cost = c.card.cost ?? 0, afford = canPay(M, cost);
     return `<div class="bc big${sel === c.uid ? " sel" : ""}" data-uid="${c.uid}" data-hand="1" title="${esc(c.card.dn)}"><img src="${thumbUrl(c.pid)}" alt=""><span class="co${afford ? "" : " no"}">${cost}</span>${c.card.eddiable ? `<span class="ed" title="Vendibile per 1 €$">€$</span>` : ""}</div>`;
   }).join("");
-  const pendingTxt = pm ? "" : G.pending ? (human[G.pending.player] ? `${G.players[G.pending.player].name} deve scegliere…` : gmode === "online" ? `${G.players[G.pending.player].name} sta decidendo…` : "il bot decide…") : "";
+  const pendingTxt = pm ? "" : G.pending ? (human[G.pending.player] ? `${G.players[G.pending.player].name} deve scegliere…` : gmode === "online" ? `${G.players[G.pending.player].name} sta decidendo…` : "l'IA decide…") : "";
   const payTxt = pm ? `<b style="color:var(--acc2)">Paga ${pm.ctx.cost} €$ (${pm.ctx.paid}/${pm.ctx.cost}): tocca un Eddie o una Leggenda</b>` : "";
   const waitMull = G.phase === "mulligan" && gmode === "online" && G.players[me()].mulliganed;
-  const status = G.winner != null ? `Fine: ${esc(G.reason)}` : waitMull ? `Mulligan: in attesa di ${esc(R.name)}` : myTurn ? "Il tuo turno" : human[G.active] || gmode === "online" ? `Turno di ${esc(G.players[G.active].name)}` : "Turno del bot…";
+  const status = G.winner != null ? `Fine: ${esc(G.reason)}` : waitMull ? `Mulligan: in attesa di ${esc(R.name)}` : myTurn ? "Il tuo turno" : human[G.active] || gmode === "online" ? `Turno di ${esc(G.players[G.active].name)}` : "Turno dell'IA…";
   const last = G.log.slice(-1)[0];
   // misura delle carte dall'altezza disponibile: 2 righe rivale + campo + pile + mano (1,15×) + barra e margini
   // altezza utile: senza i margini di sicurezza (su iPhone in orizzontale la barra della home toglie ~20px)
@@ -418,7 +418,7 @@ function render(){
     ${tutorialActive() ? tutorialBarHTML(G, me()) : ""}
     ${showLog ? `<div id="simLog"><div style="display:flex;justify-content:space-between;align-items:center"><b>Registro</b><button class="btn sm icon" id="bLogClose">✕</button></div>${G.log.slice(-80).map(e => `<div class="e ${e.kind}">${esc(e.text)}</div>`).join("")}</div>` : ""}
     ${mulliganPending() != null ? mulliganHTML() : pm ? "" : G.pending && human[G.pending.player] ? askHTML() : ""}
-    ${G.winner != null ? `<div class="winbox"><div class="box"><h2>${G.winner === -1 ? "PATTA" : G.winner === me() ? "VITTORIA" : gmode === "hot" ? "VINCE " + esc(G.players[G.winner].name).toUpperCase() : "SCONFITTA"}</h2><p>${esc(G.reason)}</p><p style="color:var(--mute)">${G.turn} turni</p><div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">${gmode === "online" ? `<button class="btn" id="bChat2">💬 Chat</button><button class="btn yel" id="bExit">Torna alla lobby</button>` : `<button class="btn yel" id="bAgain">Rivincita</button><button class="btn" id="bExit">Esci</button>`}</div></div></div>` : ""}
+    ${G.winner != null ? `<div class="winbox"><div class="box"><h2>${G.winner === -1 ? "PATTA" : G.winner === me() ? "VITTORIA" : gmode === "hot" ? "VINCE " + esc(G.players[G.winner].name).toUpperCase() : "SCONFITTA"}</h2><p class="wflav">${G.winner === -1 ? "Stavolta la città non è di nessuno." : G.winner === me() || gmode === "hot" ? "Night City ricorderà il tuo nome." : "Flatline. Rialzati, choom."}</p><p>${esc(G.reason)}</p><p style="color:var(--mute)">${G.turn} turni</p><div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">${gmode === "online" ? `<button class="btn" id="bChat2">💬 Chat</button><button class="btn yel" id="bExit">Torna alla lobby</button>` : `<button class="btn yel" id="bAgain">Rivincita</button><button class="btn" id="bExit">Esci</button>`}</div></div></div>` : ""}
     ${gmode === "online" ? drawOfferHTML() : ""}
     ${peekPid ? `<div id="peek">${peekInner(peekPid)}</div>` : ""}
     ${handoff ? `<div class="handoff"><h2>Passa il dispositivo a ${esc(G.players[G.active].name)}</h2><p>Il tuo rivale non guarda, promesso.</p><button class="btn yel" id="bHand">Sono pronto</button></div>` : ""}`;
@@ -595,7 +595,7 @@ function wire(){
     if(mode === "tutorial") mode = "bot"; renderSim(); if(d.format === "sealed"){ mode = "bot"; start(); } });
   root.addEventListener("click", e => { const z = e.target.closest(".pkg [data-zoom]"); if(z) openLens(imgUrl(z.dataset.zoom)); });
   wirePrerelease(root, id => { location.hash = "#deck"; openDeck(id); toast("Scegli 3 Leggende e almeno 30 carte, poi «Gioca»", 4000); });
-  root.addEventListener("click", e => { if(e.target.closest("#simTutorial")){ mode = "bot"; human = [true, false]; startTutorial(); start({ deck0: starterDeck("theheistretailstarterdeck", "Tutorial"), deck1: starterDeck("embracingpowerretailstarterdeck", "Bot") }); mode = "tutorial"; } });
+  root.addEventListener("click", e => { if(e.target.closest("#simTutorial")){ mode = "bot"; human = [true, false]; startTutorial(); start({ deck0: starterDeck("theheistretailstarterdeck", "Tutorial"), deck1: starterDeck("embracingpowerretailstarterdeck", "IA") }); mode = "tutorial"; } });
 
   const board = $("#board");
   // pressione lunga: zoom

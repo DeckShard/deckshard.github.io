@@ -232,7 +232,7 @@ function wire(root){
       setTimeout(() => URL.revokeObjectURL(a.href), 2000); return;
     }
     if(e.target.closest("#pfImport")){ $("#pfFile").click(); return; }
-    if(e.target.closest("#pfWipe")){ if(confirm(cloudState.user ? "Cancellare collezione, mazzi, profilo e record da questo dispositivo? Esci anche dall'account: i dati nel cloud restano." : "Cancellare collezione, mazzi, profilo e record da questo dispositivo?")){ safeWipe().then(() => { applyTheme(); renderSettings(); toast("Dati azzerati"); document.dispatchEvent(new CustomEvent("ncd:collection")); }); } }
+    if(e.target.closest("#pfWipe")){ if(confirm(cloudState.user ? "Cancellare collezione, mazzi, profilo e record da questo dispositivo? Esci anche dall'account: i dati nel cloud restano." : "Cancellare collezione, mazzi, profilo e record da questo dispositivo?")){ safeWipe().then(() => { applyTheme(); renderSettings(); toast("Memoria formattata: si riparte da zero"); document.dispatchEvent(new CustomEvent("ncd:collection")); }); } }
   });
   root.addEventListener("change", async e => {
     if(e.target.id !== "pfFile" || !e.target.files[0]) return;

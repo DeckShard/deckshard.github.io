@@ -379,7 +379,7 @@ ok(/\d+ colori su un massimo di 3|Troppi colori/.test(legalTxt2), "controllo dei
 await page.click("#deckPlay");
 await page.waitForSelector("#board:not([hidden])");
 await page.waitForSelector('[data-mull="keep"]');
-ok(await page.locator(".bz.rival .lbl").count() === 1 && (await page.locator(".bz.rival .lbl").textContent()).includes("Bot"), "partita sealed contro il bot avviata");
+ok(await page.locator(".bz.rival .lbl").count() === 1 && (await page.locator(".bz.rival .lbl").textContent()).includes("IA"), "partita sealed contro il bot avviata");
 await page.click('[data-mull="keep"]'); await page.waitForTimeout(300);
 for(let i = 0; i < 5 && await page.locator("#simAsk [data-ask]").count(); i++){ await page.click("#simAsk [data-ask]"); await page.waitForTimeout(200); }
 await page.click("#bMenu"); await page.click('.pop button:has-text("Esci")');

@@ -110,7 +110,7 @@ export function prereleaseSetupHTML(){
   const exps = expansions();
   return `<div class="card">
     <h3>Prerelease</h3>
-    <div class="sub">Apri un kit come quello del negozio (6 buste, 3 Leggende, promo) e costruisci un mazzo sealed da almeno 30 carte di massimo 3 colori; poi allenati contro il bot, che apre un kit a sua volta.</div>
+    <div class="sub">Apri un kit come quello del negozio (6 buste, 3 Leggende, promo) e costruisci un mazzo sealed da almeno 30 carte di massimo 3 colori; poi allenati contro l'IA, che apre un kit a sua volta.</div>
     <div class="field" style="margin-top:6px"><label>Espansione</label><select class="inp" id="prSet">${exps.map(e => `<option value="${e.code}">${esc(e.name)}</option>`).join("")}</select></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button class="btn acc2" id="prOpen">Apri il kit</button>${S.decks.some(d => d.format === "sealed") ? `<span class="chip">${S.decks.filter(d => d.format === "sealed").length} mazzi sealed nel deckbuilder</span>` : ""}</div>
     <div id="prKit"></div>

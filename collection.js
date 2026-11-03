@@ -45,7 +45,7 @@ export function renderCollection(){
   list.sort((a, b) => pos.get(a.c.id) - pos.get(b.c.id) || a.c.prints.indexOf(a.show) - b.c.prints.indexOf(b.show));
   $("#collCount").textContent = `${list.length} ${unit}`;
   const box = $("#collRows");
-  if(!list.length){ box.className = "rows"; box.innerHTML = `<div class="empty">Nessuna carta con questi filtri.</div>`; return; }
+  if(!list.length){ box.className = "rows"; box.innerHTML = `<div class="empty">Il tuo fixer non trova niente con questi filtri.</div>`; return; }
   if((S.settings.view || "grid") === "grid"){
     box.className = "grid";
     box.innerHTML = list.map(e => tileHTML(e.c, e.show.id, { dim: true, qty: qtyOfEntry(e), sub: e.sub })).join("");

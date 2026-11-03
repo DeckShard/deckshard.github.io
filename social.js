@@ -63,7 +63,7 @@ export function friendsHTML(){
     ${searchRes ? `<div class="frlist">${searchRes.length ? searchRes.map(f => { const known = fr.find(x => x.id === f.id); return row(f, known ? `<span class="chip">${known.status === "accepted" ? "amico" : "richiesta inviata"}</span>` : `<button class="btn sm acc2" data-fadd="${esc(f.nick)}">Aggiungi</button>`); }).join("") : `<div class="sub">Nessun giocatore con questo nick.</div>`}</div>` : ""}
     ${incoming.length ? `<h4 class="frh">Richieste ricevute</h4><div class="frlist">${incoming.map(f => row(f, `<button class="btn sm yel" data-facc="${f.id}">Accetta</button><button class="btn sm" data-frej="${f.id}">Rifiuta</button>`)).join("")}</div>` : ""}
     ${acc.length ? `<div class="frlist">${acc.map(f => row(f, `${f.unread ? `<span class="badge">${f.unread}</span>` : ""}<button class="btn sm acc2" data-fduel="${f.id}" title="Sfida a una partita online">Sfida</button><button class="btn sm" data-fchat="${f.id}">Chat</button><button class="btn sm icon" data-fmenu="${f.id}" aria-label="Altro">⋯</button>`)).join("")}</div>`
-      : `<div class="sub" style="margin-top:8px">Ancora nessun amico: cerca il nick di chi conosci e mandagli una richiesta.</div>`}
+      : `<div class="sub" style="margin-top:8px">La tua crew è ancora vuota: cerca il nick di chi conosci e mandagli una richiesta.</div>`}
     ${outgoing.length ? `<h4 class="frh">Richieste inviate</h4><div class="frlist">${outgoing.map(f => row(f, `<span class="chip">in attesa</span><button class="btn sm" data-fcancel="${f.id}">Annulla</button>`)).join("")}</div>` : ""}
   </div>`;
 }
@@ -94,7 +94,7 @@ function renderChat(scroll){
   }
   $("#chOn").textContent = on ? "in linea" : "non in linea";
   const box = $("#chMsgs"), atEnd = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
-  box.innerHTML = chatMsgs.length ? chatMsgs.map(m => `<div class="msg${m.sender === me ? " me" : ""}" data-mid="${m.id}"><span>${esc(m.body)}</span><small>${when(m.created_at)}${m.sender === me && m.read_at ? " · letto" : ""}</small></div>`).join("") : `<div class="sub" style="text-align:center;margin:auto">Nessun messaggio: scrivi tu per primo.</div>`;
+  box.innerHTML = chatMsgs.length ? chatMsgs.map(m => `<div class="msg${m.sender === me ? " me" : ""}" data-mid="${m.id}"><span>${esc(m.body)}</span><small>${when(m.created_at)}${m.sender === me && m.read_at ? " · letto" : ""}</small></div>`).join("") : `<div class="sub" style="text-align:center;margin:auto">Linea silenziosa: scrivi tu per primo.</div>`;
   if(scroll !== false && (scroll || atEnd || chatMsgs.length && chatMsgs[chatMsgs.length - 1].sender === me)) box.scrollTop = box.scrollHeight;
 }
 document.addEventListener("ncd:message", async e => {
@@ -138,14 +138,14 @@ export function wireSocial(root, redraw){
     const t = e.target, id = s => t.closest(s);
     try{
       if(id("#acGoogle")){ await cloud.signInGoogle(); return; }
-      if(id("#acNickSave")){ await cloud.setNick($("#acNick").value.trim()); toast("Nick salvato"); redraw(); return; }
+      if(id("#acNickSave")){ await cloud.setNick($("#acNick").value.trim()); toast("Nuovo handle registrato"); redraw(); return; }
       const sh = id("#acShow button"); if(sh){ await cloud.setProfileFlags({ show_collection: sh.dataset.v === "1" }); return; }
       if(id("#acSync")){ await cloud.syncNow(); toast("Sincronizzato"); return; }
       if(id("#acOut")){ if(confirm("Uscire dall'account? I dati restano anche su questo dispositivo.")){ await cloud.signOut(); } return; }
       if(id("#acDelete")){ if(confirm("Eliminare l'account? Profilo, amici, messaggi e dati salvati nel cloud vengono cancellati per sempre. Quello che c'è su questo dispositivo resta.")){ await cloud.deleteAccount(); toast("Account eliminato"); } return; }
       if(id("#frSearch")){ searchQ = $("#frQ").value.trim(); if(searchQ.length < 2){ toast("Scrivi almeno 2 lettere"); return; } searchRes = await cloud.searchPlayers(searchQ); redraw(); return; }
       const add = id("[data-fadd]"); if(add){ const r = await cloud.friendRequest(add.dataset.fadd); toast({ sent: "Richiesta inviata", accepted: "Siete amici!", already: "Siete già amici", not_found: "Giocatore non trovato", self: "Sei tu!" }[r] || r); redraw(); return; }
-      const ac = id("[data-facc]"); if(ac){ await cloud.friendRespond(ac.dataset.facc, true); toast("Richiesta accettata"); return; }
+      const ac = id("[data-facc]"); if(ac){ await cloud.friendRespond(ac.dataset.facc, true); toast("Un nuovo choom nella tua crew"); return; }
       const rj = id("[data-frej]"); if(rj){ await cloud.friendRespond(rj.dataset.frej, false); return; }
       const cn = id("[data-fcancel]"); if(cn){ await cloud.friendRemove(cn.dataset.fcancel); return; }
       const ch = id("[data-fchat]"); if(ch){ openChat(ch.dataset.fchat); return; }
@@ -164,7 +164,7 @@ async function friendMenu(id){
   const acts = [];
   if(f.show_collection) acts.push(["Guarda la collezione", async () => { const coll = await cloud.friendCollection(id); document.dispatchEvent(new CustomEvent("ncd:friendcoll", { detail: { nick: f.nick, coll: coll || {} } })); }]);
   acts.push(["Rimuovi dagli amici", async () => { if(confirm(`Rimuovere ${f.nick} dagli amici?`)) await cloud.friendRemove(id); }, "Non sarete più amici: potrete richiedere l'amicizia in futuro."]);
-  acts.push(["Blocca", async () => { if(confirm(`Bloccare ${f.nick}? Non potrà più trovarti, scriverti né chiederti l'amicizia.`)){ await cloud.blockUser(id); toast("Giocatore bloccato"); } }, "Toglie l'amicizia; non potrà più trovarti nella ricerca, scriverti, sfidarti né chiederti l'amicizia."]);
+  acts.push(["Blocca", async () => { if(confirm(`Bloccare ${f.nick}? Non potrà più trovarti, scriverti né chiederti l'amicizia.`)){ await cloud.blockUser(id); toast("Bloccato: per te è fuori dalla Rete"); } }, "Toglie l'amicizia; non potrà più trovarti nella ricerca, scriverti, sfidarti né chiederti l'amicizia."]);
   acts.push(["Segnala", async () => { const why = prompt(`Perché segnali ${f.nick}?`); if(why != null){ await cloud.reportUser(id, null, why); toast("Segnalazione inviata"); } }, "Manda una segnalazione privata a chi gestisce l'app (per comportamenti scorretti): lui non lo saprà."]);
   const el = document.createElement("div"); el.id = "mergeAsk";
   // si chiude toccando fuori dal riquadro
@@ -192,7 +192,7 @@ export function wireFeedback(root, version){
     if(!e.target.closest("#fbSend")) return;
     const body = $("#fbBody").value.trim(); if(body.length < 3){ toast("Scrivi qualche parola in più"); return; }
     const btn = e.target.closest("#fbSend"); btn.disabled = true;
-    try{ await cloud.sendFeedback({ kind: fbKind, body, contact: $("#fbContact").value.trim(), version, lang: S.profile.lang || "it" }); $("#fbBody").value = ""; $("#fbContact").value = ""; toast("Grazie! Feedback inviato"); }
+    try{ await cloud.sendFeedback({ kind: fbKind, body, contact: $("#fbContact").value.trim(), version, lang: S.profile.lang || "it" }); $("#fbBody").value = ""; $("#fbContact").value = ""; toast("Messaggio ricevuto, choom. Grazie!"); }
     catch(err){ toast("Invio non riuscito: " + (err.message || err), 4500); }
     btn.disabled = false;
   });

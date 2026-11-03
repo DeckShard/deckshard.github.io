@@ -497,9 +497,13 @@ nav.tabs button.homebtn{justify-content:center}
   background:radial-gradient(60% 45% at 50% 42%, color-mix(in srgb,var(--accFill) 12%,transparent), transparent 75%)}
 .home::before{content:"";position:absolute;inset:0;pointer-events:none;opacity:.35;
   background:repeating-linear-gradient(0deg, transparent 0 3px, color-mix(in srgb,var(--acc) 7%,transparent) 3px 4px)}
-.hav{position:absolute;top:14px;right:14px;z-index:2;background:none;border:0;padding:0;cursor:pointer}
+.hav{position:absolute;top:14px;right:14px;z-index:2;display:flex;align-items:center;gap:10px;background:color-mix(in srgb,var(--surf) 70%,transparent);border:1px solid var(--line2);border-radius:2px;padding:5px 5px 5px 12px;cursor:pointer;color:var(--ink);font:inherit;max-width:calc(100% - 28px)}
+.hid{display:flex;flex-direction:column;align-items:flex-end;text-align:right;min-width:0}
+.hid b{font-size:15px;letter-spacing:.03em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46vw}
+.hid span{font-size:11.5px;color:var(--mute);letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46vw}
+.havw{position:relative;display:block;flex:0 0 auto}
 .havatar{width:52px;height:52px;border-radius:4px;clip-path:polygon(0 0,100% 0,100% 80%,80% 100%,0 100%);border:2px solid var(--acc);background-size:cover;background-color:var(--surf2);box-shadow:var(--glow)}
-.hav .nbadge{position:absolute;top:-6px;right:-6px}
+.hav .nbadge{position:absolute;top:-8px;right:-8px}
 .hcenter{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;max-width:420px;width:100%}
 .emblem{width:min(46vmin,210px);height:auto;color:var(--acc);fill:none;stroke:currentColor;stroke-width:3.2;stroke-linejoin:round;stroke-linecap:round;filter:drop-shadow(0 0 14px color-mix(in srgb,var(--accFill) 45%,transparent));margin-bottom:10px;animation:hfade .9s ease-out both}
 .emblem .thin{stroke-width:1.6;opacity:.75}
@@ -514,3 +518,10 @@ nav.tabs button.homebtn{justify-content:center}
 .hshort b{font-size:15px;letter-spacing:.03em}.hshort span{font-size:12.5px;color:var(--mute)}
 @keyframes hfade{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:none}}
 @media(prefers-reduced-motion:reduce){ .emblem{animation:none} }
+
+/* pulsante Home a colori invertiti: risalta al centro della barra */
+nav.tabs button.homebtn svg{background:var(--navAcc);color:var(--navBg);width:46px;height:46px;padding:9px;border-radius:3px;clip-path:polygon(0 0,100% 0,100% 78%,78% 100%,0 100%);stroke-width:2.1;margin-top:-6px}
+nav.tabs button.homebtn[aria-selected="true"] svg{box-shadow:0 0 0 2px var(--navBg),0 0 14px color-mix(in srgb,var(--navAcc) 70%,transparent);filter:drop-shadow(0 0 6px color-mix(in srgb,var(--navAcc) 60%,transparent))}
+nav.tabs button.homebtn[aria-selected="true"]::after{display:none}
+nav.tabs button.homebtn:not([aria-selected="true"]) svg{opacity:.85}
+@media(min-width:900px){ nav.tabs button.homebtn svg{width:30px;height:30px;padding:6px;margin-top:0} nav.tabs button.homebtn{gap:9px} }

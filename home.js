@@ -13,6 +13,19 @@ import { simInProgress, resumeSim, showOnline } from "./sim.js";
 /* ------------------------------------------------------------ emblemi (viewBox 120×120, tratto = colore d'accento) */
 const spiral = (() => { let d = ""; for(let i = 0; i <= 200; i++){ const a = i / 200 * Math.PI * 6.2, r = 4 + i / 200 * 42; d += (i ? "L" : "M") + (60 + r * Math.cos(a)).toFixed(1) + " " + (60 + r * Math.sin(a)).toFixed(1); } return d; })();
 const rose = (() => { let d = ""; for(let i = 0; i < 16; i++){ const a = i / 16 * Math.PI * 2 - Math.PI / 2, r = i % 2 ? 12 : (i % 4 ? 30 : 46); d += (i ? "L" : "M") + (60 + r * Math.cos(a)).toFixed(1) + " " + (60 + r * Math.sin(a)).toFixed(1); } return d + "Z"; })();
+/* artigliata: quattro squarci affusolati e leggermente curvi, sfalsati come i graffi di una zampa */
+const claw = (x0, y0, x1, y1, bend, w) => {
+  const L = [], R = [], cx = (x0 + x1) / 2 + bend, cy = (y0 + y1) / 2 - bend * .4;
+  for(let i = 0; i <= 24; i++){
+    const t = i / 24, u = 1 - t;
+    const x = u * u * x0 + 2 * u * t * cx + t * t * x1, y = u * u * y0 + 2 * u * t * cy + t * t * y1;
+    const dx = 2 * u * (cx - x0) + 2 * t * (x1 - cx), dy = 2 * u * (cy - y0) + 2 * t * (y1 - cy), n = Math.hypot(dx, dy) || 1;
+    const half = w * Math.pow(Math.sin(Math.PI * Math.min(1, t * 1.15)), .7) / 2 * (t > .85 ? (1 - t) / .15 : 1);
+    L.push([x - dy / n * half, y + dx / n * half]); R.push([x + dy / n * half, y - dx / n * half]);
+  }
+  return "M" + [...L, ...R.reverse()].map(p => p[0].toFixed(1) + " " + p[1].toFixed(1)).join("L") + "Z";
+};
+const claws = [claw(62, 14, 20, 86, 14, 6.5), claw(80, 12, 30, 104, 16, 8.5), claw(98, 20, 48, 110, 16, 8.5), claw(108, 40, 68, 106, 13, 6.5)].map(d => `<path d="${d}" class="fill"/>`).join("");
 const EMBLEMS = {
   shard: `<path d="M60 8 L94 44 L72 112 L34 66 Z"/><path d="M60 8 L54 60 L72 112 M34 66 L54 60 L94 44" class="thin"/><path d="M98 70 L110 82 L100 96" class="thin"/>`,
   seal: `<rect x="16" y="16" width="88" height="88" rx="4"/><rect x="24" y="24" width="72" height="72" rx="2" class="thin"/><circle cx="60" cy="60" r="24"/><path d="M46 52h28M42 60h36M46 68h28" class="thin"/>`,
@@ -22,7 +35,7 @@ const EMBLEMS = {
   compass: `<circle cx="60" cy="60" r="50" class="thin"/><path d="${rose}"/><circle cx="60" cy="60" r="6" class="fill"/>`,
   crown: `<path d="M14 92 L22 30 L42 58 L60 16 L78 58 L98 30 L106 92 Z"/><path d="M14 104 H106" /><circle cx="60" cy="74" r="8" class="fill"/>`,
   spiral: `<path d="${spiral}" class="thin"/><circle cx="60" cy="60" r="52"/>`,
-  claws: `<circle cx="60" cy="60" r="50"/><path d="M38 24 C30 52 34 80 50 100 M58 20 C52 50 56 78 70 98 M78 24 C76 50 80 74 92 90" class="slash"/>`,
+  claws: `<path d="M60 8 A52 52 0 0 0 12 74 M108 46 A52 52 0 0 1 64 112" class="thin"/>${claws}`,
   chevrons: `<path d="M60 8 L104 24 V60 C104 86 86 104 60 112 C34 104 16 86 16 60 V24 Z"/><path d="M36 46 L60 60 L84 46 M36 64 L60 78 L84 64 M36 82 L60 96 L84 82" class="thin"/>`,
   pulse: `<path d="M46 14 H74 V46 H106 V74 H74 V106 H46 V74 H14 V46 H46 Z"/><path d="M8 62 H40 L48 46 L58 80 L66 54 L72 62 H112" class="thin"/>`,
   hourglass: `<circle cx="60" cy="60" r="50" class="thin"/><path d="M34 22 H86 M34 98 H86 M38 22 C38 48 60 52 60 60 C60 68 38 72 38 98 M82 22 C82 48 60 52 60 60 C60 68 82 72 82 98"/><path d="M48 92 C52 80 68 80 72 92 Z" class="fill"/>`,
@@ -50,7 +63,9 @@ export function renderHome(){
     social ? `<button class="hshort" data-h="social"><b>${[cloud.unread ? (cloud.unread === 1 ? "1 messaggio" : cloud.unread + " messaggi") : "", cloud.requests ? (cloud.requests === 1 ? "1 richiesta di amicizia" : cloud.requests + " richieste di amicizia") : ""].filter(Boolean).join(" · ")}</b><span>Apri il Social</span></button>` : ""
   ].filter(Boolean).slice(0, 2);
   root.innerHTML = `<div class="home">
-    <button class="hav" id="homeSocial" aria-label="Social e profilo" title="Social e profilo">${avatarHTML(p, "havatar")}${social ? `<span class="nbadge">${social > 9 ? "9+" : social}</span>` : ""}</button>
+    <button class="hav" id="homeSocial" aria-label="Social e profilo" title="Social e profilo">
+      <span class="hid"><b>${esc(nick || "Choom senza nome")}</b><span>${esc([p.lifepath, p.faction].filter(Boolean).join(" · ") || (cloud.user ? "Nessuna affiliazione" : "Ospite · entra nel Social"))}</span></span>
+      <span class="havw">${avatarHTML(p, "havatar")}${social ? `<span class="nbadge">${social > 9 ? "9+" : social}</span>` : ""}</span></button>
     <div class="hcenter">
       ${emblemSVG(p.accent || "holophone")}
       <div class="hname">DeckShard</div>
