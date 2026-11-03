@@ -80,11 +80,37 @@ function snapBoard(board){
   if(!G || board.hidden || !animMs()) return null;
   const m = new Map();
   for(const el of board.querySelectorAll("[data-uid]")){ const r = localRect(board, el); if(!r) continue; const img = el.querySelector(":scope > img"); m.set(+el.dataset.uid, { ...r, src: img ? img.getAttribute("src") : "", spent: el.classList.contains("spent"), back: el.classList.contains("back"), t: getComputedStyle(el).transform }); }
-  return { m, eddies: (animBase || {}).eddies || G.players.map(P => P.eddies.length), trash: (animBase || {}).trash || G.players.map(P => P.trash.length) };
+  const g = new Map();
+  for(const el of board.querySelectorAll(".die[data-gig]")){ const uid = +el.dataset.gig; if(!uid) continue; const r = localRect(board, el); if(r) g.set(uid, r); }
+  return { m, g, eddies: (animBase || {}).eddies || G.players.map(P => P.eddies.length), trash: (animBase || {}).trash || G.players.map(P => P.trash.length) };
+}
+/* tiro di un dado: disturbo con parametri casuali e cifre che scorrono, poi il lampo; il d20 fa girare le facce
+   e apre un anello. Lo stato sta in liveDice, così un ridisegno a metà tiro lo ritrova sull'elemento nuovo. */
+const liveDice = new Map();   // uid → { until, sides, final, vars }
+function rollDie(el, sides, finalValue, ms){
+  const uid = +el.dataset.gig, dur = Math.max(320, ms * (sides === 20 ? 1.6 : 1.1));
+  const vars = { "--gx1": (Math.random() * 6 - 3).toFixed(1) + "px", "--gx2": (Math.random() * 6 - 3).toFixed(1) + "px", "--gs1": (Math.random() * 16 - 8).toFixed(1) + "deg", "--gs2": (Math.random() * 16 - 8).toFixed(1) + "deg", "--gy": Math.round(20 + Math.random() * 55) + "%" };
+  liveDice.set(uid, { until: performance.now() + dur, sides, final: finalValue, vars, next: 0 });
+  applyDice(el.closest("#board") || $("#board"));
+}
+function applyDice(board){
+  const now = performance.now();
+  for(const [uid, d] of liveDice){
+    const el = board.querySelector(`.die[data-gig="${uid}"]`); if(!el){ if(now > d.until + 1000) liveDice.delete(uid); continue; }
+    if(now < d.until){
+      if(!el.classList.contains("rolling")){ el.classList.add("rolling"); for(const [k, v] of Object.entries(d.vars)) el.style.setProperty(k, v); }
+      if(!d.timer) d.timer = setInterval(() => {
+        const e = board.querySelector(`.die[data-gig="${uid}"]`), t = performance.now();
+        if(!e || t >= d.until){ clearInterval(d.timer); d.timer = null; if(e){ e.classList.remove("rolling"); e.querySelector("b").textContent = d.final; e.classList.add("landed"); setTimeout(() => e.classList.remove("landed"), 900); } liveDice.delete(uid); return; }
+        if(t >= d.next){ d.next = t + 40 + Math.random() * 50; e.querySelector("b").textContent = 1 + Math.floor(Math.random() * d.sides); for(const k of Object.keys(d.vars)){ d.vars[k] = k === "--gy" ? Math.round(15 + Math.random() * 65) + "%" : k.startsWith("--gs") ? (Math.random() * 18 - 9).toFixed(1) + "deg" : (Math.random() * 7 - 3.5).toFixed(1) + "px"; e.style.setProperty(k, d.vars[k]); } }
+      }, 30);
+    }
+  }
 }
 function animateBoard(board, prev){
   board.appendChild(flyLayer);
   const ms = animMs(); animWho = null; const fresh = new Set();
+  applyDice(board);
   if(!ms || !prev || !G){ reapplyAnims(board, fresh); return; }
   const ease = "cubic-bezier(.2,.7,.2,1)", seen = new Set();
   const anchor = (kind, pid) => { const el = board.querySelector(`[data-${kind}="${pid}"]`); return el ? localRect(board, el) : null; };
@@ -108,6 +134,14 @@ function animateBoard(board, prev){
     fresh.add(uid); animEl(el, [{ transform: `translate(${from.cx - now.cx}px, ${from.cy - now.cy}px) scale(${Math.min(1, from.w / now.w)})`, opacity: .2 }, { transform: endT, opacity: 1 }], { duration: ms, easing: ease });
   }
   reapplyAnims(board, fresh);
+  // dadi: un Gig nuovo è appena stato tirato; uno che cambia fila è stato rubato
+  for(const el of board.querySelectorAll(".die[data-gig]")){
+    const uid = +el.dataset.gig; if(!uid) continue; const now = localRect(board, el); if(!now) continue;
+    const was = prev.g.get(uid);
+    if(!was){ const owner = G.players.find(P => P.gigs.some(x => x.uid === uid)), gig = owner && owner.gigs.find(x => x.uid === uid); if(gig) rollDie(el, gig.sides, gig.value, ms); continue; }
+    const dx = was.cx - now.cx, dy = was.cy - now.cy; if(Math.abs(dx) < 1 && Math.abs(dy) < 1) continue;
+    el.animate([{ transform: `translate(${dx}px, ${dy}px) scale(1.3)`, filter: "drop-shadow(0 0 10px var(--c))" }, { transform: "none" }], { duration: ms * 1.4, easing: ease });
+  }
   // copie volanti
   const main = board.querySelector(".bmain") || board, mainR = localRect(board, main) || { cx: board.clientWidth / 2, cy: board.clientHeight / 2 };
   const fly = (from, to, src, kind) => {
@@ -575,7 +609,17 @@ function legendHTML(l, mine){
   if(!l.faceUp) return `<div class="bc back${l.spent ? " spent" : ""}${cls}" data-uid="${l.uid}" data-legend="1" data-lo="${lo}">?</div>`;
   return cardHTML(l, cls, "").replace('class="bc ', 'class="bc leg ').replace(`data-uid="${l.uid}"`, `data-uid="${l.uid}" data-legend="1" data-lo="${lo}"`);
 }
-const dieHTML = (g, cls = "") => `<span class="die d${g.sides} ${cls}" data-gig="${g.uid || ""}"><small>d${g.sides}</small>${g.value ?? ""}</span>`;
+/* dadi olografici: contorno al neon con gli spigoli interni (forma vera del poliedro), cifra, etichetta a chip */
+const DIE_SHAPES = {
+  4: ["M50 6 L94 90 L6 90 Z", "M50 6 L50 90 M6 90 L50 40 L94 90"],
+  6: ["M14 14 H86 V86 H14 Z", "M26 26 H74 V74 H26 Z"],
+  8: ["M50 4 L96 50 L50 96 L4 50 Z", "M4 50 H96 M50 4 L50 96"],
+  10: ["M50 2 L98 50 L50 98 L2 50 Z", "M2 50 L24 48 L50 2 L76 48 L98 50 M24 48 L50 60 L76 48 M50 60 L50 98"],
+  12: ["M50 4 L94 36 L78 92 H22 L6 36 Z", "M50 4 L50 24 M94 36 L72 42 M78 92 L64 76 M22 92 L36 76 M6 36 L28 42 M50 24 L72 42 L64 76 L36 76 L28 42 Z"],
+  20: ["M50 4 L92 27 L92 73 L50 96 L8 73 L8 27 Z", "M50 4 L28 60 L72 60 Z M28 60 L8 73 M72 60 L92 73 M28 60 L8 27 M72 60 L92 27 M50 4 L8 27 M50 4 L92 27 M50 96 L28 60 M50 96 L72 60"]
+};
+export const dieSVG = sides => { const [o, i] = DIE_SHAPES[sides] || DIE_SHAPES[6]; return `<svg viewBox="0 0 100 100" aria-hidden="true"><path class="fill" d="${o}"/><path class="in" d="${i}"/><path class="out" d="${o}"/></svg>`; };
+const dieHTML = (g, cls = "") => `<span class="die d${g.sides} ${cls}" data-gig="${g.uid || ""}" title="d${g.sides}${g.value != null ? " = " + g.value : " (fixer: non ancora tirato)"}">${dieSVG(g.sides)}<b>${g.value ?? ""}</b><small>d${g.sides}</small></span>`;
 
 function render(){
   if(!G) return;
@@ -678,7 +722,7 @@ function askHTML(){
   if((p.kind === "pickcard" || p.kind === "discard") && p.options.some(o => o.c && o.c.pid)) return pickerHTML(p, P, titles[p.kind]);
   const srcLine = p.ctx && p.ctx.src && p.kind !== "die" && p.kind !== "block" && p.kind !== "steal" ? `<div class="sub" style="margin:-4px 0 8px"><b>${esc(p.ctx.src)}</b>${p.ctx.text ? ` — ${esc(p.ctx.text)}` : ""}</div>` : "";
   return `<div id="simAsk"><div class="box"><h3>${titles[p.kind] || "Scegli"}</h3>${srcLine}${ctx}<div class="opts">${p.options.map((o, i) => {
-    const pid = o.unit?.pid || o.c?.pid || o.g?.pid; return `<button class="btn${pid ? " card-opt" : ""}" data-ask="${i}"${o.disabled ? " disabled" : ""}>${pid ? `<img src="${thumbUrl(pid)}" alt="">` : ""}${esc(o.label)}</button>`; }).join("")}</div></div></div>`;
+    const pid = o.unit?.pid || o.c?.pid || o.g?.pid; return `<button class="btn${pid ? " card-opt" : ""}${p.kind === "die" && o.sides ? " die-opt" : ""}" data-ask="${i}"${o.disabled ? " disabled" : ""}>${pid ? `<img src="${thumbUrl(pid)}" alt="">` : ""}${p.kind === "die" && o.sides ? `<span class="die d${o.sides}">${dieSVG(o.sides)}<small>d${o.sides}</small></span>` : esc(o.label)}</button>`; }).join("")}</div></div></div>`;
 }
 /* scelta tra carte (ricerca nel mazzo, trash, recupero, scarto): le carte si vedono grandi, con il testo
    della carta che produce l'effetto e cosa si può fare. Tocca una carta per sceglierla (🔍 o pressione

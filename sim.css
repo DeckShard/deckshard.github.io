@@ -61,11 +61,36 @@
 .stack.ed.lo{opacity:.75}
 
 /* dadi */
-.dice{display:flex;gap:4px;flex-wrap:wrap;align-items:center;min-height:26px}
-.die{display:inline-flex;align-items:center;gap:3px;padding:2px 6px;border-radius:7px;font-weight:800;font-size:12px;background:var(--surf2);border:1px solid var(--line2);cursor:pointer;line-height:1.2}
-.die small{font-weight:600;color:var(--mute);font-size:10px}
-.die.d4{border-color:#2b78d6}.die.d6{border-color:#2f9e4f}.die.d8{border-color:#e6c200}.die.d10{border-color:#f28c28}.die.d12{border-color:#d8323c}.die.d20{border-color:#9c1d8f}
-.die.fx{opacity:.55;border-style:dashed;cursor:default}
+.dice{display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end;min-height:26px}
+/* dadi olografici: contorno al neon, spigoli interni, cifra sopra, etichetta a chip sotto (--dw = larghezza) */
+.die{--c:#00e5f2;--dw:30px;position:relative;display:inline-grid;place-items:center;width:var(--dw);height:calc(var(--dw) * 1.18);margin-bottom:calc(var(--dw) * .18);cursor:pointer;filter:drop-shadow(0 0 calc(var(--dw) * .12) color-mix(in srgb,var(--c) 65%,transparent));line-height:1}
+.die svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.die svg path{fill:none;stroke:var(--c);stroke-linejoin:round;vector-effect:non-scaling-stroke}
+.die svg .out{stroke-width:2} .die svg .in{stroke-width:1;opacity:.55} .die svg .fill{fill:color-mix(in srgb,var(--c) 14%,transparent);stroke:none}
+.die b{position:relative;font:700 calc(var(--dw) * .42) var(--display);color:#fff;text-shadow:0 0 calc(var(--dw) * .15) var(--c),0 0 2px #fff;letter-spacing:-.02em;margin-top:calc(var(--dw) * -.1)}
+.die.d10 b{margin-top:calc(var(--dw) * -.3);font-size:calc(var(--dw) * .36)}
+.die small{position:absolute;left:50%;bottom:calc(var(--dw) * -.16);transform:translateX(-50%);font:600 calc(var(--dw) * .19) var(--display);letter-spacing:.08em;color:#120a0b;background:var(--c);padding:0 calc(var(--dw) * .1);clip-path:polygon(0 0,100% 0,100% 70%,85% 100%,0 100%);white-space:nowrap}
+.die.d4{--c:#4fa3ff}.die.d6{--c:#39ff9a}.die.d8{--c:#fcee0a}.die.d10{--c:#ff7a00}.die.d12{--c:#ff2e55}.die.d20{--c:#c45cff}
+html[data-theme="light"] .die{--c:#1f6fd6}html[data-theme="light"] .die.d6{--c:#149a52}html[data-theme="light"] .die.d8{--c:#b89b00}html[data-theme="light"] .die.d10{--c:#d95f00}html[data-theme="light"] .die.d12{--c:#d0193f}html[data-theme="light"] .die.d20{--c:#8a2fd6}
+html[data-theme="light"] .die b{color:#1a1012;text-shadow:none} html[data-theme="light"] .die small{color:#fff}
+.die.fx{opacity:.42;filter:none;cursor:default}.die.fx svg .out{stroke-dasharray:5 4}.die.fx svg .fill{display:none}.die.fx small{background:none;color:var(--c);border:1px solid var(--c);clip-path:none}
+.dice .cred{align-self:center;margin-bottom:calc(var(--dw,30px) * .18)}
+/* scelta del dado dal fixer: pulsanti con l'icona */
+#simAsk .btn.die-opt{padding:8px 14px 12px}#simAsk .btn.die-opt .die{--dw:38px;cursor:inherit}
+/* tiro: disturbo (parametri casuali impostati da JS), poi lampo con le staffe agli angoli; il d20 ruota le sue facce */
+.die.rolling{animation:dieGlitch .09s steps(2) infinite}
+.die.rolling b{font-family:var(--mono)}
+.die.rolling::after{content:"";position:absolute;left:-12%;right:-12%;top:var(--gy,40%);height:2px;background:#fff;opacity:.8;mix-blend-mode:screen}
+@keyframes dieGlitch{0%{transform:translate(var(--gx1,2px),0) skewX(var(--gs1,-8deg))}50%{transform:translate(var(--gx2,-2px),1px) skewX(var(--gs2,6deg))}100%{transform:translate(0,-1px) skewX(0)}}
+.die.landed{animation:dieLand .55s ease-out}
+.die.landed::before{content:"";position:absolute;inset:-18%;border:1px solid var(--c);opacity:0;animation:dieBrackets .55s ease-out;clip-path:polygon(0 0,22% 0,22% 2px,2px 2px,2px 22%,0 22%,0 100%,22% 100%,22% calc(100% - 2px),2px calc(100% - 2px),2px 78%,0 78%,0 0,100% 0,100% 22%,calc(100% - 2px) 22%,calc(100% - 2px) 2px,78% 2px,78% 0,100% 0,100% 100%,78% 100%,78% calc(100% - 2px),calc(100% - 2px) calc(100% - 2px),calc(100% - 2px) 78%,100% 78%)}
+@keyframes dieLand{0%{filter:drop-shadow(0 0 2px #fff) drop-shadow(0 0 calc(var(--dw) * .5) var(--c));transform:scale(1.25)}60%{transform:scale(.96)}100%{filter:drop-shadow(0 0 calc(var(--dw) * .12) color-mix(in srgb,var(--c) 65%,transparent));transform:none}}
+@keyframes dieBrackets{0%{opacity:.9;transform:scale(1.4)}100%{opacity:0;transform:scale(1)}}
+.die.d20.rolling svg .in{stroke-dasharray:14 30;animation:dieFaces .5s linear infinite;opacity:1;stroke-width:1.6}
+@keyframes dieFaces{to{stroke-dashoffset:-44}}
+.die.d20.landed::after{content:"";position:absolute;inset:0;border-radius:50%;border:2px solid var(--c);opacity:0;animation:dieRing .8s ease-out}
+@keyframes dieRing{0%{opacity:.9;transform:scale(.6)}100%{opacity:0;transform:scale(2.2)}}
+html[data-motion="reduce"] .die.rolling,html[data-motion="reduce"] .die.landed,html[data-motion="reduce"] .die.landed::before,html[data-motion="reduce"] .die.landed::after,html[data-motion="reduce"] .die.d20.rolling svg .in{animation:none}
 .cred{font-weight:800;font-size:13px;margin-left:4px;white-space:nowrap}
 
 /* anteprima da pressione lunga: alta quanto la plancia meno un margine */
@@ -204,8 +229,8 @@
    --bz (calcolata da sim.js) è 1 sui telefoni e cresce con la misura delle carte: tutto in proporzione */
 #board{--bz:1;font-size:calc(12px * var(--bz))}
 #board .stack b{font-size:calc(16px * var(--bz))} #board .stack small{font-size:calc(9px * var(--bz))}
-#board .die{font-size:calc(12px * var(--bz));padding:calc(2px * var(--bz)) calc(6px * var(--bz));border-radius:calc(7px * var(--bz))} #board .die small{font-size:calc(10px * var(--bz))}
-#board .dice{min-height:calc(26px * var(--bz));gap:calc(4px * var(--bz))}
+#board .die{--dw:clamp(20px, calc(19px * var(--bz)), 40px)}
+#board .dice{min-height:calc(30px * var(--bz));gap:calc(4px * var(--bz)) calc(5px * var(--bz))}
 #board .cred{font-size:calc(13px * var(--bz))}
 #board .bc .pw,#board .bc .co{font-size:calc(11px * var(--bz))} #board .bc .ed{font-size:calc(9px * var(--bz))}
 #board .bc.back{font-size:calc(16px * var(--bz))} #board .bc.lag::after{font-size:calc(10px * var(--bz))}
@@ -288,8 +313,9 @@ html[data-motion="reduce"] #board .bc{transition:none}
 #board.rail .rs .legs .bc.spent .pw{transform:none}
 #board.rail .rs .legs .bc.back{font-size:calc(12px * var(--bz))}
 #board.rail .rs .dice{display:grid;grid-template-columns:repeat(4,1fr);gap:2px;min-height:0;margin-top:1px}
-#board.rail .rs .die{font-size:calc(9px * var(--bz));padding:1px 2px;justify-content:center;gap:1px;border-radius:5px} #board.rail .rs .die small{font-size:calc(7px * var(--bz))}
-#board.rail .rs .die.fx{opacity:.45}
+#board.rail .rs .dice{gap:2px calc(2px * var(--bz));justify-items:center;align-items:end;min-height:0}
+#board.rail .rs .die{--dw:clamp(14px, calc(15px * var(--bz)), 32px);margin-bottom:calc(var(--dw) * .2)}
+#board.rail .rs .cred{margin-bottom:0}
 #board.rail .rs .cred{grid-column:1/-1;font-size:calc(11px * var(--bz));font-weight:800;text-align:center;color:var(--ink);padding:1px 0;line-height:1.2}
 #board.rail .rs .rhand{display:flex;gap:2px;align-items:center;margin-top:1px}
 #board.rail .rs .rhand i{width:calc(10px * var(--bz));height:calc(14px * var(--bz));border-radius:2px;background:repeating-linear-gradient(45deg,#1a1a22 0 3px,#2a2a36 3px 6px);border:1px solid var(--line2);flex:0 0 auto}
