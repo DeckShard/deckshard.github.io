@@ -320,7 +320,7 @@ input.inp.wide{width:100%}
 /* ---------- deckbuilder ---------- */
 .deckhead{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
 .deckhead>.dname{display:flex;gap:8px;align-items:center;flex:1 1 220px;min-width:0}
-.deckhead>.dacts{display:flex;gap:6px;flex-wrap:wrap;flex:0 0 auto}
+.deckhead>.dacts{display:flex;gap:6px;flex-wrap:wrap;flex:0 1 auto;max-width:100%}
 .legends{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
 .lslot{aspect-ratio:733/1024;border:2px dashed var(--line2);border-radius:3px;display:flex;align-items:center;justify-content:center;
   color:var(--mute);font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;cursor:pointer;overflow:hidden;position:relative;background:var(--surf2);line-height:0}
@@ -525,3 +525,14 @@ nav.tabs button.homebtn[aria-selected="true"] svg{box-shadow:0 0 0 2px var(--nav
 nav.tabs button.homebtn[aria-selected="true"]::after{display:none}
 nav.tabs button.homebtn:not([aria-selected="true"]) svg{opacity:.85}
 @media(min-width:900px){ nav.tabs button.homebtn svg{width:30px;height:30px;padding:6px;margin-top:0} nav.tabs button.homebtn{gap:9px} }
+
+/* ------------------------------------------------------------ accessibilità (Impostazioni) */
+:root[data-text="l"] :is(header.top, main, nav.tabs, footer, #sheetBox, #collImport .box, #collExport .box, #mergeAsk .box, #chat .box, .toast){zoom:1.12}
+:root[data-text="xl"] :is(header.top, main, nav.tabs, footer, #sheetBox, #collImport .box, #collExport .box, #mergeAsk .box, #chat .box, .toast){zoom:1.25}
+:root[data-contrast="high"]{--mute:var(--ink2)!important;--line:color-mix(in srgb,var(--ink) 32%,transparent)!important;--line2:color-mix(in srgb,var(--ink) 58%,transparent)!important}
+:root[data-contrast="high"] :is(.sub, small, .note, .hline){color:var(--ink)!important}
+:root[data-contrast="high"] .gc.dim img,:root[data-contrast="high"] .row.unowned .thumb{filter:grayscale(1) brightness(.85)!important;opacity:1!important}
+:root[data-motion="reduce"] *,:root[data-motion="reduce"] *::before,:root[data-motion="reduce"] *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+:root[data-motion="reduce"]{--neon:none!important}
+:root[data-motion="reduce"] .emblem{filter:none}
+.msg .msgdeck{display:block;margin:6px 0 2px;text-transform:none;letter-spacing:.02em}

@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DeckShard · Elimina l'account</title>
+<meta name="theme-color" content="#120a0b">
+<link rel="icon" href="icon.svg">
+<style>
+  :root{color-scheme:dark;--bg:#120a0b;--surf:#1c1012;--ink:#f3ebe8;--ink2:#cdbdbb;--mute:#937f80;--acc:#ff5252;--acc2:#00e5f2;--bad:#ff2e55;--line:rgba(255,120,120,.18)}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 "Segoe UI",system-ui,sans-serif}
+  main{max-width:620px;margin:0 auto;padding:28px 18px 60px}
+  h1{color:var(--acc);font-size:24px;letter-spacing:.06em;text-transform:uppercase;margin:0 0 10px}
+  h2{color:var(--acc);font-size:17px;margin:26px 0 6px}
+  p,li{color:var(--ink2)} a{color:var(--acc2)}
+  .box{background:var(--surf);border:1px solid var(--line);border-left:3px solid var(--acc);padding:16px;margin:18px 0}
+  button{font:inherit;font-weight:700;letter-spacing:.06em;text-transform:uppercase;border:0;border-radius:2px;padding:10px 16px;cursor:pointer}
+  .go{background:var(--acc2);color:#0b0b0e}.del{background:var(--bad);color:#fff}.del:disabled{opacity:.4;cursor:default}.ghost{background:none;border:1px solid var(--line);color:var(--ink)}
+  input{font:inherit;background:#2a181b;color:var(--ink);border:1px solid var(--line);border-radius:2px;padding:8px 10px;width:100%;margin:8px 0}
+  .ok{color:#4fd36a}.err{color:var(--bad)}
+</style>
+</head>
+<body>
+<main>
+  <h1>Elimina l'account DeckShard</h1>
+  <p>Eliminando l'account cancelli in modo definitivo: profilo e nick, collezione e mazzi salvati nel cloud, amicizie, messaggi, partite online, iscrizioni alle notifiche e le segnalazioni che ti riguardano. Il feedback che hai inviato resta, ma senza alcun collegamento a te. Non si può annullare.</p>
+  <p>Quello che c'è sul tuo dispositivo senza account non viene toccato: si cancella dall'app, in Impostazioni → Dati.</p>
+
+  <div class="box" id="box"><p>Caricamento…</p></div>
+
+  <h2>Altri modi</h2>
+  <ul>
+    <li>Nell'app: Social → Account → «Elimina account».</li>
+    <li>Scrivi a <a href="mailto:deckshard.app@gmail.com?subject=Eliminazione%20account%20DeckShard">deckshard.app@gmail.com</a> dall'indirizzo email del tuo account Google: lo eliminiamo entro 30 giorni.</li>
+  </ul>
+
+  <h2>English</h2>
+  <p>Deleting your DeckShard account permanently removes your profile, cloud-synced collection and decks, friendships, messages, online games, notification subscriptions and reports about you (feedback you sent is kept without any link to you). Sign in with Google above and confirm, delete it in the app (Social → Account → «Elimina account»), or email <a href="mailto:deckshard.app@gmail.com?subject=DeckShard%20account%20deletion">deckshard.app@gmail.com</a> from your account's address and we'll delete it within 30 days.</p>
+  <p><a href="privacy.html">Informativa sulla privacy / Privacy policy</a> · <a href="./">DeckShard</a></p>
+</main>
+<script type="module">
+  const URL_ = "https://uxbtwurhsujzyzvsvghm.supabase.co", KEY = "sb_publishable__IATo8hKZDNZMp9_jESfAQ_Ll6PwNqF";
+  const box = document.getElementById("box");
+  const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  let sb;
+  try{
+    const { createClient } = await import("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm");
+    // stessa sessione dell'app (stesso sito): se sei già entrato nell'app, sei già riconosciuto anche qui
+    sb = createClient(URL_, KEY, { auth: { flowType: "pkce", persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, storageKey: "ncd:auth" } });
+  }catch(e){ box.innerHTML = `<p class="err">Non riesco a collegarmi al servizio (${esc(e.message)}). Riprova più tardi o scrivici per email.</p>`; }
+  async function draw(){
+    if(!sb) return;
+    const { data } = await sb.auth.getSession(); const user = data.session && data.session.user;
+    if(location.search.includes("code=")) history.replaceState(null, "", location.pathname);
+    if(!user){
+      box.innerHTML = `<p>Per eliminare l'account, prima conferma che è tuo accedendo con lo stesso account Google che usi in DeckShard.</p><button class="go" id="login">Accedi con Google</button>`;
+      document.getElementById("login").onclick = async () => { const { error } = await sb.auth.signInWithOAuth({ provider: "google", options: { redirectTo: location.origin + location.pathname } }); if(error) box.insertAdjacentHTML("beforeend", `<p class="err">${esc(error.message)}</p>`); };
+      return;
+    }
+    let nick = ""; try{ const { data: p } = await sb.from("profiles").select("nick").eq("id", user.id).maybeSingle(); nick = p ? p.nick : ""; }catch(e){}
+    box.innerHTML = `<p>Account: <b>${esc(nick || "senza nick")}</b> (${esc(user.email || "")})</p>
+      <p>Per confermare scrivi <b>ELIMINA</b> qui sotto.</p><input id="conf" autocomplete="off" placeholder="ELIMINA">
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="del" id="del" disabled>Elimina definitivamente</button><button class="ghost" id="out">Esci senza eliminare</button></div>`;
+    const conf = document.getElementById("conf"), del = document.getElementById("del");
+    conf.oninput = () => { del.disabled = conf.value.trim().toUpperCase() !== "ELIMINA"; };
+    document.getElementById("out").onclick = async () => { await sb.auth.signOut(); draw(); };
+    del.onclick = async () => {
+      del.disabled = true;
+      const { error } = await sb.rpc("delete_me");
+      if(error){ box.insertAdjacentHTML("beforeend", `<p class="err">Non è stato possibile eliminare l'account: ${esc(error.message)}</p>`); del.disabled = false; return; }
+      await sb.auth.signOut();
+      box.innerHTML = `<p class="ok"><b>Account eliminato.</b> Tutti i dati collegati sono stati cancellati.</p>`;
+    };
+  }
+  draw();
+</script>
+</body>
+</html>

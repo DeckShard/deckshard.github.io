@@ -28,6 +28,7 @@ const claw = (x0, y0, x1, y1, bend, w) => {
 const claws = [claw(62, 14, 20, 86, 14, 6.5), claw(80, 12, 30, 104, 16, 8.5), claw(98, 20, 48, 110, 16, 8.5), claw(108, 40, 68, 106, 13, 6.5)].map(d => `<path d="${d}" class="fill"/>`).join("");
 const EMBLEMS = {
   shard: `<path d="M60 8 L94 44 L72 112 L34 66 Z"/><path d="M60 8 L54 60 L72 112 M34 66 L54 60 L94 44" class="thin"/><path d="M98 70 L110 82 L100 96" class="thin"/>`,
+  sunblade: `<path d="M18 78 A42 42 0 0 1 102 78 Z" class="fill"/><path d="M60 24 V14 M33 35 L26 28 M87 35 L94 28 M22 60 H12 M98 60 H108" class="thin"/><path d="M10 90 H96 L110 84 L96 96 H10 Z"/><path d="M24 90 V96" class="thin"/>`,
   seal: `<rect x="16" y="16" width="88" height="88" rx="4"/><rect x="24" y="24" width="72" height="72" rx="2" class="thin"/><circle cx="60" cy="60" r="24"/><path d="M46 52h28M42 60h36M46 68h28" class="thin"/>`,
   bolt: `<circle cx="60" cy="60" r="46"/><circle cx="60" cy="60" r="38" class="thin"/><path d="M66 20 L42 64 H60 L50 100 L80 54 H62 Z" class="fill"/>`,
   circuit: `<path d="M60 10 L103 35 V85 L60 110 L17 85 V35 Z"/><path d="M60 30 V52 M60 52 L40 64 V82 M60 52 L80 64 V82 M40 46 H28 M80 46 H92" class="thin"/><circle cx="60" cy="30" r="5" class="fill"/><circle cx="40" cy="84" r="5" class="fill"/><circle cx="80" cy="84" r="5" class="fill"/>`,
@@ -43,7 +44,7 @@ const EMBLEMS = {
   wall: `<rect x="12" y="20" width="96" height="80"/><path d="M12 40 H108 M12 60 H108 M12 80 H108 M36 20 V40 M72 20 V40 M24 40 V60 M60 40 V60 M96 40 V60 M36 60 V80 M72 60 V80 M24 80 V100 M60 80 V100 M96 80 V100" class="thin"/><path d="M58 14 L66 38 L52 56 L70 74 L56 106" class="slash"/>`,
   radar: `<circle cx="60" cy="60" r="50"/><circle cx="60" cy="60" r="34" class="thin"/><circle cx="60" cy="60" r="18" class="thin"/><path d="M60 60 L96 24" /><path d="M60 60 L96 24 A50 50 0 0 1 110 60 Z" class="fill soft"/><circle cx="60" cy="60" r="5" class="fill"/>`
 };
-const BY_LOOK = { holophone: "shard", samurai: "bolt", "l-samurai": "bolt", netrunner: "circuit", girlypop: "sparkle", "l-mox": "sparkle", arasaka: "seal", "l-washi": "seal",
+const BY_LOOK = { holophone: "shard", samurai: "bolt", "l-samurai": "bolt", netrunner: "circuit", girlypop: "sparkle", "l-mox": "sparkle", arasaka: "sunblade", "l-washi": "sunblade",
   nomad: "compass", "l-badlands": "compass", maelstrom: "crown", voodoo: "spiral", tyger: "claws", militech: "chevrons", "l-militech": "chevrons",
   trauma: "pulse", "l-trauma": "pulse", afterlife: "hourglass", kangtao: "coin", "l-kangtao": "coin", blackwall: "wall", "l-netwatch": "radar" };
 export const emblemSVG = look => `<svg class="emblem" viewBox="0 0 120 120" aria-hidden="true">${EMBLEMS[BY_LOOK[look] || "shard"]}</svg>`;

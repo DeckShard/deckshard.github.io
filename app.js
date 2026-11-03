@@ -4,7 +4,7 @@ import { DATA, loadData } from "./data.js";
 import { S, storageOk } from "./store.js";
 import { $, $$, toast } from "./ui.js";
 import { renderCollection } from "./collection.js";
-import { renderDeck } from "./deck.js";
+import { renderDeck, openSharedDeck } from "./deck.js";
 import { renderProfile, renderSettings, ACCENTS } from "./profile.js";
 import { renderSim, setChallenge } from "./sim.js";
 import { setOnlineVersion, invitesForMe, activeTables, T as onlineT } from "./online.js";
@@ -13,7 +13,7 @@ import { renderHome, wireHome } from "./home.js";
 import { initI18n } from "./i18n.js";
 import { bootCloud, state as cloudState } from "./cloud.js";
 
-export const APP_VERSION = "1.8.1";
+export const APP_VERSION = "1.9.0";
 setOnlineVersion(APP_VERSION);
 
 const TABS = { home: renderHome, collection: renderCollection, deck: renderDeck, profile: renderProfile, sim: renderSim, rules: renderRules, settings: renderSettings };
@@ -25,6 +25,10 @@ export function applyTheme(){
   document.documentElement.dataset.theme = pal.light ? "light" : "dark";
   if(pal.id !== "holophone") document.documentElement.dataset.accent = pal.id; else delete document.documentElement.dataset.accent;
   // barre di sistema del telefono (stato e gesti): seguono la barra di navigazione dell'app, non un giallo fisso
+  // accessibilità: dimensione del testo, contrasto, animazioni
+  const a = S.settings.a11y || {}, root = document.documentElement;
+  root.dataset.text = a.text || "m"; root.dataset.contrast = a.contrast ? "high" : "normal";
+  root.dataset.motion = a.motion === "reduce" || (a.motion !== "never" && matchMedia("(prefers-reduced-motion: reduce)").matches) ? "reduce" : "full";
   const nav = getComputedStyle(document.documentElement).getPropertyValue("--navBg").trim() || "#0b0b0e";
   const meta = $("#themeColor"); if(meta) meta.content = nav;
 }
@@ -45,7 +49,9 @@ async function boot(){
   initI18n(S.profile.lang);
   window.NCD_I18N = { apply(l){ S.profile.lang = l; S.save("profile"); location.reload(); } };
   $$("nav.tabs button").forEach(b => b.addEventListener("click", () => showTab(b.dataset.tab)));
-  window.addEventListener("hashchange", () => showTab(location.hash.slice(1), false));
+  // un link a un mazzo condiviso (#d=…) apre l'anteprima per salvarlo
+  const sharedDeck = () => { if(!location.hash.startsWith("#d=")) return false; const h = location.hash; history.replaceState(null, "", "#home"); showTab("home", false); openSharedDeck(h); return true; };
+  window.addEventListener("hashchange", () => { if(!sharedDeck()) showTab(location.hash.slice(1), false); });
   $("#btnSettings").addEventListener("click", e => { e.preventDefault(); showTab("settings"); });
 
   try{
@@ -61,7 +67,7 @@ async function boot(){
   if(!storageOk()) toast("Memoria locale non disponibile: le modifiche non verranno salvate", 5000);
 
   wireHome(t => showTab(t));
-  showTab(location.hash.slice(1) || "home", false);
+  if(!sharedDeck()) showTab(location.hash.slice(1) || "home", false);
 
   // account: dati arrivati da un altro dispositivo → si ridisegna la scheda aperta; badge di messaggi e richieste
   const current = () => ($(".panel.on") || {}).dataset?.tab || "home";

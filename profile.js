@@ -7,7 +7,7 @@ import { S, DEFAULT_PROFILE, exportAll, importAll, wipe, storageOk } from "./sto
 import { $, $$, esc, toast } from "./ui.js";
 import { applyTheme, APP_VERSION } from "./app.js";
 import { accountHTML, friendsHTML, wireSocial, feedbackHTML, wireFeedback, safeWipe } from "./social.js";
-import { state as cloudState } from "./cloud.js";
+import { state as cloudState, pushSupported, pushNeedsInstall, enablePush, disablePush } from "./cloud.js";
 
 export const LIFEPATHS = ["Corpo", "Street Kid", "Nomad"];
 export const FACTIONS = [
@@ -146,6 +146,27 @@ export function renderSettings(){
     </div>
 
     <div class="card">
+      <h3>Notifiche</h3>
+      ${(() => { const P = S.settings.push || {}, seg = (id, cur, opts) => `<span class="seg" id="${id}">${opts.map(([v, t]) => `<button data-v="${v}" aria-pressed="${cur === v}">${t}</button>`).join("")}</span>`;
+        if(!cloudState.user) return `<p class="sub" style="margin:4px 0 0">Accedi dal Social per ricevere sul telefono un avviso quando arriva un messaggio, una sfida o una richiesta d'amicizia.</p>`;
+        if(pushNeedsInstall()) return `<p class="sub" style="margin:4px 0 0">Su iPhone e iPad le notifiche funzionano solo con DeckShard sulla schermata Home: in Safari tocca Condividi → «Aggiungi alla schermata Home», apri l'app da lì e attivale qui (serve iOS 16.4 o successivo).</p>`;
+        if(!pushSupported()) return `<p class="sub" style="margin:4px 0 0">Questo browser non supporta le notifiche.</p>`;
+        const yn = (id, k) => seg(id, P[k] === false ? "0" : "1", [["1", "Sì"], ["0", "No"]]);
+        return `<div class="field"><label>Notifiche sul dispositivo<small>Anche ad app chiusa. Arrivano solo su questo dispositivo: attivale su ognuno che usi.</small></label>${seg("pfPush", P.on ? "1" : "0", [["1", "Attive"], ["0", "Spente"]])}</div>
+        ${P.on ? `<div class="field"><label>Messaggi degli amici</label>${yn("pfPushM", "messages")}</div>
+        <div class="field"><label>Sfide a una partita</label>${yn("pfPushC", "challenges")}</div>
+        <div class="field"><label>Richieste d'amicizia</label>${yn("pfPushR", "requests")}</div>` : ""}`; })()}
+    </div>
+
+    <div class="card">
+      <h3>Accessibilità</h3>
+      ${(() => { const a = S.settings.a11y || {}, seg = (id, cur, opts) => `<span class="seg" id="${id}">${opts.map(([v, t]) => `<button data-v="${v}" aria-pressed="${cur === v}">${t}</button>`).join("")}</span>`;
+        return `<div class="field fcol"><label>Dimensione del testo<small>Ingrandisce testi e pulsanti dell'app (la plancia del Simulator si adatta da sola allo schermo)</small></label>${seg("pfText", a.text || "m", [["m", "Normale"], ["l", "Grande"], ["xl", "Molto grande"]])}</div>
+      <div class="field"><label>Contrasto elevato<small>Testi secondari e bordi più marcati</small></label>${seg("pfContrast", a.contrast ? "1" : "0", [["0", "No"], ["1", "Sì"]])}</div>
+      <div class="field fcol"><label>Animazioni<small>«Ridotte» toglie movimenti, lampeggi e bagliori; «Come il sistema» segue l'impostazione del dispositivo</small></label>${seg("pfMotion", a.motion || "auto", [["auto", "Come il sistema"], ["reduce", "Ridotte"]])}</div>`; })()}
+    </div>
+
+    <div class="card">
       <h3>Collection</h3>
       <div class="field"><label>Voci della collezione<small>Una per carta (151), una per illustrazione (ogni arte diversa conta a sé) o una per edizione (ogni stampa: set, lingua, variante). Il completamento segue la stessa scelta.</small></label>
         <span class="seg" id="pfCollView">${[["card", "Per carta"], ["art", "Per illustrazione"], ["print", "Per edizione"]].map(([v, t]) => `<button data-v="${v}" aria-pressed="${(S.settings.collView || "card") === v}">${t}</button>`).join("")}</span></div>
@@ -187,7 +208,8 @@ export function renderSettings(){
         <a class="btn sm" href="https://github.com/DeckShard/deckshard.github.io" target="_blank" rel="noopener noreferrer">Codice su GitHub ↗</a>
         <a class="btn sm" href="https://cyberpunktcg.com" target="_blank" rel="noopener noreferrer">cyberpunktcg.com ↗</a>
       </div>
-      <details class="fold" style="margin-top:12px"><summary>Privacy</summary><div class="sub" style="margin-top:6px">Senza account tutto resta su questo dispositivo. Con l'account vengono salvati su Supabase (server nell'Unione Europea, Francoforte): email di accesso, nick e profilo pubblico (avatar, fazione, record), collezione, mazzi e impostazioni per la sincronizzazione, amicizie, blocchi e messaggi. L'email non è mai visibile agli altri giocatori; la collezione la vedono gli amici solo se lo scegli. «Elimina account» cancella tutto in modo definitivo. Il feedback arriva in una casella privata e contiene solo ciò che scrivi, la versione dell'app e il tipo di dispositivo.</div></details>
+      <details class="fold" style="margin-top:12px"><summary>Privacy</summary><div class="sub" style="margin-top:6px">Senza account tutto resta su questo dispositivo. Con l'account vengono salvati su Supabase (server nell'Unione Europea, Francoforte): email di accesso, nick e profilo pubblico (avatar, fazione, record), collezione, mazzi e impostazioni per la sincronizzazione, amicizie, blocchi e messaggi. L'email non è mai visibile agli altri giocatori; la collezione la vedono gli amici solo se lo scegli. «Elimina account» cancella tutto in modo definitivo. Il feedback arriva in una casella privata e contiene solo ciò che scrivi, la versione dell'app e il tipo di dispositivo.
+        <div style="margin-top:8px;display:flex;gap:12px;flex-wrap:wrap"><a href="privacy.html" target="_blank" rel="noopener">Informativa completa</a><a href="delete-account.html" target="_blank" rel="noopener">Eliminare l'account dal web</a></div></div></details>
     </div>`;
 }
 
@@ -208,6 +230,25 @@ function wire(root){
   root.addEventListener("change", e => { if(e.target.id === "pfNick") renderProfile(); });
   root.addEventListener("click", e => {
     const rerender = () => root.id === "p-settings" ? renderSettings() : renderProfile();
+    const pu = e.target.closest("#pfPush button, #pfPushM button, #pfPushC button, #pfPushR button"); if(pu){
+      const P = S.settings.push = { messages: true, challenges: true, requests: true, ...(S.settings.push || {}) }, id = pu.parentElement.id, v = pu.dataset.v === "1";
+      if(id === "pfPushM") P.messages = v; if(id === "pfPushC") P.challenges = v; if(id === "pfPushR") P.requests = v;
+      const prefs = { messages: P.messages, challenges: P.challenges, requests: P.requests };
+      pu.parentElement.querySelectorAll("button").forEach(x => x.disabled = true);
+      (async () => {
+        try{
+          if(id === "pfPush" && !v){ await disablePush(); P.on = false; toast("Notifiche spente su questo dispositivo"); }
+          else if(id === "pfPush" || P.on){ await enablePush(prefs, S.profile.lang); if(id === "pfPush") toast("Notifiche attive: ti avviso io, choom"); P.on = true; }
+        }catch(err){ toast(err.message || String(err), 5000); if(id === "pfPush") P.on = false; }
+        S.save("settings"); rerender();
+      })();
+      return;
+    }
+    const ax = e.target.closest("#pfText button, #pfContrast button, #pfMotion button"); if(ax){
+      const a = S.settings.a11y = { ...(S.settings.a11y || {}) }, id = ax.parentElement.id, v = ax.dataset.v;
+      if(id === "pfText") a.text = v; if(id === "pfContrast") a.contrast = v === "1"; if(id === "pfMotion") a.motion = v;
+      S.save("settings"); applyTheme(); rerender(); return;
+    }
     const seg = e.target.closest("#pfLife button, #pfFaction button, #pfLang button");
     if(seg){
       const k = { pfLife: "lifepath", pfFaction: "faction", pfTheme: "theme", pfLang: "lang" }[seg.parentElement.id];

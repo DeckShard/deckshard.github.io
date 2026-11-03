@@ -74,6 +74,8 @@ export async function signInAnon(){   // solo per i collaudi
 }
 export async function signOut(){
   const c = await client(); if(!c) return;
+  // chi esce non deve più ricevere le notifiche dell'account su questo telefono
+  try{ await disablePush(); if(S.settings.push){ S.settings.push.on = false; S.save("settings"); } }catch(e){}
   await c.auth.signOut();
 }
 export async function deleteAccount(){
@@ -295,7 +297,7 @@ export async function loadMessages(id, limit = 60){
 }
 export async function sendMessage(id, body){
   const c = await client();
-  const { data, error } = await c.from("messages").insert({ sender: state.user.id, recipient: id, body: body.slice(0, 500) }).select().single();
+  const { data, error } = await c.from("messages").insert({ sender: state.user.id, recipient: id, body: body.slice(0, 1000) }).select().single();
   if(error){ if(/row-level security/i.test(error.message)) throw new Error("Non puoi scrivere a questo giocatore"); throw error; }
   return data;
 }
@@ -306,4 +308,38 @@ export async function sendFeedback({ kind, body, contact, version, lang }){
   const device = `${navigator.userAgent.match(/\(([^)]+)\)/)?.[1] || ""} · ${innerWidth}×${innerHeight}`.slice(0, 200);
   const { error } = await c.from("feedback").insert({ kind, body, contact: contact || null, app_version: version, lang, device });
   if(error) throw error;
+}
+
+/* ---------------------------------------------------------------- notifiche push
+   Il telefono si iscrive con la chiave pubblica che gli dà la Edge Function «push» e registra l'iscrizione
+   nel database (save_push). Le preferenze (messaggi, sfide, richieste) viaggiano con l'iscrizione. */
+const urlB64 = s => { s = s.replace(/-/g, "+").replace(/_/g, "/"); while(s.length % 4) s += "="; const b = atob(s); return Uint8Array.from(b, c => c.charCodeAt(0)); };
+const b64url = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+export const pushSupported = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+/* iPhone e iPad: le notifiche web funzionano solo con l'app aggiunta alla schermata Home */
+export const pushNeedsInstall = () => /iPhone|iPad|iPod/.test(navigator.userAgent) && !(window.matchMedia("(display-mode: standalone)").matches || navigator.standalone);
+export async function pushSubscription(){ if(!pushSupported()) return null; const reg = await navigator.serviceWorker.getRegistration(); return reg ? reg.pushManager.getSubscription() : null; }
+export async function enablePush(prefs, lang){
+  if(!state.user) throw new Error("Serve un account");
+  if(!pushSupported()) throw new Error("Questo browser non supporta le notifiche");
+  const perm = await Notification.requestPermission();
+  if(perm !== "granted") throw new Error("Permesso negato: riattivalo dalle impostazioni del browser per questo sito");
+  const c = await client(); const { data: s } = await c.auth.getSession();
+  if(!s || !s.session) throw new Error("Serve un account");
+  const r = await fetch(`${cfg.url}/functions/v1/push`, { headers: { apikey: cfg.key, Authorization: `Bearer ${s.session.access_token}` } });
+  if(!r.ok) throw new Error("Servizio notifiche non disponibile (" + r.status + ")");
+  const { publicKey } = await r.json();
+  const reg = await navigator.serviceWorker.ready;
+  let sub = await reg.pushManager.getSubscription();
+  if(sub && sub.options && sub.options.applicationServerKey && b64url(sub.options.applicationServerKey) !== publicKey){ await sub.unsubscribe(); sub = null; }
+  if(!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlB64(publicKey) });
+  const j = sub.toJSON();
+  const { error } = await c.rpc("save_push", { p_endpoint: j.endpoint, p_p256dh: j.keys.p256dh, p_auth: j.keys.auth, p_prefs: prefs, p_lang: lang === "en" ? "en" : "it" });
+  if(error) throw new Error(error.message);
+  return true;
+}
+export async function disablePush(){
+  const sub = await pushSubscription(); if(!sub) return;
+  try{ if(state.user){ const c = await client(); await c.rpc("delete_push", { p_endpoint: sub.endpoint }); } }catch(e){}
+  await sub.unsubscribe();
 }

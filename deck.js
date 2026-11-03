@@ -4,6 +4,7 @@
 import { DATA, COLORS, COLOR_IT, TYPES, TYPE_IT, thumbUrl, imgUrl, priceOf, cardPrice, eur, setName } from "./data.js";
 import { S, qtyOf, cardQty, newId, saveDeck, deleteDeck } from "./store.js";
 import { $, $$, esc, toast, rowHTML, statsHTML, makeFilters, filtersHTML, passes, bindFilters, sortCards, openCard } from "./ui.js";
+import * as cloud from "./cloud.js";
 
 export const DECK_MIN = 40, DECK_MAX = 50, MAX_COPIES = 3;
 
@@ -307,6 +308,7 @@ function renderEditor(){
         <div class="dacts">
           <button class="btn sm acc2" id="deckPlay" title="${isLegal(CUR) ? "Prova nel simulatore" : "Completa il mazzo per giocarlo nel simulatore"}" ${isLegal(CUR) ? "" : "disabled"}>▶ Gioca</button>
           <button class="btn sm" id="deckCopy">Copia testo</button>
+          <button class="btn sm acc2" id="deckShare">Condividi</button>
           <button class="btn sm" id="deckDup">Duplica</button>
           <button class="btn sm" id="deckDel" style="color:var(--bad)">Elimina</button>
         </div>
@@ -407,6 +409,7 @@ function wire(){
     if(e.target.closest("#deckBack")){ closeEditor(); return; }
     if(e.target.closest("#deckErrorsOk")){ delete CUR.importErrors; save(); renderEditor(); return; }
     if(e.target.closest("#deckCopy")){ const t = exportText(CUR); (navigator.clipboard?.writeText(t) || Promise.reject()).then(() => toast("Lista copiata negli appunti")).catch(() => prompt("Copia la lista:", t)); return; }
+    if(e.target.closest("#deckShare")){ shareDeck(CUR); return; }
     if(e.target.closest("#deckDup")){ const d = JSON.parse(JSON.stringify(CUR)); d.id = newId(); d.name += " (copia)"; saveDeck(d); CUR = d; renderEditor(); toast("Mazzo clonato"); return; }
     if(e.target.closest("#deckDel")){ if(confirm(`Eliminare «${CUR.name}»?`)){ deleteDeck(CUR.id); closeEditor(); } return; }
     if(e.target.closest("#deckPlay")){ location.hash = "#sim"; document.dispatchEvent(new CustomEvent("ncd:playdeck", { detail: CUR.id })); return; }
@@ -469,3 +472,54 @@ function promptImport(){
   toast(bad.length ? `Importato con ${bad.length} righe non riconosciute` : "Mazzo importato", 3000);
 }
 export const currentDeck = () => CUR;
+
+/* ------------------------------------------------------------ condivisione
+   Un mazzo diventa un link corto: nome, Leggende e carte indicate dalle prime 8 cifre dell'identificativo
+   della stampa (uniche nel catalogo), così resta valido anche quando il catalogo cresce.
+   https://deckshard.github.io/#d=Nome~leg1.leg2.leg3~stampa*copie.stampa*copie… */
+const BASE = () => location.origin + location.pathname;
+export function deckLink(d){
+  const legs = d.legends.filter(Boolean).map(l => (l.pid || DATA.byId.get(l.cid).def.id).slice(0, 8));
+  const cards = d.cards.filter(e => e.n > 0).map(e => (e.pid || DATA.byId.get(e.cid).def.id).slice(0, 8) + "*" + e.n);
+  return `${BASE()}#d=${encodeURIComponent((d.name || "Mazzo").slice(0, 40)).replace(/~/g, "%7E")}~${legs.join(".")}~${cards.join(".")}`;
+}
+export function parseDeckLink(str){
+  const m = /#d=([^~\s]*)~([0-9a-f.]*)~([0-9a-f.*]*)/i.exec(str || ""); if(!m) return null;
+  const byPfx = new Map(); for(const c of DATA.cards) for(const p of c.prints) byPfx.set(p.id.slice(0, 8), p);
+  const pr = x => byPfx.get(x.toLowerCase());
+  let name = "Mazzo condiviso"; try{ name = decodeURIComponent(m[1]) || name; }catch(e){}
+  const legends = m[2].split(".").filter(Boolean).map(pr).filter(Boolean).slice(0, 3).map(p => ({ cid: p.card.id, pid: p.id }));
+  while(legends.length < 3) legends.push(null);
+  const cards = []; for(const part of m[3].split(".").filter(Boolean)){ const [x, n] = part.split("*"); const p = pr(x); if(p && +n > 0) cards.push({ cid: p.card.id, pid: p.id, n: Math.min(9, +n) }); }
+  return { name: name.slice(0, 60), legends, cards, notes: "" };
+}
+/* chi apre il link vede l'anteprima e può salvarne una copia tra i propri mazzi */
+export function openSharedDeck(str, done){
+  const d = parseDeckLink(str); if(!d){ done && done(); return; }
+  const n = deckSize(d), el = document.createElement("div"); el.id = "mergeAsk";
+  el.innerHTML = `<div class="box"><h3>Mazzo condiviso</h3><p><b>${esc(d.name)}</b> · ${n} carte · ${d.legends.filter(Boolean).length} Leggende</p>
+    <div style="display:flex;gap:6px;margin:8px 0">${d.legends.filter(Boolean).map(l => `<img src="${thumbUrl(l.pid)}" alt="" style="width:31%;border-radius:4px">`).join("")}</div>
+    <div class="opts"><button class="btn yel" data-a="save">Salva tra i miei mazzi</button><button class="btn" data-a="x">Non ora</button></div></div>`;
+  el.addEventListener("click", ev => { const b = ev.target.closest("[data-a]"); if(!b && ev.target !== el) return; el.remove();
+    if(b && b.dataset.a === "save"){ const copy = { ...d, id: newId(), name: d.name }; saveDeck(copy); toast("Mazzo salvato nel deckbuilder"); location.hash = "#deck"; CUR = copy; renderDeck(); }
+    done && done(); });
+  document.body.appendChild(el);
+}
+function shareDeck(d){
+  const link = deckLink(d), friends = cloud.state.user ? cloud.friends.filter(f => f.status === "accepted") : [];
+  const el = document.createElement("div"); el.id = "mergeAsk";
+  el.innerHTML = `<div class="box fmenu"><h3>Condividi «${esc(d.name)}»</h3><p class="sub">Chi apre il link vede il mazzo e può salvarne una copia.</p>
+    <div class="opts"><button class="btn" data-a="copy"><span>Copia il link</span></button>${navigator.share ? `<button class="btn" data-a="share"><span>Condividi…</span><small>WhatsApp, Telegram, email…</small></button>` : ""}
+    ${friends.length ? `<h4 class="frh" style="margin:6px 0 0">Manda in chat a un amico</h4>${friends.map(f => `<button class="btn" data-f="${f.id}"><span>${esc(f.nick)}</span></button>`).join("")}` : cloud.state.user ? "" : `<small class="sub">Con un account puoi mandarlo direttamente in chat ai tuoi amici.</small>`}</div></div>`;
+  el.addEventListener("click", async ev => {
+    if(ev.target === el){ el.remove(); return; }
+    const b = ev.target.closest("[data-a], [data-f]"); if(!b) return;
+    try{
+      if(b.dataset.a === "copy"){ await navigator.clipboard.writeText(link); toast("Link copiato"); }
+      if(b.dataset.a === "share"){ await navigator.share({ title: d.name, text: `Il mio mazzo «${d.name}» su DeckShard`, url: link }); }
+      if(b.dataset.f){ await cloud.sendMessage(b.dataset.f, `🃏 ${d.name}\n${link}`); toast("Mazzo mandato in chat"); }
+      el.remove();
+    }catch(err){ if(err && err.name !== "AbortError") toast(err.message || String(err), 4000); }
+  });
+  document.body.appendChild(el);
+}

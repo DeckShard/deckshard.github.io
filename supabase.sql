@@ -90,13 +90,16 @@ create table if not exists public.messages (
   id bigint generated always as identity primary key,
   sender uuid not null references public.profiles(id) on delete cascade,
   recipient uuid not null references public.profiles(id) on delete cascade,
-  body text not null check (char_length(body) between 1 and 500),
+  body text not null check (char_length(body) between 1 and 1000),
   created_at timestamptz not null default now(),
   read_at timestamptz
 );
 create index if not exists messages_recipient on public.messages (recipient, created_at desc);
 create index if not exists messages_sender on public.messages (sender, created_at desc);
 alter table public.messages enable row level security;
+-- messaggi fino a 1000 caratteri (i link ai mazzi condivisi sono lunghi)
+alter table public.messages drop constraint if exists messages_body_check;
+alter table public.messages add constraint messages_body_check check (char_length(body) between 1 and 1000);
 
 -- limite anti-spam: al massimo 20 messaggi al minuto per account
 create or replace function public.messages_rate_limit() returns trigger
@@ -522,6 +525,48 @@ revoke all on function public.create_table(jsonb, boolean, uuid, text), public.j
 grant execute on function public.create_table(jsonb, boolean, uuid, text), public.join_table(text, jsonb, boolean, text), public.cancel_table(uuid),
   public.play_move(uuid, int, jsonb), public.table_heartbeat(uuid), public.claim_timeout(uuid), public.resign_table(uuid),
   public.offer_draw(uuid), public.answer_draw(uuid, boolean), public.report_result(uuid, int, text), public.my_tables() to authenticated;
+
+-- ---------------------------------------------------------------- notifiche push
+-- Un telefono che attiva le notifiche registra qui il suo indirizzo push (endpoint e chiavi del browser).
+-- La Edge Function «push» (vedi push-function.ts) le manda quando arriva un messaggio, una sfida o una
+-- richiesta d'amicizia; le chiavi VAPID le genera e le tiene lei, in una tabella che nessun utente può leggere.
+create table if not exists public.push_subs (
+  endpoint text primary key check (char_length(endpoint) < 1000),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  p256dh text not null check (char_length(p256dh) < 200),
+  auth text not null check (char_length(auth) < 100),
+  prefs jsonb not null default '{"messages": true, "challenges": true, "requests": true}'::jsonb,
+  lang text not null default 'it' check (lang in ('it', 'en')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists push_subs_user on public.push_subs (user_id);
+alter table public.push_subs enable row level security;
+drop policy if exists push_subs_own on public.push_subs;
+create policy push_subs_own on public.push_subs for select to authenticated using (user_id = auth.uid());
+revoke all on public.push_subs from anon, authenticated;
+grant select on public.push_subs to authenticated;
+
+create table if not exists public.push_keys (id int primary key default 1 check (id = 1), public_key text not null, private_key text not null);
+alter table public.push_keys enable row level security;
+revoke all on public.push_keys from anon, authenticated;   -- solo la Edge Function (chiave di servizio)
+
+-- registra questo dispositivo per l'utente collegato (se il telefono era di un altro account, passa a te)
+create or replace function public.save_push(p_endpoint text, p_p256dh text, p_auth text, p_prefs jsonb, p_lang text) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null then raise exception 'serve un account'; end if;
+  delete from push_subs where endpoint = p_endpoint and user_id <> auth.uid();
+  insert into push_subs (endpoint, user_id, p256dh, auth, prefs, lang)
+  values (p_endpoint, auth.uid(), p_p256dh, p_auth, coalesce(p_prefs, '{"messages": true, "challenges": true, "requests": true}'::jsonb), case when p_lang = 'en' then 'en' else 'it' end)
+  on conflict (endpoint) do update set p256dh = excluded.p256dh, auth = excluded.auth, prefs = excluded.prefs, lang = excluded.lang, updated_at = now();
+end $$;
+create or replace function public.delete_push(p_endpoint text) returns void
+language sql security definer set search_path = public as $$
+  delete from push_subs where endpoint = p_endpoint and user_id = auth.uid()
+$$;
+revoke all on function public.save_push(text, text, text, jsonb, text), public.delete_push(text) from public, anon;
+grant execute on function public.save_push(text, text, text, jsonb, text), public.delete_push(text) to authenticated;
 
 -- ---------------------------------------------------------------- tempo reale: messaggi, amicizie e dati sincronizzati arrivano subito
 do $$ begin

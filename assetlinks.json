@@ -1,0 +1,10 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "io.github.deckshard.twa",
+      "sha256_cert_fingerprints": ["SOSTITUISCI_CON_L_IMPRONTA_SHA256_DELLA_CHIAVE_DI_FIRMA"]
+    }
+  }
+]

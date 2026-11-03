@@ -8,6 +8,7 @@ import { cardQty } from "./store.js";
 import * as cloud from "./cloud.js";
 import { DATA, thumbUrl } from "./data.js";
 import { openCard } from "./ui.js";
+import { openSharedDeck } from "./deck.js";
 
 const AVA = f => { const a = f.avatar || {}; return { favImg: a.img || "", favPos: a.pos ?? 34, favZoom: a.zoom ?? 150, fav: a.fav || "", nick: f.nick }; };
 const initials = s => String(s || "?").split(/[\s_.-]+/).map(w => w[0]).join("").slice(0, 2).toUpperCase();
@@ -80,6 +81,13 @@ async function openChat(id){
 function closeChat(){ chatWith = null; const el = $("#chat"); if(el){ el.hidden = true; el.dataset.with = ""; if(el.contains(document.activeElement)) document.activeElement.blur(); } }
 /* la finestra si costruisce una volta sola per amico; dopo si aggiornano solo intestazione e messaggi,
    così il campo di testo (e la tastiera del telefono) non viene mai ricreato mentre si scrive */
+/* un messaggio con il link a un mazzo condiviso diventa un pulsante per aprirlo */
+const DECK_RX = /https?:\/\/\S+#d=\S+/;
+function msgBody(body){
+  const m = DECK_RX.exec(body || ""); if(!m) return `<span>${esc(body)}</span>`;
+  const rest = body.replace(m[0], "").trim();
+  return `${rest ? `<span>${esc(rest)}</span>` : ""}<button class="btn sm acc2 msgdeck" data-deck="${esc(m[0])}">🃏 Apri il mazzo</button>`;
+}
 function renderChat(scroll){
   const el = $("#chat"); if(!el || !chatWith) return;
   const me = cloud.state.user.id, f = chatWith, on = cloud.state.online.has(f.id);
@@ -94,7 +102,7 @@ function renderChat(scroll){
   }
   $("#chOn").textContent = on ? "in linea" : "non in linea";
   const box = $("#chMsgs"), atEnd = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
-  box.innerHTML = chatMsgs.length ? chatMsgs.map(m => `<div class="msg${m.sender === me ? " me" : ""}" data-mid="${m.id}"><span>${esc(m.body)}</span><small>${when(m.created_at)}${m.sender === me && m.read_at ? " · letto" : ""}</small></div>`).join("") : `<div class="sub" style="text-align:center;margin:auto">Linea silenziosa: scrivi tu per primo.</div>`;
+  box.innerHTML = chatMsgs.length ? chatMsgs.map(m => `<div class="msg${m.sender === me ? " me" : ""}" data-mid="${m.id}">${msgBody(m.body)}<small>${when(m.created_at)}${m.sender === me && m.read_at ? " · letto" : ""}</small></div>`).join("") : `<div class="sub" style="text-align:center;margin:auto">Linea silenziosa: scrivi tu per primo.</div>`;
   if(scroll !== false && (scroll || atEnd || chatMsgs.length && chatMsgs[chatMsgs.length - 1].sender === me)) box.scrollTop = box.scrollHeight;
 }
 document.addEventListener("ncd:message", async e => {
@@ -105,6 +113,7 @@ document.addEventListener("ncd:message", async e => {
 document.addEventListener("click", async e => {
   if(!$("#chat") || $("#chat").hidden) return;
   if(e.target.closest("#chClose") || e.target.id === "chat"){ closeChat(); rerender(); return; }
+  const dk = e.target.closest("[data-deck]"); if(dk){ closeChat(); openSharedDeck(dk.dataset.deck); return; }
   const m = e.target.closest(".msg:not(.me)");
   if(m && chatWith && confirm("Segnalare questo messaggio?")){ try{ await cloud.reportUser(chatWith.id, +m.dataset.mid, "messaggio in chat"); toast("Segnalazione inviata"); }catch(err){ toast(err.message, 4000); } }
 });

@@ -13,6 +13,9 @@ collect.py                 collector: catalogo, immagini, prezzi, regole complet
 cardmarket-expansions.json abbinamento espansioni Cardmarket → set del gioco
 index.html, theme.css, sim.css, manifest.webmanifest, sw.js, icon*   la PWA
 app.js, data.js, store.js, ui.js, collection.js, deck.js, profile.js, sim.js   le sezioni
+privacy.html, delete-account.html   informativa sulla privacy e cancellazione dell'account dal web (pagine pubbliche richieste dagli store)
+push-function.ts           Edge Function «push» di Supabase: notifiche di messaggi, sfide e richieste (da incollare nel pannello Supabase)
+assetlinks.json            verifica del dominio per l'app Android (pubblicato in /.well-known/)
 home.js                    Home: accoglienza con l'emblema dell'aspetto scelto, avatar → Social, scorciatoie solo quando servono
 i18n.js                    lingua dell'interfaccia: dizionario italiano → inglese applicato sul DOM
 cloud.js                   account e cloud (Supabase): accesso, sincronizzazione, amici, chat, presenza, feedback
@@ -82,6 +85,24 @@ Come funziona: una partita è seme + mazzi + elenco ordinato di mosse (`game_tab
 ## Home
 
 L'app si apre sulla **Home**, al centro della barra (Collection, Deckbuilder, Home, Simulator, Regole): una pagina di accoglienza monocromatica con l'emblema dell'aspetto scelto, il saluto e una frase al giorno. Gli emblemi sono simboli originali (sigillo, artigli, circuito, bussola, moneta di giada…), ispirati alle fazioni ma non i loro loghi, che restano marchi di CD PROJEKT. L'avatar in alto a destra apre il **Social** (profilo, account, amici), con il conteggio di messaggi e richieste; sotto il saluto compaiono al massimo due scorciatoie, solo quando servono: partita da riprendere, sfide ricevute, messaggi. È il posto pensato per la futura gamification.
+
+## Notifiche push
+
+Impostazioni → Notifiche (serve l'account): il telefono si iscrive al servizio push del browser e registra l'iscrizione nel database (`push_subs`, con le preferenze messaggi / sfide / richieste). Quando arriva un messaggio, una sfida o una richiesta d'amicizia, un **Database Webhook** chiama la Edge Function `push` (`push-function.ts`), che rilegge l'evento dal database (una chiamata inventata non produce notifiche), cifra il contenuto (RFC 8291) e lo firma con VAPID (RFC 8292) usando solo WebCrypto. Le chiavi VAPID le genera la funzione al primo avvio e le tiene nella tabella `push_keys`, che nessun utente può leggere. Su iPhone le notifiche web funzionano solo con l'app aggiunta alla schermata Home (iOS 16.4+). Uscendo dall'account le notifiche del dispositivo si spengono.
+
+Installazione (una volta): Supabase → Edge Functions → nuova funzione `push` incollando `push-function.ts`; poi Database → Webhooks: tre webhook su INSERT di `messages`, `friendships` e `game_tables`, di tipo «Supabase Edge Functions» verso `push`.
+
+## Condivisione dei mazzi
+
+Nel deckbuilder «Condividi» crea un link corto (`#d=nome~leggende~stampe*copie`, con le prime 8 cifre dell'identificativo di ogni stampa): si copia, si manda con le app del telefono o direttamente in chat a un amico, dove diventa il pulsante «🃏 Apri il mazzo». Chi lo apre vede l'anteprima e può salvarne una copia.
+
+## Accessibilità
+
+Impostazioni → Accessibilità: dimensione del testo (normale, grande, molto grande), contrasto elevato, animazioni ridotte (o come il sistema).
+
+## App Android
+
+L'app è una PWA installabile e si impacchetta per il Play Store come Trusted Web Activity (PWABuilder o Bubblewrap): manifest con `id`, icona adattiva (`icon-maskable-512.png`), screenshot e scorciatoie; `assetlinks.json` va completato con l'impronta SHA-256 della chiave di firma e il workflow lo pubblica in `/.well-known/`. Informativa e cancellazione dell'account sono in `privacy.html` e `delete-account.html`.
 
 ## Aspetto
 

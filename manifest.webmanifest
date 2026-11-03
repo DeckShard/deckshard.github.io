@@ -1,17 +1,33 @@
 {
+  "id": "/",
   "name": "DeckShard — Cyberpunk TCG",
   "short_name": "DeckShard",
-  "description": "Collezione, prezzi, deckbuilder e simulatore per il Cyberpunk TCG. App gratuita e non ufficiale.",
+  "description": "Collezione, prezzi, deckbuilder, simulatore e partite online per il Cyberpunk TCG. App gratuita e non ufficiale.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
+  "display_override": ["standalone"],
   "orientation": "any",
-  "background_color": "#0b0b0e",
-  "theme_color": "#0b0b0e",
+  "background_color": "#120a0b",
+  "theme_color": "#120a0b",
   "lang": "it",
+  "dir": "ltr",
+  "categories": ["games", "entertainment", "utilities"],
+  "prefer_related_applications": false,
   "icons": [
     { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
     { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "screenshots": [
+    { "src": "shot-home.png", "sizes": "1080x1920", "type": "image/png", "form_factor": "narrow", "label": "Home" },
+    { "src": "shot-collection.png", "sizes": "1080x1920", "type": "image/png", "form_factor": "narrow", "label": "Collezione con i prezzi" },
+    { "src": "shot-sim-wide.png", "sizes": "1920x1080", "type": "image/png", "form_factor": "wide", "label": "Simulatore" }
+  ],
+  "shortcuts": [
+    { "name": "Collection", "url": "./#collection", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] },
+    { "name": "Deckbuilder", "url": "./#deck", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] },
+    { "name": "Simulator", "url": "./#sim", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] }
   ]
 }
