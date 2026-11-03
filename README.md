@@ -13,6 +13,7 @@ collect.py                 collector: catalogo, immagini, prezzi, regole complet
 cardmarket-expansions.json abbinamento espansioni Cardmarket → set del gioco
 index.html, theme.css, sim.css, manifest.webmanifest, sw.js, icon*   la PWA
 app.js, data.js, store.js, ui.js, collection.js, deck.js, profile.js, sim.js   le sezioni
+home.js                    Home: accoglienza con l'emblema dell'aspetto scelto, avatar → Social, scorciatoie solo quando servono
 i18n.js                    lingua dell'interfaccia: dizionario italiano → inglese applicato sul DOM
 cloud.js                   account e cloud (Supabase): accesso, sincronizzazione, amici, chat, presenza, feedback
 social.js                  interfaccia della scheda Social: account, amici, chat, feedback
@@ -77,6 +78,10 @@ Il **Simulator** ha due schede. **Costruito**: mazzi del deckbuilder e starter, 
 Nel Simulator, modalità **Online** (serve l'account): «Crea un tavolo» dà un codice di 4 caratteri (senza 0/O e 1/I) da passare all'avversario, che lo inserisce in «Entra con un codice»; oppure si **sfida un amico** dalla lobby o con il pulsante «Sfida» nella lista amici, e la sfida gli arriva in tempo reale (avviso e badge sul Simulator). Appena il secondo giocatore entra la partita parte da sola su entrambi i telefoni.
 
 Come funziona: una partita è seme + mazzi + elenco ordinato di mosse (`game_tables`, `game_moves`). Ogni telefono applica le stesse mosse con lo stesso motore e ottiene lo stesso stato; il database accetta una mossa solo se è la successiva, quindi l'ordine è unico, e in caso di conflitto (i due mulligan insieme) la partita si ricostruisce dal registro. Per lo stesso motivo una partita si **riprende** dopo un riavvio o da un altro dispositivo («Partite in corso» nella lobby). I due giocatori devono avere la stessa versione dell'app. Ogni telefono manda un segnale ogni 10 secondi: **chi tace per più di un minuto perde** (l'avversario vede il conto alla rovescia). Dal menù ⋯: chat del tavolo (non salvata), **proposta di patta**, abbandono. Il risultato deciso dal motore lo registra il telefono di chi perde, così nessuno può dichiararsi vincitore da solo. Il record online (vittorie, sconfitte, patte) è separato da quello contro il bot.
+
+## Home
+
+L'app si apre sulla **Home**, al centro della barra (Collection, Deckbuilder, Home, Simulator, Regole): una pagina di accoglienza monocromatica con l'emblema dell'aspetto scelto, il saluto e una frase al giorno. Gli emblemi sono simboli originali (sigillo, artigli, circuito, bussola, moneta di giada…), ispirati alle fazioni ma non i loro loghi, che restano marchi di CD PROJEKT. L'avatar in alto a destra apre il **Social** (profilo, account, amici), con il conteggio di messaggi e richieste; sotto il saluto compaiono al massimo due scorciatoie, solo quando servono: partita da riprendere, sfide ricevute, messaggi. È il posto pensato per la futura gamification.
 
 ## Aspetto
 

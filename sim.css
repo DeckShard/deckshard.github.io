@@ -199,3 +199,25 @@
 /* tutorial: il pezzo della plancia di cui parla il passo */
 #board .tuthl{outline:3px solid var(--yel);outline-offset:2px;border-radius:6px;animation:tutpulse 1.2s ease-in-out infinite;position:relative;z-index:2}
 @keyframes tutpulse{0%,100%{outline-color:var(--yel)}50%{outline-color:transparent}}
+
+/* ------------------------------------------------------------ plancia su schermi grandi
+   --bz (calcolata da sim.js) è 1 sui telefoni e cresce con la misura delle carte: tutto in proporzione */
+#board{--bz:1;font-size:calc(12px * var(--bz))}
+#board .stack b{font-size:calc(16px * var(--bz))} #board .stack small{font-size:calc(9px * var(--bz))}
+#board .die{font-size:calc(12px * var(--bz));padding:calc(2px * var(--bz)) calc(6px * var(--bz));border-radius:calc(7px * var(--bz))} #board .die small{font-size:calc(10px * var(--bz))}
+#board .dice{min-height:calc(26px * var(--bz));gap:calc(4px * var(--bz))}
+#board .cred{font-size:calc(13px * var(--bz))}
+#board .bc .pw,#board .bc .co{font-size:calc(11px * var(--bz))} #board .bc .ed{font-size:calc(9px * var(--bz))}
+#board .bc.back{font-size:calc(16px * var(--bz))} #board .bc.lag::after{font-size:calc(10px * var(--bz))}
+#board .bc .g img{width:calc(14px * var(--bz));height:calc(20px * var(--bz))}
+#board .brow .lbl{font-size:calc(10px * var(--bz))}
+#board .brow{gap:calc(6px * var(--bz))}
+#board .bstrip{min-height:calc(34px * var(--bz));gap:calc(8px * var(--bz))}
+#board .bstrip .btn{font-size:calc(12px * var(--bz));padding:calc(4px * var(--bz)) calc(9px * var(--bz))}
+#board .pop{min-width:calc(150px * var(--bz));max-width:calc(260px * var(--bz))} #board .pop button{font-size:calc(12.5px * var(--bz));padding:calc(6px * var(--bz)) calc(9px * var(--bz))} #board .pop .ttl{font-size:calc(12px * var(--bz));max-width:calc(240px * var(--bz))}
+#board #simAsk .box{max-width:calc(520px * var(--bz))} #board #simAsk .opts button{font-size:calc(13px * var(--bz))}
+#board #simAsk.picker .box,#board #simAsk.mull .box{max-width:min(calc(980px * var(--bz)),100%)}
+#board #simAsk .mc{max-width:calc(150px * var(--bz))} #board #simAsk .pk{max-width:calc(170px * var(--bz))}
+#board #simLog{font-size:calc(12.5px * var(--bz));width:min(calc(360px * var(--bz)),70%)}
+#board .winbox .box{max-width:calc(420px * var(--bz))} #board .winbox h2{font-size:calc(28px * var(--bz))} #board .handoff h2{font-size:calc(26px * var(--bz))}
+#board .tutbar{max-width:min(calc(680px * var(--bz)),94%)}

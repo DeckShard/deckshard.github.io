@@ -374,7 +374,11 @@ function render(){
   const cs = getComputedStyle(board), H = board.clientHeight - (parseFloat(cs.paddingTop) || 0) - (parseFloat(cs.paddingBottom) || 0);
   board.style.setProperty("--bh", H + "px");
   if(drag){ drag = null; killGhosts(); }   // un ridisegno durante un trascinamento lo annulla, senza lasciare copie in giro
-  board.style.setProperty("--cw", Math.max(24, Math.min(64, (H - 110) / (1.4 * 4.15 + 0.6))).toFixed(1) + "px");
+  // carte grandi quanto lo schermo permette (anche su un monitor da PC), senza superare la larghezza utile;
+  // --bz ingrandisce in proporzione scritte, dadi e pile (resta 1 sui telefoni)
+  const W = board.clientWidth, cw = Math.max(24, Math.min(150, (H - 110) / (1.4 * 4.15 + 0.6), (W - 320) / 9));
+  board.style.setProperty("--cw", cw.toFixed(1) + "px");
+  board.style.setProperty("--bz", Math.max(1, Math.min(2.2, cw / 52)).toFixed(3));
   board.innerHTML = `
     <div class="bz rival">
       <div class="brow">
@@ -725,3 +729,7 @@ function pidOf(el){
 }
 /* per i collaudi automatici: stessa strada dei tocchi sulla plancia */
 window.__ncdSim = { chat: () => openTableChat(), G: () => G, seat: () => me(), act: a => { const r = act(me(), a); after(r); return r; }, res: i => { res(i); render(); tick(); } };
+/* per la Home: partita da riprendere e scorciatoia alla lobby online */
+export const simInProgress = () => G && G.winner == null ? (gOnline ? "online" : "offline") : null;
+export function resumeSim(){ if(G && G.winner == null){ openBoard(); render(); tick(); } }
+export function showOnline(){ mode = "online"; renderSim(); }

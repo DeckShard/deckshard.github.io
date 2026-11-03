@@ -12,6 +12,13 @@ page.on("pageerror", e => errors.push(String(e)));
 page.on("console", m => { if(m.type() === "error") errors.push(m.text()); });
 
 await page.goto(BASE + "/index.html");
+/* home: pagina d'accoglienza al centro della barra, Social dall'avatar */
+await page.waitForSelector("#p-home.on .emblem");
+ok((await page.locator("nav.tabs button").evaluateAll(bs => bs.map(b => b.dataset.tab))).join(",") === "collection,deck,home,sim,rules", "barra: Collection, Deckbuilder, Home, Simulator, Regole");
+ok(await page.locator("#homeSocial").count() === 1 && /Benvenuto|Bentornato/.test(await page.locator(".hhello").textContent()), "home con avatar e saluto");
+await page.click("#homeSocial"); await page.waitForTimeout(300);
+ok(await page.locator("#p-profile.on").count() === 1 && await page.locator('nav.tabs button[data-tab="home"][aria-selected="true"]').count() === 1, "avatar → Social, con Home accesa nella barra");
+await page.click('nav.tabs button[data-tab="collection"]');
 await page.waitForFunction(() => document.querySelector("#collRows .gc"));
 ok(await page.locator("#collRows .gc").count() > 100, "griglia collezione popolata");
 ok((await page.locator("#metaLine").textContent()).includes("carte"), "riga meta");
@@ -157,7 +164,7 @@ await page.click("#deckList [data-ddel] >> nth=0");
 ok((await page.locator("#deckList [data-deck]").count()) === nDecks - 1, "mazzo eliminato dall'elenco");
 
 /* profilo */
-await page.click('nav.tabs button[data-tab="profile"]');
+await page.click('nav.tabs button[data-tab="home"]'); await page.click("#homeSocial");
 await page.fill("#pfNick", "Choom"); await page.dispatchEvent("#pfNick", "change");
 await page.click('#pfLife [data-v="Nomad"]');
 ok((await page.locator("#pfChars button").count()) > 60, "galleria avatar con illustrazioni alternative");

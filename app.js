@@ -9,13 +9,14 @@ import { renderProfile, renderSettings, ACCENTS } from "./profile.js";
 import { renderSim, setChallenge } from "./sim.js";
 import { setOnlineVersion, invitesForMe, activeTables, T as onlineT } from "./online.js";
 import { renderRules } from "./rules.js";
+import { renderHome, wireHome } from "./home.js";
 import { initI18n } from "./i18n.js";
 import { bootCloud, state as cloudState } from "./cloud.js";
 
-export const APP_VERSION = "1.7.0";
+export const APP_VERSION = "1.8.0";
 setOnlineVersion(APP_VERSION);
 
-const TABS = { collection: renderCollection, deck: renderDeck, profile: renderProfile, sim: renderSim, rules: renderRules, settings: renderSettings };
+const TABS = { home: renderHome, collection: renderCollection, deck: renderDeck, profile: renderProfile, sim: renderSim, rules: renderRules, settings: renderSettings };
 
 /* aspetto, letto dal profilo: ogni aspetto è scuro o chiaro (il vecchio «tema chiaro» non c'è più) */
 export function applyTheme(){
@@ -29,8 +30,9 @@ export function applyTheme(){
 }
 
 export function showTab(name, push = true){
-  if(!TABS[name]) name = "collection";
-  $$("nav.tabs button").forEach(b => b.setAttribute("aria-selected", String(b.dataset.tab === name)));
+  if(!TABS[name]) name = "home";
+  // il Social si apre dall'avatar della Home: nella barra resta acceso il pulsante Home
+  $$("nav.tabs button").forEach(b => b.setAttribute("aria-selected", String(b.dataset.tab === name || (name === "profile" && b.dataset.tab === "home"))));
   $$(".panel").forEach(p => p.classList.toggle("on", p.dataset.tab === name));
   $("#btnSettings").classList.toggle("on", name === "settings");
   if(push && location.hash !== "#" + name) history.replaceState(null, "", "#" + name);
@@ -58,13 +60,14 @@ async function boot(){
   $("#verLine").textContent = `v${APP_VERSION}` + (DATA.pricesAt ? ` · prezzi del ${new Date(DATA.pricesAt).toLocaleDateString("it-IT")}` : "");
   if(!storageOk()) toast("Memoria locale non disponibile: le modifiche non verranno salvate", 5000);
 
-  showTab(location.hash.slice(1) || "collection", false);
+  wireHome(t => showTab(t));
+  showTab(location.hash.slice(1) || "home", false);
 
   // account: dati arrivati da un altro dispositivo → si ridisegna la scheda aperta; badge di messaggi e richieste
-  const current = () => ($(".panel.on") || {}).dataset?.tab || "collection";
+  const current = () => ($(".panel.on") || {}).dataset?.tab || "home";
   document.addEventListener("ncd:synced", () => { applyTheme(); TABS[current()](); });
-  const badge = () => { const n = (cloudState.unread || 0) + (cloudState.requests || 0); const b = $('nav.tabs button[data-tab="profile"]'); let s = b.querySelector(".nbadge"); if(n){ if(!s){ s = document.createElement("span"); s.className = "nbadge"; b.appendChild(s); } s.textContent = n > 9 ? "9+" : n; } else if(s) s.remove(); };
-  for(const ev of ["ncd:cloud", "ncd:social", "ncd:presence"]) document.addEventListener(ev, () => { badge(); if(current() === "profile" && !document.querySelector("#chat:not([hidden])") && document.activeElement?.type !== "range") TABS.profile(); });
+  const badge = () => { const n = (cloudState.unread || 0) + (cloudState.requests || 0) + invitesForMe().length; const b = $('nav.tabs button[data-tab="home"]'); if(!b) return; let s = b.querySelector(".nbadge"); if(n){ if(!s){ s = document.createElement("span"); s.className = "nbadge"; b.appendChild(s); } s.textContent = n > 9 ? "9+" : n; } else if(s) s.remove(); };
+  for(const ev of ["ncd:cloud", "ncd:social", "ncd:presence", "ncd:tables"]) document.addEventListener(ev, () => { badge(); if(current() === "home") TABS.home(); if(current() === "profile" && !document.querySelector("#chat:not([hidden])") && document.activeElement?.type !== "range") TABS.profile(); });
   // tavoli online: badge sulle sfide ricevute, avviso all'arrivo di una sfida o di una partita lasciata aperta
   const simBadge = () => { const n = invitesForMe().length; const b = $('nav.tabs button[data-tab="sim"]'); if(!b) return; let s = b.querySelector(".nbadge"); if(n){ if(!s){ s = document.createElement("span"); s.className = "nbadge"; b.appendChild(s); } s.textContent = n; } else if(s) s.remove(); };
   let warnedActive = false;

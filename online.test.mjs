@@ -111,7 +111,7 @@ await H.pg.evaluate(async n => { const c = await import("./cloud.js"); await c.f
 const hId = await H.pg.evaluate(async () => (await import("./cloud.js")).state.user.id);
 await Gs.pg.evaluate(async id => { const c = await import("./cloud.js"); await c.friendRespond(id, true); }, hId);
 await H.pg.evaluate(async () => { const c = await import("./cloud.js"); await c.refreshSocial(); });
-await H.pg.click('nav.tabs button[data-tab="profile"]'); await H.pg.waitForTimeout(500);
+await H.pg.evaluate(() => { location.hash = "#profile"; }); await H.pg.waitForTimeout(500);
 ok(await until(H.pg, () => document.querySelector("[data-fduel]")), "pulsante Sfida nella lista amici");
 await H.pg.click("[data-fduel]");
 ok(await until(H.pg, () => document.querySelector("#onlFriend") && document.querySelector('#p-sim.on')), "Sfida porta alla lobby con l'amico scelto");

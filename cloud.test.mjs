@@ -65,7 +65,7 @@ await B.pg.fill("#frQ", "TestA_" + tag.slice(0, 3)); await B.pg.click("#frSearch
 ok(await B.pg.locator(`[data-fadd="${nickA}"]`).count() === 1, "B: trova A cercando il nick");
 await B.pg.click(`[data-fadd="${nickA}"]`); await B.pg.waitForTimeout(800);
 ok(await until(A.pg, () => document.querySelector("[data-facc]"), null, 20000), "A: richiesta di B arrivata in tempo reale");
-ok(await until(A.pg, () => /^1$|^2$/.test((document.querySelector('nav.tabs button[data-tab="profile"] .nbadge') || {}).textContent || "")), "A: badge sulla scheda Social");
+ok(await until(A.pg, () => /^1$|^2$/.test((document.querySelector('nav.tabs button[data-tab="home"] .nbadge') || {}).textContent || "")), "A: badge sulla scheda Social");
 await A.pg.click("[data-facc]");
 ok(await until(B.pg, () => document.querySelector("[data-fchat]"), null, 20000), "B: amicizia accettata, compare tra gli amici");
 // chat
@@ -85,7 +85,7 @@ await A.pg.fill("#fbBody", "collaudo automatico " + tag + " (si può cancellare)
 ok(await until(A.pg, () => /Feedback inviato/.test(document.body.textContent), null, 8000), "feedback inviato dalle Impostazioni");
 // pulizia: entrambi eliminano l'account
 for(const [n, d] of [["A", A], ["B", B]]){
-  await d.pg.click('nav.tabs button[data-tab="profile"]'); await d.pg.waitForTimeout(300);
+  await d.pg.evaluate(() => { location.hash = "#profile"; }); await d.pg.waitForTimeout(300);
   await d.pg.click("#acDelete");
   ok(await until(d.pg, () => document.querySelector("#acct #acSend")), n + ": account eliminato, si torna al modulo di accesso");
 }
