@@ -525,6 +525,7 @@ nav.tabs button.homebtn[aria-selected="true"] svg{box-shadow:0 0 0 2px var(--nav
 nav.tabs button.homebtn[aria-selected="true"]::after{display:none}
 nav.tabs button.homebtn:not([aria-selected="true"]) svg{opacity:.85}
 @media(min-width:900px){ nav.tabs button.homebtn svg{width:30px;height:30px;padding:6px;margin-top:0} nav.tabs button.homebtn{gap:9px} }
+@media(min-width:900px){ nav.tabs button .nbadge{position:static;margin-left:-2px} nav.tabs button.homebtn .nbadge{order:-1} }
 
 /* ------------------------------------------------------------ accessibilità (Impostazioni) */
 :root[data-text="l"] :is(header.top, main, nav.tabs, footer, #sheetBox, #collImport .box, #collExport .box, #mergeAsk .box, #chat .box, .toast){zoom:1.12}
