@@ -2,7 +2,7 @@
    Rete prima, cache come ripiego: l'app si aggiorna da sola a ogni apertura
    online e continua a funzionare offline con l'ultima versione vista.
    Le immagini delle carte sono messe in cache man mano che le vedi.     */
-const CACHE = "ncd-v1";  // ritocchi a reazioni, scontri e furti: 1.9.17
+const CACHE = "ncd-v1";  // chat, filtri, temi e novità: 1.9.18
 const CORE = ["./", "./index.html", "./theme.css", "./sim.css", "./app.js", "./data.js", "./store.js", "./ui.js",
   "./collection.js", "./deck.js", "./profile.js", "./sim.js", "./engine.js", "./bot.js", "./scanner.js", "./parser.js", "./rules.js", "./prerelease.js", "./tutorial.js", "./i18n.js", "./cloud.js", "./social.js", "./online.js", "./home.js", "./manifest.webmanifest", "./icon.svg"];
 
@@ -58,7 +58,9 @@ self.addEventListener("push", e => {
 });
 self.addEventListener("notificationclick", e => {
   e.notification.close();
-  const url = (e.notification.data && e.notification.data.url) || self.registration.scope;
+  let url = (e.notification.data && e.notification.data.url) || self.registration.scope;
+  // messaggio di un amico: si apre direttamente la sua conversazione nella scheda Chat
+  const tag = e.notification.tag || ""; if(/^msg-[\w-]{8,64}$/.test(tag)) url = new URL("./#chat/" + tag.slice(4), self.registration.scope).href;
   e.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(list => {
     for(const c of list){ if(c.url.startsWith(self.registration.scope)){ c.focus(); return c.navigate ? c.navigate(url) : undefined; } }
     return self.clients.openWindow(url);

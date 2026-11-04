@@ -22,7 +22,7 @@ export const ACCENTS = [
   { id: "holophone", n: "Holophone (rosso e cyan)", a: "#ff3b3b", b: "#00e5f2" },
   { id: "samurai", n: "Samurai (giallo e rosso)", a: "#fcee0a", b: "#e11a3c" },
   { id: "netrunner", n: "Netrunner", a: "#00e5f2", b: "#ff3bd4" },
-  { id: "girlypop", n: "Girlypop (rosa e cyan)", a: "#ff3bd4", b: "#00e5f2" },
+  { id: "girlypop", n: "Us Cracks (rosa e cyan)", a: "#ff3bd4", b: "#00e5f2" },
   { id: "arasaka", n: "Arasaka", a: "#d8323c", b: "#6a6a72" },
   { id: "nomad", n: "Nomad", a: "#f28c28", b: "#6fae52" },
   { id: "maelstrom", n: "Maelstrom", a: "#e11a3c", b: "#fcee0a" },
@@ -33,15 +33,23 @@ export const ACCENTS = [
   { id: "afterlife", n: "Afterlife (verde neon e rosso)", a: "#39ff14", b: "#ff1744" },
   { id: "kangtao", n: "Kang Tao (oro e giada)", a: "#ffcc33", b: "#00c48c" },
   { id: "blackwall", n: "Blackwall (rosso e viola)", a: "#ff1e3c", b: "#8a2be2" },
+  { id: "netwatch", n: "NetWatch (viola e ciano)", a: "#8b5cf6", b: "#22d3ee" },
   // aspetti chiari: basi tenui e colorate (mai bianco pieno), ognuno legato a una fazione o a un luogo del gioco
-  { id: "l-washi", light: true, n: "Arasaka Washi (carta di riso e rosso)", bg: "#e6ddd0", a: "#c41e2a", b: "#2d2d33" },
-  { id: "l-mox", light: true, n: "Lizzie's Bar (rosa Mox)", bg: "#f0d9e3", a: "#e0179d", b: "#00a9bb" },
-  { id: "l-trauma", light: true, n: "Trauma Team (ghiaccio e arancio)", bg: "#d9e6ee", a: "#ff7a00", b: "#2b7fb3" },
-  { id: "l-badlands", light: true, n: "Badlands (sabbia Aldecaldo)", bg: "#e6d8bf", a: "#d4620f", b: "#4f8a35" },
-  { id: "l-kangtao", light: true, n: "Kang Tao (giada e oro)", bg: "#d8e6dc", a: "#00a372", b: "#c99a00" },
+  { id: "l-ash", light: true, n: "Holophone (cenere e rosso)", bg: "#e3d8d6", a: "#c41230", b: "#007f8a" },
   { id: "l-samurai", light: true, n: "Samurai (giallo concerto)", bg: "#efe8b8", a: "#d6142a", b: "#14130a" },
-  { id: "l-netwatch", light: true, n: "NetWatch (lavanda e ciano)", bg: "#dedcef", a: "#6a3fe0", b: "#0094b3" },
-  { id: "l-militech", light: true, n: "Militech (cachi da campo)", bg: "#dfdfc9", a: "#7f9600", b: "#d9530a" }
+  { id: "l-ice", light: true, n: "Netrunner (ghiaccio digitale)", bg: "#d6e6ea", a: "#007f8f", b: "#c0189e" },
+  { id: "l-mox", light: true, n: "Us Cracks (rosa Mox)", bg: "#f0d9e3", a: "#e0179d", b: "#00a9bb" },
+  { id: "l-washi", light: true, n: "Arasaka Washi (carta di riso e rosso)", bg: "#e6ddd0", a: "#c41e2a", b: "#2d2d33" },
+  { id: "l-badlands", light: true, n: "Badlands (sabbia Aldecaldo)", bg: "#e6d8bf", a: "#d4620f", b: "#4f8a35" },
+  { id: "l-chrome", light: true, n: "Maelstrom (cromo e sangue)", bg: "#d9d9dc", a: "#c4122f", b: "#8a7600" },
+  { id: "l-lavender", light: true, n: "Voodoo Boys (lavanda e lime)", bg: "#e2dceb", a: "#6d28d9", b: "#5f7a00" },
+  { id: "l-petals", light: true, n: "Tyger Claws (petali e giada)", bg: "#eddbe7", a: "#b0127f", b: "#0b8a66" },
+  { id: "l-militech", light: true, n: "Militech (cachi da campo)", bg: "#dfdfc9", a: "#7f9600", b: "#d9530a" },
+  { id: "l-trauma", light: true, n: "Trauma Team (ghiaccio e arancio)", bg: "#d9e6ee", a: "#ff7a00", b: "#2b7fb3" },
+  { id: "l-absinthe", light: true, n: "Afterlife (assenzio)", bg: "#dbe6d9", a: "#1f8a0f", b: "#c4122f" },
+  { id: "l-kangtao", light: true, n: "Kang Tao (giada e oro)", bg: "#d8e6dc", a: "#00a372", b: "#c99a00" },
+  { id: "l-redfog", light: true, n: "Blackwall (nebbia rossa)", bg: "#e2d6dc", a: "#c4122f", b: "#6a1fb8" },
+  { id: "l-netwatch", light: true, n: "NetWatch (lavanda e ciano)", bg: "#dedcef", a: "#6a3fe0", b: "#0094b3" }
 ];
 
 const wired = new Set();
@@ -174,6 +182,8 @@ export function renderSettings(){
         <span class="seg" id="pfFx">${[["1", "Sì"], ["0", "No"]].map(([v, t]) => `<button data-v="${v}" aria-pressed="${(S.settings.fx ? "1" : "0") === v}">${t}</button>`).join("")}</span></div>
       <div class="field"><label>Suoni (beta)<small>Effetti sonori sintetizzati sulla plancia: carte, dadi, colpi, cambio di turno. Nessun file da scaricare; partono al primo tocco.</small></label>
         <span class="seg" id="pfSfx">${[["1", "Sì"], ["0", "No"]].map(([v, t]) => `<button data-v="${v}" aria-pressed="${(S.settings.sfx ? "1" : "0") === v}">${t}</button>`).join("")}</span></div>
+      <div class="field"><label>Schermo intero sulla plancia<small>Nel browser la plancia prova a prendersi tutto lo schermo e a girarsi in orizzontale; il telefono mostra il suo avviso per uscire. Nell'app installata non serve: si gira e basta, senza avviso.</small></label>
+        <span class="seg" id="pfFull">${[["1", "Sì"], ["0", "No"]].map(([v, t]) => `<button data-v="${v}" aria-pressed="${(S.settings.fullscreen === false ? "0" : "1") === v}">${t}</button>`).join("")}</span></div>
       <div class="field fcol"><label>Ritmo dell'avversario<small>Quanto aspetta l'IA (o l'avversario online) tra una mossa e l'altra, e quanto durano le animazioni delle sue carte. «Istantanea»: niente pause né movimenti.</small></label>
         <span class="seg" id="pfOppSpeed">${[["slow", "Lento"], ["normal", "Normale"], ["fast", "Veloce"], ["instant", "Istantaneo"]].map(([v, t]) => `<button data-v="${v}" aria-pressed="${(S.settings.oppSpeed || "normal") === v}">${t}</button>`).join("")}</span></div>
       <div class="field fcol"><label>Velocità delle tue animazioni<small>Le carte che giochi, vendi o spendi si muovono sulla plancia. «Istantanea»: la plancia cambia e basta, come prima.</small></label>
@@ -264,6 +274,7 @@ function wire(root){
     const os = e.target.closest("#pfOppSpeed button"); if(os){ S.settings.oppSpeed = os.dataset.v; S.save("settings"); rerender(); return; }
     const ly = e.target.closest("#pfLayout button"); if(ly){ S.settings.boardLayout = ly.dataset.v; S.save("settings"); rerender(); return; }
     const am = e.target.closest("#pfAnimMine button"); if(am){ S.settings.animMine = am.dataset.v; S.save("settings"); rerender(); return; }
+    const fu = e.target.closest("#pfFull button"); if(fu){ S.settings.fullscreen = fu.dataset.v === "1"; S.save("settings"); rerender(); return; }
     const sx = e.target.closest("#pfSfx button"); if(sx){ S.settings.sfx = sx.dataset.v === "1"; S.save("settings"); rerender(); return; }
     const fx = e.target.closest("#pfFx button"); if(fx){ S.settings.fx = fx.dataset.v === "1"; S.save("settings"); rerender(); return; }
     const of = e.target.closest("#pfOppFeed button"); if(of){ S.settings.oppFeed = of.dataset.v === "1"; S.save("settings"); rerender(); return; }

@@ -3,7 +3,7 @@
 
 import { DATA, COLORS, COLOR_IT, TYPES, TYPE_IT, thumbUrl, imgUrl, priceOf, cardPrice, eur, setName } from "./data.js";
 import { S, qtyOf, cardQty, newId, saveDeck, deleteDeck } from "./store.js";
-import { $, $$, esc, toast, rowHTML, statsHTML, makeFilters, filtersHTML, passes, bindFilters, sortCards, openCard } from "./ui.js";
+import { $, $$, esc, toast, rowHTML, statsHTML, makeFilters, filtersHTML, setFilters, fitFilters, filterClick, passes, bindFilters, sortCards, openCard } from "./ui.js";
 import * as cloud from "./cloud.js";
 
 export const DECK_MIN = 40, DECK_MAX = 50, MAX_COPIES = 3;
@@ -355,9 +355,10 @@ function renderEditor(){
         <span class="count" style="font-size:12.5px;color:var(--mute)" id="deckCount"></span>
       </div>
       <div class="search"><input class="inp" id="deckQ" type="search" placeholder="Cerca carta…" value="${esc(F.q)}" autocomplete="off"><button class="btn sm" id="deckFilt">Filtri</button></div>
-      <div class="filters${filtOpen ? " on" : ""}" id="deckFilters">${filtersHTML(F)}</div>
+      <div class="filters${filtOpen ? " on" : ""}" id="deckFilters">${(F.browse = browse, filtersHTML(F))}</div>
       <div class="rows" id="deckRows"></div>
     </div>`;
+  fitFilters($("#deckFilters"));
   renderBrowser();
 }
 function renderBrowser(){
@@ -367,7 +368,8 @@ function renderBrowser(){
   if(F.ramOnly && browse === "cards" && d.format !== "sealed") list = list.filter(c => (c.ramN || 0) <= (lim[c.color] || 0));
   list = sortCards(list, F.sort || "color");
   $("#deckCount").textContent = `${list.length} carte`;
-  $("#deckRows").innerHTML = list.map(c => {
+  const has = c => browse === "legends" ? d.legends.some(l => l && l.cid === c.id) : d.cards.some(x => x.cid === c.id);
+  const row = c => {
     const e = d.cards.find(x => x.cid === c.id), inDeck = browse === "legends" ? d.legends.some(l => l && l.cid === c.id) : (e ? e.n : 0);
     const ramKo = browse === "cards" && d.format !== "sealed" && (c.ramN || 0) > (lim[c.color] || 0);
     // già nel mazzo: «−» per togliere senza tornare all'elenco del mazzo (il resto della riga aggiunge)
@@ -378,8 +380,15 @@ function renderBrowser(){
     const left = d.format === "sealed" ? poolCount(d, c.id) - (browse === "legends" ? (inDeck ? 1 : 0) : (inDeck || 0)) : 0;
     const html = rowHTML(c, pe ? pe.pid : null, right, extra, false, d.format === "sealed" ? `${left}x` : "");
     return d.format !== "sealed" && !cardQty(c) ? html.replace('class="row"', 'class="row unowned" title="Non in collezione"') : html;   // non posseduta: miniatura in bianco e nero
-  }).join("") || `<div class="empty">Il tuo fixer non trova niente con questi filtri.</div>`;
+  };
+  // due sezioni a scomparsa: ciò che è già nel mazzo e il resto; lo stato aperto/chiuso resta finché si usa il deckbuilder
+  const ins = list.filter(has), outs = list.filter(c => !has(c));
+  const copies = browse === "legends" ? ins.length : ins.reduce((a, c) => a + (d.cards.find(x => x.cid === c.id)?.n || 0), 0);
+  const sec = (k, title, n, items) => items.length ? `<details class="dsec ${k}" data-sec="${k}"${secOpen[k] ? " open" : ""}><summary><span class="bar"></span>${title}<span class="n">${n}</span></summary>${items.map(row).join("")}</details>` : "";
+  $("#deckRows").innerHTML = list.length ? sec("in", "Nel mazzo", browse === "legends" ? `${ins.length} di 3` : `${ins.length} carte · ${copies} copie`, ins) + sec("out", "Non nel mazzo", `${outs.length} carte`, outs)
+    : `<div class="empty">Il tuo fixer non trova niente con questi filtri.</div>`;
 }
+const secOpen = { in: false, out: true };
 
 /* aggiunte/rimozioni */
 function addCard(cid, delta, where = "browser"){
@@ -401,8 +410,15 @@ function keepPlace(cid, fn, where = "browser"){
   const el = (anchorCid && sel(anchorCid)) || (cid && sel(cid)), key = el && el.dataset.cid;
   const top = el ? el.getBoundingClientRect().top : null;
   const br = $("#deckBrowser"), bs = br ? br.scrollTop : 0, inBrowser = !!(el && el.closest("#deckRows"));
+  // nell'elenco la riga può passare da «Non nel mazzo» a «Nel mazzo» (o viceversa): allora si resta sulla riga accanto
+  const secOf = r => r && r.closest(".dsec") ? r.closest(".dsec").dataset.sec : null, sec0 = inBrowser ? secOf(el) : null;
+  const near = inBrowser ? [el.nextElementSibling, el.previousElementSibling].filter(r => r && r.matches(".row")).map(r => ({ cid: r.dataset.cid, top: r.getBoundingClientRect().top })) : [];
   fn();
   const br2 = $("#deckBrowser"); if(br2) br2.scrollTop = bs;
+  if(inBrowser && secOf(inB(key)) !== sec0){
+    const n = near.find(x => inB(x.cid)); if(n){ const dy = inB(n.cid).getBoundingClientRect().top - n.top; if(Math.abs(dy) > 0.5) window.scrollBy(0, dy); }
+    anchorCid = null; return;
+  }
   if(top != null){
     const el2 = (inBrowser ? inB(key) : inD(key)) || sel(key);
     if(el2){ const dy = el2.getBoundingClientRect().top - top; if(Math.abs(dy) > 0.5) window.scrollBy(0, dy); }
@@ -416,6 +432,7 @@ function setLegend(i, cid){
   CUR.legends[i] = { cid, pid: pe ? pe.pid : c.def.id }; save(); keepPlace(cid, renderEditor);
 }
 
+document.addEventListener("toggle", e => { const x = e.target; if(x.matches && x.matches("#deckRows .dsec")) secOpen[x.dataset.sec] = x.open; }, true);
 function wire(){
   const list = $("#deckList"), ed = $("#deckEdit");
   list.addEventListener("input", e => { if(e.target.id === "deckListQ"){ LF.q = e.target.value; const pos = e.target.selectionStart; renderDeck(); const el = $("#deckListQ"); if(el){ el.focus(); el.setSelectionRange(pos, pos); } } });
@@ -446,7 +463,7 @@ function wire(){
     const b = e.target.closest("#deckBrowse button"); if(b){ browse = b.dataset.b; renderEditor(); return; }
     const ob = e.target.closest("#deckOwned button"); if(ob){ F.owned = ob.dataset.o; renderEditor(); return; }
     if(e.target.closest("#deckRamOnly")){ F.ramOnly = !F.ramOnly; renderEditor(); return; }
-    if(e.target.closest("#deckFilt")){ filtOpen = $("#deckFilters").classList.toggle("on"); return; }
+    if(e.target.closest("#deckFilt")){ filtOpen = $("#deckFilters").classList.toggle("on"); fitFilters($("#deckFilters")); return; }
     if(e.target.closest("#deckFilters")){ return; } // gestito da bindFilters (delegato sotto)
     const bm = e.target.closest("[data-bminus]"); if(bm){
       const cid = bm.dataset.bminus; anchorCid = cid;
@@ -466,10 +483,9 @@ function wire(){
   });
   // filtri (delegati: il contenitore viene ricreato a ogni render)
   ed.addEventListener("click", e => {
-    const b = e.target.closest("#deckFilters [data-fk]");
-    if(b){ const set = F[b.dataset.fk]; set.has(b.dataset.fv) ? set.delete(b.dataset.fv) : set.add(b.dataset.fv); $("#deckFilters").innerHTML = filtersHTML(F); $("#deckFilters").classList.add("on"); renderBrowser(); return; }
-    if(e.target.closest("#deckFilters [data-fclsall]")){ F.clsAll = !F.clsAll; $("#deckFilters").innerHTML = filtersHTML(F); $("#deckFilters").classList.add("on"); return; }
-    if(e.target.closest("#deckFilters [data-fclear]")){ for(const k of ["colors","types","rar","cls","cost","sets"]) F[k].clear(); $("#deckFilters").innerHTML = filtersHTML(F); renderBrowser(); }
+    if(!e.target.closest("#deckFilters")) return;
+    const r = filterClick(F, e.target); if(!r) return;
+    $("#deckFilters").classList.add("on"); setFilters($("#deckFilters"), F); if(r === "list") renderBrowser();
   });
   ed.addEventListener("input", e => {
     if(e.target.id === "deckQ"){ F.q = e.target.value.trim(); renderBrowser(); }

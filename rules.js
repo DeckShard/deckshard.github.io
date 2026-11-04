@@ -5,6 +5,7 @@
    (public/rules.json) dalla stessa API della pagina ufficiale.          */
 
 import { $, esc } from "./ui.js";
+import { simKindHTML } from "./sim.js";
 
 const SECTIONS = [
   ["Obiettivo", `Ogni giocatore ha sei dadi (d4, d6, d8, d10, d12, d20): sono i <b>Gig</b>. A ogni turno ne tiri uno dal <i>fixer</i> e lo metti nella tua area Gig; attaccando l'area Gig del rivale puoi rubarglieli. <b>Vince chi inizia il proprio turno con almeno 7 Gig</b>. Se il mazzo di un giocatore finisce e deve pescare, perde subito.`],
@@ -91,7 +92,7 @@ export function renderRules(){
   const root = $("#p-rules");
   if(fullMode && !RULES && !rulesErr){ loadRules().then(renderRules); }
   root.innerHTML = `
-    <div class="card">
+    <div class="card">${simKindHTML("rules")}
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:space-between"><h2>${fullMode ? "Regole complete" : "Regole in breve"}</h2>
         <span class="seg" id="rulesMode"><button data-v="0" aria-pressed="${!fullMode}">In breve</button><button data-v="1" aria-pressed="${fullMode}">Complete (ufficiali)</button></span></div>
       <div class="sub">${fullMode ? "Il regolamento ufficiale completo, per risolvere ogni dubbio o conflitto in partita: tocca una sezione per aprirla, cerca una parola, segui i rimandi tra le regole." : "Quello che serve per giocare la prima partita, in italiano. Per i casi particolari e le dispute ci sono le regole complete ufficiali."}</div>

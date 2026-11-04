@@ -2,17 +2,17 @@
 
 import { DATA, priceOf, cardPrice, eur, COLORS, COLOR_IT } from "./data.js";
 import { S, qtyOf, setQty, cardQty } from "./store.js";
-import { $, $$, esc, toast, tileHTML, rowHTML, shownPrint, printLabel, makeFilters, filtersHTML, passes, bindFilters, sortCards, openCard } from "./ui.js";
+import { $, $$, esc, toast, tileHTML, rowHTML, shownPrint, printLabel, makeFilters, filtersHTML, setFilters, fitFilters, passes, bindFilters, sortCards, openCard } from "./ui.js";
 import { openScanner } from "./scanner.js";
 import { parseCardLines, collectionText, jsonToLines } from "./deck.js";
 
 const F = makeFilters("coll");
-let wired = false;
+let wired = false, shownList = [];   // l'elenco mostrato, per passare alla carta accanto dalla scheda
 
 export function renderCollection(){
   const root = $("#p-collection");
   if(!wired){ wire(root); wired = true; }
-  $("#collFilters").innerHTML = filtersHTML(F);
+  setFilters($("#collFilters"), F);
   $("#collSort").value = S.settings.sort || "name";
   $$("#collOwned button").forEach(b => b.setAttribute("aria-pressed", String((F.owned || "") === b.dataset.o)));
   $$("#collView button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.v === (S.settings.view || "grid"))));
@@ -42,13 +42,15 @@ export function renderCollection(){
   const order = [...cardsOk]; const pos = new Map(order.map((id, i) => [id, i]));
   let list = entries.filter(e => cardsOk.has(e.c.id));
   if(F.owned === "yes") list = list.filter(e => qtyOfEntry(e)); else if(F.owned === "no") list = list.filter(e => !qtyOfEntry(e));
+  if(F.fav){ const fav = S.settings.favPrints || {}; list = list.filter(e => fav[e.c.id] && (mode === "card" || e.prints.some(p => p.id === fav[e.c.id]))); }   // solo le carte con un artwork preferito
   list.sort((a, b) => pos.get(a.c.id) - pos.get(b.c.id) || a.c.prints.indexOf(a.show) - b.c.prints.indexOf(b.show));
+  shownList = list.map(e => ({ cid: e.c.id, pid: e.show.id }));
   $("#collCount").textContent = `${list.length} ${unit}`;
   const box = $("#collRows");
   if(!list.length){ box.className = "rows"; box.innerHTML = `<div class="empty">Il tuo fixer non trova niente con questi filtri.</div>`; return; }
   if((S.settings.view || "grid") === "grid"){
     box.className = "grid";
-    box.innerHTML = list.map(e => tileHTML(e.c, e.show.id, { dim: true, qty: qtyOfEntry(e), sub: e.sub })).join("");
+    box.innerHTML = list.map(e => tileHTML(e.c, e.show.id, { dim: true, qty: qtyOfEntry(e), sub: e.sub, star: mode === "card" })).join("");
   } else {
     box.className = "rows";
     box.innerHTML = list.map(e => {
@@ -61,22 +63,24 @@ export function renderCollection(){
 
 function wire(root){
   $("#collQ").addEventListener("input", e => { F.q = e.target.value.trim(); renderCollection(); });
-  $("#collFilt").addEventListener("click", () => $("#collFilters").classList.toggle("on"));
+  $("#collFilt").addEventListener("click", () => { $("#collFilters").classList.toggle("on"); fitFilters($("#collFilters")); });
   $("#collScan").addEventListener("click", openScanner);
   bindFilters($("#collFilters"), F, renderCollection);
   $("#collOwned").addEventListener("click", e => { const b = e.target.closest("button"); if(!b) return; F.owned = b.dataset.o; renderCollection(); });
   $("#collSort").addEventListener("change", e => { S.settings.sort = e.target.value; S.save("settings"); renderCollection(); });
   $$("#collView button").forEach(b => b.addEventListener("click", () => { S.settings.view = b.dataset.v; S.save("settings"); renderCollection(); }));
   $("#collRows").addEventListener("click", e => {
+    const st = e.target.closest("[data-favstar]");
+    if(st){ e.stopPropagation(); const fav = S.settings.favPrints = S.settings.favPrints || {}; if(fav[st.dataset.favstar] === st.dataset.favpid) delete fav[st.dataset.favstar]; else fav[st.dataset.favstar] = st.dataset.favpid; S.save("settings"); renderCollection(); return; }
     const t = e.target.closest("[data-cid]"); if(!t) return;
-    openCard(t.dataset.cid, t.dataset.pid);
+    openCard(t.dataset.cid, t.dataset.pid, { list: shownList });
   });
   // niente menù "salva immagine" del telefono sulle tessere
   $("#collRows").addEventListener("contextmenu", e => { if(e.target.closest(".gc")) e.preventDefault(); });
   // pressione lunga su una tessera: +1 copia della stampa predefinita, senza aprire la scheda
   let timer = null, fired = false;
   $("#collRows").addEventListener("pointerdown", e => {
-    const t = e.target.closest(".gc"); if(!t) return;
+    const t = e.target.closest(".gc"); if(!t || e.target.closest("[data-favstar]")) return;
     fired = false;
     timer = setTimeout(() => { fired = true; const c = DATA.byId.get(t.dataset.cid); const pid = (S.settings.collView || "card") === "card" ? c.def.id : t.dataset.pid; setQty(pid, qtyOf(pid) + 1); navigator.vibrate?.(12); toast(`+1 ${c.dn}`); renderCollection(); }, 480);
   });

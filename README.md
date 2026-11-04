@@ -84,7 +84,7 @@ Come funziona: una partita è seme + mazzi + elenco ordinato di mosse (`game_tab
 
 ## Home
 
-L'app si apre sulla **Home**, al centro della barra (Collection, Deckbuilder, Home, Simulator, Regole): una pagina di accoglienza monocromatica con l'emblema dell'aspetto scelto, il saluto e una frase al giorno. Gli emblemi sono simboli originali (sigillo, artigli, circuito, bussola, moneta di giada…), ispirati alle fazioni ma non i loro loghi, che restano marchi di CD PROJEKT. L'avatar in alto a destra apre il **Social** (profilo, account, amici), con il conteggio di messaggi e richieste; sotto il saluto compaiono al massimo due scorciatoie, solo quando servono: partita da riprendere, sfide ricevute, messaggi. È il posto pensato per la futura gamification.
+L'app si apre sulla **Home**, al centro della barra (Collection, Deckbuilder, Home, Simulator, Chat; le Regole sono la terza scheda del Simulator): una pagina di accoglienza monocromatica con l'emblema dell'aspetto scelto, il saluto e una frase al giorno. Gli emblemi sono simboli originali (sigillo, artigli, circuito, bussola, moneta di giada…), ispirati alle fazioni ma non i loro loghi, che restano marchi di CD PROJEKT. L'avatar in alto a destra apre il **Social** (profilo, account, amici), con il conteggio di messaggi e richieste; sotto il saluto compaiono al massimo due scorciatoie, solo quando servono: partita da riprendere, sfide ricevute, messaggi. È il posto pensato per la futura gamification.
 
 ## Notifiche push
 
@@ -106,7 +106,11 @@ L'app è una PWA installabile e si impacchetta per il Play Store come Trusted We
 
 ## Aspetto
 
-Nelle Impostazioni si sceglie un aspetto: 14 scuri (Holophone, Samurai, Netrunner, Arasaka, Nomad…) e 8 chiari con basi tenui e colorate, mai bianco pieno (Arasaka Washi, Lizzie's Bar, Trauma Team, Badlands, Kang Tao, Samurai, NetWatch, Militech). Il vecchio interruttore chiaro/scuro non c'è più: è l'aspetto a decidere.
+Nelle Impostazioni si sceglie un aspetto: 15 scuri (Holophone, Samurai, Netrunner, Us Cracks, Arasaka, Nomad, … NetWatch) e 15 chiari, uno per ciascuno, con basi tenui e colorate, mai bianco pieno (Cenere e rosso, Giallo concerto, Ghiaccio digitale, Rosa Mox, Washi, Badlands, Cromo e sangue, Lavanda e lime, Petali e giada, Cachi, Trauma Team, Assenzio, Giada e oro, Nebbia rossa, Lavanda e ciano). Il vecchio interruttore chiaro/scuro non c'è più: è l'aspetto a decidere.
+
+## Novità dopo un aggiornamento
+
+`app.js` tiene in `NEWS` l'elenco delle novità dell'ultima versione: alla prima apertura dopo l'aggiornamento (ultima versione vista in `S.settings.seenVer`) compare una finestra «Novità in DeckShard». Chi installa da zero non la vede. A ogni rilascio si aggiornano `APP_VERSION` e `NEWS`.
 
 ## Lingua
 

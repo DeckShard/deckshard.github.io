@@ -19,6 +19,12 @@ import { startTutorial, tutorialStep, tutorialBarHTML, tutorialActive, stopTutor
 const MANUAL = false;
 let G = null, mode = "bot", gmode = "bot", gOnline = false, gSeat = 0, challenge = null, human = [true, false], sel = null, targeting = null, pop = null, showLog = false, botTimer = null, handoff = false, wired = false;
 let lastSeen = { turn: 0, seen: 0 }, noteMsg = "", noteT = null, reactCover = null;
+/* in due sullo stesso dispositivo: chi ha in mano il telefono ora, e l'ultima riga del registro che ciascuno ha visto (per il riepilogo) */
+let holder = null, seenLog = [null, null];
+/* messaggio di un amico durante la partita: un pulsante nella barra della plancia (niente avvisi in mezzo allo schermo) */
+let boardChat = null;
+document.addEventListener("ncd:boardchat", e => { boardChat = { ...e.detail, n: ((boardChat && boardChat.id === e.detail.id) ? boardChat.n : 0) + 1 }; sfx("sell"); if(G && !$("#board").hidden) render(); });
+document.addEventListener("ncd:chatclosed", () => { if(G && !$("#board").hidden) render(); });
 let drag = null;   // trascinamento in corso dalla mano
 let peekPid = null;   // carta ingrandita con la pressione lunga
 const peekInner = pid => `<img src="${imgUrl(pid)}" alt=""><div class="hint">Rilascia per chiudere · «Ingrandisci» nel menù per lo zoom</div>`;
@@ -610,6 +616,9 @@ function oppDeckIssue(opp){
 }
 const MODES = { built: [["bot", "Sfida IA"], ["hot", "Offline"], ["online", "Online"], ["tutorial", "Tutorial"]], sealed: [["bot", "Sfida IA"], ["online", "Online"]] };
 export function simKind(){ return kind || S.settings.simKind || "built"; }
+/* le tre schede del Simulator: Costruito · Prerelease · Regole (le Regole hanno una pagina a sé, #rules) */
+export const simKindHTML = k => `<div class="simkind" id="simKind"><button data-v="built" aria-pressed="${k === "built"}">Costruito</button><button data-v="sealed" aria-pressed="${k === "sealed"}">Prerelease</button><button data-v="rules" aria-pressed="${k === "rules"}">Regole</button></div>`;
+document.addEventListener("click", e => { const b = e.target.closest("#p-rules #simKind button"); if(!b) return; if(b.dataset.v !== "rules"){ kind = b.dataset.v; S.settings.simKind = kind; S.save("settings"); location.hash = "#sim"; } });
 export function renderSim(){
   const root = $("#simSetup");
   if(!wired){ wire(); wired = true; }
@@ -645,7 +654,7 @@ export function renderSim(){
     <div class="card">
       <h2>Simulator</h2>
       <div class="sub">Sfida un'IA uscita dal Blackwall, oppure i tuoi choom.</div>
-      <div class="simkind" id="simKind"><button data-v="built" aria-pressed="${kind === "built"}">Costruito</button><button data-v="sealed" aria-pressed="${kind === "sealed"}">Prerelease</button></div>
+      ${simKindHTML(kind)}
       <div class="simmode"><span class="seg" id="simMode">${MODES[kind].map(([v, t]) => `<button data-v="${v}" aria-pressed="${mode === v}">${t}</button>`).join("")}</span></div>
       ${body}
       <details class="fold" style="margin-top:12px"><summary>Info aggiuntive</summary><div class="sub" style="margin-top:6px">
@@ -680,7 +689,7 @@ function start(opts = {}){
   G = createGame([{ ...d0, name: nm[0] }, { ...d1, name: nm[1] }], DATA.byId, { bot0: !human[0], bot1: !human[1], autoPay: [!!S.profile.autoPay, !!S.profile.autoPay], seed: tut ? TUTORIAL_SEED : undefined, first: tut ? 1 : undefined, chooseFirst: !tut });
   if(tut) ensureHand(G, 0);
   G.decide = botDecide; G.mulliganAsked = [false, false];
-  sel = null; targeting = null; pop = null; handoff = false; lastSeen = { turn: 0, seen: 0 }; fxTurnKey = null; fxBusyUntil = 0; fxAskUntil = 0; fxLastLog = null; fxHeld = []; fxHeldSteals = [];
+  sel = null; targeting = null; pop = null; handoff = false; holder = mode === "hot" ? 0 : null; seenLog = [null, null]; lastSeen = { turn: 0, seen: 0 }; fxTurnKey = null; fxBusyUntil = 0; fxAskUntil = 0; fxLastLog = null; fxHeld = []; fxHeldSteals = [];
   $("#board").innerHTML = ""; openBoard();
   // mulligan: ai bot no; agli umani lo chiede la plancia (vedi mulliganHTML: fa parte
   // dello stato, così un ridisegno — es. l'ingresso a schermo intero — non lo perde)
@@ -699,7 +708,13 @@ function mulliganHTML(){
 }
 function openBoard(){
   const b = $("#board"); b.hidden = false; document.body.style.overflow = "hidden";
-  try{ document.documentElement.requestFullscreen?.().then(() => screen.orientation?.lock?.("landscape").catch(() => {})).catch(() => {}); }catch(e){}
+  // app installata: niente schermo intero (il telefono mostrerebbe il suo avviso «scorri per uscire»), si prova solo a girare in orizzontale.
+  // Nel browser lo schermo intero serve a togliere le barre; si può spegnere dalle Impostazioni.
+  const installed = matchMedia("(display-mode: standalone), (display-mode: fullscreen)").matches || navigator.standalone === true;
+  try{
+    if(installed) screen.orientation?.lock?.("landscape").catch(() => {});
+    else if(S.settings.fullscreen !== false) document.documentElement.requestFullscreen?.().then(() => screen.orientation?.lock?.("landscape").catch(() => {})).catch(() => {});
+  }catch(e){}
 }
 function closeBoard(){
   stopTutorial(); closeTableChat();
@@ -937,7 +952,19 @@ async function lobbyClick(e){
 }
 
 /* ------------------------------------------------------------ resa grafica */
-const me = () => gmode === "bot" ? 0 : gmode === "online" ? gSeat : G.active;   // in hot-seat la plancia è sempre dal punto di vista di chi gioca
+const me = () => gmode === "bot" ? 0 : gmode === "online" ? gSeat : G.active;
+/* chi deve avere il dispositivo: chi fa il mulligan, chi sceglie chi inizia, altrimenti chi è di turno (le reazioni
+   dell'altro hanno la loro copertura a parte). Se non è chi lo ha in mano, compare la schermata di passaggio. */
+function hotNeeded(){
+  if(!G || gmode !== "hot" || G.winner != null) return null;
+  const mp = mulliganPending(); if(mp != null) return mp;
+  if(G.phase === "roll" && G.pending) return G.pending.player;
+  return G.active;
+}
+function hotRecap(pi){
+  const from = seenLog[pi], i = from ? G.log.lastIndexOf(from) : -1;
+  return (i >= 0 ? G.log.slice(i + 1) : []).filter(e => e.text && e.kind !== "turn").slice(-14);
+}   // in hot-seat la plancia è sempre dal punto di vista di chi gioca
 /* se le righe non ci stanno (browser con le barre visibili, schermi bassi) le carte si rimpiccioliscono
    finché tutto entra: altrimenti la zona in basso taglia le proprie Unità dall'alto */
 function fitBoard(board, H){
@@ -1014,7 +1041,8 @@ function render(){
   const waitMull = G.phase === "mulligan" && gmode === "online" && G.players[me()].mulliganed;
   const status = G.winner != null ? `Fine: ${esc(G.reason)}` : G.phase === "roll" ? (G.pending && human[G.pending.player] ? "Hai vinto il tiro: scegli chi inizia" : `${esc(G.players[G.pending ? G.pending.player : 0].name)} ha vinto il tiro e sceglie…`) : waitMull ? `Mulligan: in attesa di ${esc(R.name)}` : myTurn ? "Il tuo turno" : human[G.active] || gmode === "online" ? `Turno di ${esc(G.players[G.active].name)}` : "Turno dell'IA…";
   const last = G.log.slice(-1)[0];
-  const ob = onBoardAsk();   // reazione o bersaglio da scegliere toccando la plancia
+  if(gmode === "hot"){ const need = hotNeeded(); handoff = need != null && need !== holder ? need : false; }
+  const ob = handoff !== false ? null : onBoardAsk();   // reazione o bersaglio da scegliere toccando la plancia
   // misura delle carte dall'altezza disponibile: 2 righe rivale + campo + pile + mano (1,15×) + barra e margini
   // altezza utile: senza i margini di sicurezza (su iPhone in orizzontale la barra della home toglie ~20px)
   const cs = getComputedStyle(board), H = board.clientHeight - (parseFloat(cs.paddingTop) || 0) - (parseFloat(cs.paddingBottom) || 0);
@@ -1064,6 +1092,7 @@ function render(){
       ${!ob && myTurn && human[M.id] && tutorialAllows("end") ? `<button class="btn sm yel" id="bEnd">Fine turno</button>` : ""}
       ${ob ? "" : pm ? `${payOpt(o => o.kind === "alleddies") >= 0 ? `<button class="btn sm acc2" id="bPayAll">Tutto con Eddies</button>` : ""}<button class="btn sm" id="bPayCancel">Annulla</button>` : targeting ? `<button class="btn sm" id="bCancel">Annulla</button>` : ""}
       ${gmode === "online" ? `<span id="onlBadge">${onlineBadgeHTML()}</span><button class="btn sm icon" id="bChat" title="Chat del tavolo">💬${ON.T.chatUnread && !chatOpen() ? `<span class="nbadge">${ON.T.chatUnread}</span>` : ""}</button>` : ""}
+      ${boardChat ? `<button class="btn sm acc2" id="bFChat" title="Messaggio di ${esc(boardChat.nick)}: ${esc(String(boardChat.body || "").slice(0, 60))}">💬 ${esc(boardChat.nick)}${boardChat.n > 1 ? ` (${boardChat.n})` : ""}</button>` : ""}
       ${logW ? "" : `<button class="btn sm icon" id="bLog" title="Registro">≡</button>`}
       <button class="btn sm icon" id="bMenu" title="Menù">⋯</button>
     </div>
@@ -1077,11 +1106,12 @@ function render(){
     ${logPanelHTML}
     ${tutorialActive() ? tutorialBarHTML(G, me()) : ""}
     ${showLog ? `<div id="simLog"><div style="display:flex;justify-content:space-between;align-items:center"><b>Registro</b><button class="btn sm icon" id="bLogClose">✕</button></div>${G.log.slice(-80).map(e => `<div class="e ${e.kind}">${esc(e.text)}</div>`).join("")}</div>` : ""}
-    ${mulliganPending() != null ? mulliganHTML() : pm || ob ? "" : G.pending && human[G.pending.player] ? askHTML() : ""}
+    ${handoff !== false ? "" : mulliganPending() != null ? mulliganHTML() : pm || ob ? "" : G.pending && human[G.pending.player] ? askHTML() : ""}
     ${G.winner != null ? `<div class="winbox"><div class="box"><h2>${G.winner === -1 ? "PATTA" : G.winner === me() ? "VITTORIA" : gmode === "hot" ? "VINCE " + esc(G.players[G.winner].name).toUpperCase() : "SCONFITTA"}</h2><p class="wflav">${G.winner === -1 ? "Stavolta la città non è di nessuno." : G.winner === me() || gmode === "hot" ? "Night City ricorderà il tuo nome." : "Flatline. Rialzati, choom."}</p><p>${esc(G.reason)}</p><p style="color:var(--mute)">${G.turn} turni</p>${gmode === "online" ? seriesHTML() : ""}<div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">${gmode === "online" ? `<button class="btn" id="bChat2">💬 Chat</button>${series && series.next ? `<button class="btn acc2" id="bNextGame">Partita successiva</button>` : ""}<button class="btn yel" id="bExit">Torna alla lobby</button>` : `<button class="btn yel" id="bAgain">Rivincita</button><button class="btn" id="bExit">Esci</button>`}</div></div></div>` : ""}
     ${gmode === "online" ? drawOfferHTML() : ""}
     ${peekPid ? `<div id="peek">${peekInner(peekPid)}</div>` : ""}
-    ${handoff ? `<div class="handoff"><h2>Passa il dispositivo a ${esc(G.players[G.active].name)}</h2><p>Il tuo rivale non guarda, promesso.</p><button class="btn yel" id="bHand">Sono pronto</button></div>` : ""}`;
+    ${handoff != null && handoff !== false ? (() => { const who = G.players[handoff], rec = hotRecap(handoff), what = mulliganPending() === handoff ? "Tocca a te scegliere se tenere la mano." : G.phase === "roll" ? "Hai vinto il tiro: scegli chi inizia." : "";
+      return `<div class="handoff"><h2>Passa il dispositivo a ${esc(who.name)}</h2><p>${what || "Il tuo rivale non guarda, promesso."}</p>${rec.length ? `<div class="recap"><h4>Cosa è successo mentre non guardavi</h4>${rec.map(e => `<div class="e ${e.kind}">${esc(e.text)}</div>`).join("")}</div>` : ""}<button class="btn yel" id="bHand">Sono ${esc(who.name)}, pronto</button></div>`; })() : ""}`;
   board.classList.toggle("asking", !!ob); board.classList.remove("ask-wait");
   if(ob && !applyOnBoard(board, ob)){ askList = G.pending; render(); return; }   // nessuna carta trovata sulla plancia: finestra classica
   fitBoard(board, H);
@@ -1301,7 +1331,7 @@ function wire(){
   const root = $("#simSetup");
   root.addEventListener("click", e => {
     const m = e.target.closest("#simMode button"); if(m && !m.disabled){ mode = m.dataset.v; renderSim(); return; }
-    const kb = e.target.closest("#simKind button"); if(kb){ kind = kb.dataset.v; S.settings.simKind = kind; S.save("settings"); renderSim(); return; }
+    const kb = e.target.closest("#simKind button"); if(kb){ if(kb.dataset.v === "rules"){ location.hash = "#rules"; return; } kind = kb.dataset.v; S.settings.simKind = kind; S.save("settings"); renderSim(); return; }
     if(e.target.closest("#simStart")){ start(); return; }
     if(mode === "online"){ lobbyClick(e); }
     if(e.target.closest("#simResume")){ openBoard(); render(); tick(); }
@@ -1416,17 +1446,18 @@ function wire(){
     if(gearOpen != null && !t.closest(`[data-w="${gearOpen}"], .pop`)){ gearOpen = null; render(); if(!t.closest(".bc, [data-ask], button")) return; }
     // online: finché le mosse dell'avversario scorrono una alla volta, si guarda e basta
     if(oppBusy() && !t.closest("#bLog, #bLogClose, #bMenu, #bChat, #bChat2, [data-zoom], .pop")) return;
-    if(t.closest("#bEnd")){ const ok = act(me(), { t: "end" }); after(ok); if(ok !== false && gmode === "hot" && G.winner == null){ handoff = true; render(); } return; }
+    if(t.closest("#bEnd")){ const ok = act(me(), { t: "end" }); after(ok); return; }
     if(t.closest("#bCancel")){ targeting = null; sel = null; render(); return; }
     if(t.closest("#bLog")){ showLog = !showLog; render(); return; }
     if(t.closest("#bLogClose")){ showLog = false; render(); return; }
     if(t.closest("#bMenu")){ menu(t.closest("#bMenu")); return; }
     if(t.closest("#bChat") || t.closest("#bChat2")){ openTableChat(); return; }
+    if(t.closest("#bFChat")){ const id = boardChat && boardChat.id; boardChat = null; render(); if(id) document.dispatchEvent(new CustomEvent("ncd:openchat", { detail: id })); return; }
     const dr = t.closest("[data-draw]"); if(dr){ ON.answerDraw(dr.dataset.draw === "1").catch(err => note(err.message)); return; }
     if(t.closest("#bNextGame")){ clearTimeout(seriesT); ON.nextGame().catch(err => note(err.message)); return; }
     if(t.closest("#bAgain")){ $("#board").hidden = true; renderSim(); start(); return; }
     if(t.closest("#bExit")){ closeBoard(); return; }
-    if(t.closest("#bHand")){ handoff = false; render(); tick(); return; }
+    if(t.closest("#bHand")){ const to = handoff; if(holder != null) seenLog[holder] = G.log[G.log.length - 1] || null; holder = to; handoff = false; render(); tick(); return; }
     if(t.closest("[data-react]")){ reactCover = G.pending; render(); return; }
     const rx = t.closest("[data-rx]"); if(rx && G.pending && !board.classList.contains("ask-wait")){ if(G.pending.kind === "block") G.tutReacted = true; res(+rx.dataset.rx); render(); tick(); return; }
     if(t.closest("#bAskList")){ askList = G.pending; render(); return; }

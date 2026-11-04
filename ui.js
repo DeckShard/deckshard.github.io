@@ -58,6 +58,7 @@ export function tileHTML(c, pid, opts = {}){
     ${p.img ? `<img src="${thumbUrl(p.id)}" alt="${esc(c.dn)}" loading="lazy" decoding="async">` : `<div class="ph">${esc(c.dn)}</div>`}
     ${opts.qty !== false ? `<span class="qty${q ? "" : " zero"}">${q ? "×" + q : "0"}</span>` : ""}
     ${p.rarity && p.rarity !== "Common" && opts.rarity !== false ? `<span class="tr">${esc(RARITY_IT[p.rarity] || p.rarity)}</span>` : ""}
+    ${opts.star ? (() => { const on = (S.settings.favPrints || {})[c.id] === p.id; return `<button class="favst${on ? " on" : ""}" data-favstar="${c.id}" data-favpid="${p.id}" aria-label="${on ? "Togli l'artwork preferito" : "Imposta come artwork preferito"}" title="${on ? "Artwork preferito" : "Imposta come artwork preferito"}">${on ? "★" : "☆"}</button>`; })() : ""}
     <div class="cap"><b>${pr ? eur(pr.trend) + (pr.approx ? " ~" : "") : "—"}</b>${esc(c.dn)}${opts.sub ? `<small>${esc(opts.sub)}</small>` : ""}</div>
   </div>`;
 }
@@ -78,22 +79,56 @@ export function rowHTML(c, pid, right = "", extra = "", compact = false, badge =
 
 /* ------------------------------------------------------------ filtri */
 export function makeFilters(scope){
-  return { q: "", colors: new Set(), types: new Set(), rar: new Set(), cls: new Set(), cost: new Set(), sets: new Set(), owned: false, scope };
+  return { q: "", colors: new Set(), types: new Set(), rar: new Set(), cls: new Set(), cost: new Set(), sets: new Set(), kw: new Set(), fx: new Set(), fav: false, open: new Set(), owned: false, scope };
 }
+/* parole chiave del gioco (quelle a inizio riga: una citata nel testo di un'altra carta non conta) e abilità a innesco */
+const KW_FILTERS = [["Blocker", c => c.kw.includes("Blocker")], ["Go Solo", c => c.kw.includes("Go Solo")], ["Quick", c => c.kw.includes("Quick") || /(^|\n)\{Quick\}/.test(c.text || "")], ["Adrenaline", c => c.kw.includes("Adrenaline")],
+  ["Play", c => /\{Play\}/.test(c.text || "")], ["Attack", c => /\{Attack\}/.test(c.text || "")], ["Spend", c => /\{Spend\}/.test(c.text || "")], ["Call", c => /\{Call\}/.test(c.text || "")], ["Defeated", c => /\{Defeated\}/.test(c.text || "")]];
+/* effetti principali, letti dal testo inglese delle carte */
+const FX_FILTERS = [["Pesca", /\bdraws? (\d|a|an|one|two|three)\b/i], ["Sconfigge", /\bdefeat/i], ["Prepara", /\bready\b/i], ["Ruba Gig", /\bsteal/i], ["± Potenza", /[+−-]\d+ power/i], ["Scarta", /\bdiscard/i], ["Valore dei Gig", /(increase|decrease|adjust|set|change)\b.{0,40}\bgig|\bgig\b.{0,30}\bvalue/i]];
+const kwOk = (c, k) => { const d = KW_FILTERS.find(x => x[0] === k); return d ? d[1](c) : false; };
+const fxOk = (c, k) => { const d = FX_FILTERS.find(x => x[0] === k); return d ? d[1].test(c.text || "") : false; };
+/* le carte su cui il filtro lavora: Leggende o le altre nel deckbuilder, tutte nella Collection (serve per nascondere le voci vuote) */
+const filterPool = f => f.scope === "deck" ? DATA.cards.filter(c => f.browse === "legends" ? c.type === "Legend" : c.type !== "Legend") : DATA.cards;
 export function filtersHTML(f){
+  const pool = filterPool(f);
   const pips = COLORS.map(c => `<button class="pipbtn" data-fk="colors" data-fv="${c}" aria-pressed="${f.colors.has(c)}" title="${COLOR_IT[c]}"><i class="pip ${c}" style="position:absolute;inset:7px;width:auto;height:auto"></i></button>`).join("");
-  const types = TYPES.map(t => `<button class="tag" data-fk="types" data-fv="${t}" aria-pressed="${f.types.has(t)}">${TYPE_IT[t]}</button>`).join("");
+  // nel deckbuilder il selettore Carte/Leggende in alto sceglie già le Leggende: qui solo gli altri tre tipi (e niente tipo con le Leggende)
+  const typeList = f.scope === "deck" ? (f.browse === "legends" ? [] : TYPES.filter(t => t !== "Legend")) : TYPES;
+  const types = typeList.map(t => `<button class="tag" data-fk="types" data-fv="${t}" aria-pressed="${f.types.has(t)}">${TYPE_IT[t]}</button>`).join("");
   const costs = ["0","1","2","3","4","5","6","7+"].map(v => `<button class="tag" data-fk="cost" data-fv="${v}" aria-pressed="${f.cost.has(v)}">${v}</button>`).join("");
-  const rar = Object.keys(RARITY_IT).map(r => `<button class="tag" data-fk="rar" data-fv="${r}" aria-pressed="${f.rar.has(r)}">${RARITY_IT[r]}</button>`).join("");
-  // tratti: i 14 più comuni (più quelli già scelti); «Tutti i tratti» li mostra tutti in ordine alfabetico
-  const allCls = classificationsOf(), top = allCls.slice(0, 14);
-  const shown = f.clsAll ? allCls.slice().sort((a, b) => a.localeCompare(b, "it")) : [...top, ...allCls.slice(14).filter(k => f.cls.has(k))];
-  const cls = shown.map(k => `<button class="tag" data-fk="cls" data-fv="${esc(k)}" aria-pressed="${f.cls.has(k)}">${esc(k)}</button>`).join("")
-    + (allCls.length > 14 ? `<button class="tag more" data-fclsall="1">${f.clsAll ? "Solo i più comuni" : `Tutti i tratti (${allCls.length})`}</button>` : "");
-  const n = f.colors.size + f.types.size + f.rar.size + f.cls.size + f.cost.size + f.sets.size;
-  const row = (lbl, inner) => `<div class="frow"><span class="lbl">${lbl}</span><span class="fopts">${inner}</span></div>`;
-  return `${row("Colore", pips)}${row("Tipo", types)}${row("Costo", costs)}${row("Rarità", rar)}${row("Tratti", cls)}
+  const rar = Object.keys(RARITY_IT).filter(r => f.rar.has(r) || pool.some(c => c.prints.some(p => p.rarity === r))).map(r => `<button class="tag" data-fk="rar" data-fv="${r}" aria-pressed="${f.rar.has(r)}">${RARITY_IT[r]}</button>`).join("");
+  const cls = classificationsOf().filter(k => f.cls.has(k) || pool.some(c => c.cls.includes(k))).map(k => `<button class="tag" data-fk="cls" data-fv="${esc(k)}" aria-pressed="${f.cls.has(k)}">${esc(k)}</button>`).join("");
+  const kws = KW_FILTERS.filter(([k]) => f.kw.has(k) || pool.some(c => kwOk(c, k))).map(([k]) => `<button class="tag kwt" data-fk="kw" data-fv="${k}" aria-pressed="${f.kw.has(k)}">${k}</button>`).join("");
+  const fxs = FX_FILTERS.filter(([k]) => f.fx.has(k) || pool.some(c => fxOk(c, k))).map(([k]) => `<button class="tag" data-fk="fx" data-fv="${k}" aria-pressed="${f.fx.has(k)}">${k}</button>`).join("");
+  const n = f.colors.size + f.types.size + f.rar.size + f.cls.size + f.cost.size + f.sets.size + f.kw.size + f.fx.size + (f.fav ? 1 : 0);
+  const row = (lbl, inner) => inner ? `<div class="frow"><span class="lbl">${lbl}</span><span class="fopts">${inner}</span></div>` : "";
+  // le righe lunghe mostrano al massimo due righe di valori; «Tutti…» le apre
+  const clamp = (key, lbl, inner, more) => inner ? `<div class="frow"><span class="lbl">${lbl}</span><div class="fcol"><span class="fopts clamp${f.open.has(key) ? " open" : ""}" data-row="${key}">${inner}</span><button class="tag more" data-fmore="${key}">${f.open.has(key) ? "Meno" : more}</button></div></div>` : "";
+  return `${row("Colore", pips)}${row("Tipo", types)}${row("Costo", costs)}${clamp("rar", "Rarità", rar, "Tutte le rarità")}${clamp("cls", "Tratti", cls, "Tutti i tratti")}
+    ${clamp("kw", "Parole chiave", kws, "Tutte le parole chiave")}${clamp("fx", "Effetti", fxs, "Tutti gli effetti")}
+    ${f.scope === "coll" ? row("Preferite", `<button class="tag" data-ffav="1" aria-pressed="${!!f.fav}">★ Artwork preferito</button>`) : ""}
     ${n ? `<button class="btn sm" data-fclear="1">Azzera i ${n} filtri</button>` : ""}`;
+}
+/* dopo il disegno: le righe che stanno già in due righe non mostrano «Tutti…» */
+export function fitFilters(el){
+  if(!el) return;
+  for(const box of el.querySelectorAll(".fopts.clamp")){
+    const btn = box.parentElement.querySelector("[data-fmore]"); if(!box.firstElementChild) continue;
+    box.style.maxHeight = ""; if(!box.offsetHeight){ btn.hidden = false; continue; }   // filtri chiusi: si misura quando si aprono
+    const tops = [...new Set([...box.children].map(x => x.offsetTop))].sort((a, b) => a - b);
+    if(tops.length <= 2){ btn.hidden = true; continue; }   // già in due righe: niente «Tutti…»
+    btn.hidden = false; if(!box.classList.contains("open")) box.style.maxHeight = (tops[2] - tops[0] - 4) + "px";
+  }
+}
+export function setFilters(el, f){ if(!el) return; el.innerHTML = filtersHTML(f); fitFilters(el); }
+/* clic dentro i filtri: true se è cambiato qualcosa (da ridisegnare) */
+export function filterClick(f, target){
+  const b = target.closest("[data-fk]"); if(b){ const set = f[b.dataset.fk]; set.has(b.dataset.fv) ? set.delete(b.dataset.fv) : set.add(b.dataset.fv); return "list"; }
+  const m = target.closest("[data-fmore]"); if(m){ f.open.has(m.dataset.fmore) ? f.open.delete(m.dataset.fmore) : f.open.add(m.dataset.fmore); return "filters"; }
+  if(target.closest("[data-ffav]")){ f.fav = !f.fav; return "list"; }
+  if(target.closest("[data-fclear]")){ for(const k of ["colors", "types", "rar", "cls", "cost", "sets", "kw", "fx"]) f[k].clear(); f.fav = false; return "list"; }
+  return null;
 }
 export function passes(c, f){
   if(f.q){
@@ -110,16 +145,16 @@ export function passes(c, f){
   if(f.rar.size && !c.prints.some(p => f.rar.has(p.rarity))) return false;
   if(f.cls.size && ![...f.cls].some(k => c.cls.includes(k))) return false;
   if(f.sets.size && !c.prints.some(p => f.sets.has(p.set))) return false;
+  if(f.kw && f.kw.size && ![...f.kw].some(k => kwOk(c, k))) return false;
+  if(f.fx && f.fx.size && ![...f.fx].some(k => fxOk(c, k))) return false;
   if((f.owned === true || f.owned === "yes") && !cardQty(c)) return false;
   if(f.owned === "no" && cardQty(c)) return false;
   return true;
 }
 export function bindFilters(container, f, onChange){
   container.addEventListener("click", e => {
-    const b = e.target.closest("[data-fk]");
-    if(b){ const set = f[b.dataset.fk]; set.has(b.dataset.fv) ? set.delete(b.dataset.fv) : set.add(b.dataset.fv); onChange(); return; }
-    if(e.target.closest("[data-fclsall]")){ f.clsAll = !f.clsAll; onChange(); return; }
-    if(e.target.closest("[data-fclear]")){ for(const k of ["colors","types","rar","cls","cost","sets"]) f[k].clear(); onChange(); }
+    const r = filterClick(f, e.target); if(!r) return;
+    if(r === "filters") setFilters(container, f); else onChange();
   });
 }
 export function sortCards(list, mode){
@@ -139,6 +174,15 @@ const RARITY_RANK_OF = c => RR[c.rarity] ?? 0;
 
 /* ------------------------------------------------------------ scheda carta */
 let SHEET_PRINT = null, SHEET_CARD = null, onPick = null;
+/* elenco da cui è stata aperta la scheda (Collection): swipe a destra/sinistra o ‹ › per la carta accanto */
+let SHEET_LIST = null, SHEET_IDX = -1, SHEET_OPTS = {};
+function sheetStep(d){
+  if(!SHEET_LIST) return; const i = SHEET_IDX + d; if(i < 0 || i >= SHEET_LIST.length) return;
+  const it = SHEET_LIST[i], c = DATA.byId.get(it.cid); if(!c) return;
+  SHEET_IDX = i; SHEET_CARD = c; SHEET_PRINT = DATA.byPrint.get(it.pid) || c.def;
+  const box = $("#sheetBox"); renderSheet(SHEET_OPTS); box.scrollTop = 0;
+  box.animate([{ transform: `translateX(${d * 40}px)`, opacity: .3 }, { transform: "none", opacity: 1 }], { duration: 180, easing: "ease-out" });
+}
 
 /* apre la scheda; `opts.pick(pid)` se chi chiama vuole scegliere una stampa */
 export function openCard(cid, pid, opts = {}){
@@ -146,6 +190,7 @@ export function openCard(cid, pid, opts = {}){
   // `opts.only`: stampe ammesse (Prerelease: solo quelle aperte dal kit)
   const only = Array.isArray(opts.only) && opts.only.length ? opts.only : null;
   SHEET_CARD = c; SHEET_PRINT = DATA.byPrint.get(only && !only.includes(pid) ? only[0] : pid) || c.def; onPick = opts.pick || null;
+  SHEET_LIST = Array.isArray(opts.list) && opts.list.length > 1 ? opts.list : null; SHEET_IDX = SHEET_LIST ? Math.max(0, SHEET_LIST.findIndex(x => x.cid === cid && (!pid || x.pid === pid))) : -1; SHEET_OPTS = opts;
   renderSheet(opts);
   $("#sheet").classList.add("on");
   $("#sheetBox").style.transform = ""; $("#sheetBox").scrollTop = 0;
@@ -157,7 +202,7 @@ function renderSheet(opts){
   $("#sheetBox").innerHTML = `
     <div class="grab"><i></i></div>
     <div class="shd">
-      <div class="art">${p.img ? `<img id="sheetArt" src="${imgUrl(p.id)}" alt="${esc(c.dn)}">` : `<div class="ph">${esc(c.dn)}</div>`}</div>
+      <div class="art">${p.img ? `<img id="sheetArt" src="${imgUrl(p.id)}" alt="${esc(c.dn)}">` : `<div class="ph">${esc(c.dn)}</div>`}${opts.pick ? "" : `<button class="favst big${(S.settings.favPrints || {})[c.id] === p.id ? " on" : ""}" id="favStar" aria-label="Artwork preferito" title="Artwork preferito">${(S.settings.favPrints || {})[c.id] === p.id ? "★" : "☆"}</button>`}</div>
       <div style="flex:1;min-width:0">
         <h3>${esc(c.dn)}</h3>
         <div class="ln"><i class="pip ${c.color}"></i> ${COLOR_IT[c.color] || ""} · ${TYPE_IT[c.type] || c.type}${c.cls.length ? " · " + esc(c.cls.join(", ")) : ""}</div>
@@ -169,7 +214,7 @@ function renderSheet(opts){
           ${pr && pr.avg30 != null ? `<span class="chip">30gg ${eur(pr.avg30)}</span>` : ""}
         </div>
       </div>
-      <button class="btn sm icon" id="closeSheet" aria-label="Chiudi">✕</button>
+      <div class="shnav">${SHEET_LIST ? `<button class="btn sm icon" id="sheetPrev" aria-label="Carta precedente" ${SHEET_IDX > 0 ? "" : "disabled"}>‹</button><button class="btn sm icon" id="sheetNext" aria-label="Carta successiva" ${SHEET_IDX < SHEET_LIST.length - 1 ? "" : "disabled"}>›</button>` : ""}<button class="btn sm icon" id="closeSheet" aria-label="Chiudi">✕</button></div>
     </div>
 
     ${opts.pick ? `<div class="acts"><button class="btn yel" id="pickBtn">Usa questa stampa</button></div>` : `
@@ -178,7 +223,7 @@ function renderSheet(opts){
         <button data-q="-1" aria-label="meno">−</button><b id="sheetQty">${q}</b><button data-q="1" aria-label="più">+</button>
       </span>
       <span class="chip" id="sheetTot">${tot} in collezione</span>
-      ${(S.settings.collView || "card") === "card" ? `<button class="btn sm${(S.settings.favPrints || {})[c.id] === p.id ? " acc2" : ""}" id="favBtn" title="Mostra sempre questa stampa nella Collection">${(S.settings.favPrints || {})[c.id] === p.id ? "★ In Collection" : "☆ Mostra in Collection"}</button>` : ""}
+      <button class="btn sm${(S.settings.favPrints || {})[c.id] === p.id ? " acc2" : ""}" id="favBtn" title="L'artwork preferito è quello mostrato per questa carta nella Collection">${(S.settings.favPrints || {})[c.id] === p.id ? "★ Artwork preferito" : "☆ Artwork preferito"}</button>
       <a class="btn sm" href="${cardmarketUrl(c, p.id)}" target="_blank" rel="noopener noreferrer">Cardmarket ↗</a>
       <a class="btn sm" href="https://cyberpunktcg.com/cards/${esc(c.slug)}?printing=${p.id}" target="_blank" rel="noopener noreferrer">Ufficiale ↗</a>
     </div>`}
@@ -203,6 +248,8 @@ function renderSheet(opts){
   });
   $$("#sheetBox [data-print]").forEach(el => el.onclick = () => { SHEET_PRINT = DATA.byPrint.get(el.dataset.print); renderSheet(opts); });
   $("#pickBtn")?.addEventListener("click", () => { onPick && onPick(SHEET_PRINT.id); closeSheet(); });
+  $("#sheetPrev")?.addEventListener("click", () => sheetStep(-1)); $("#sheetNext")?.addEventListener("click", () => sheetStep(1));
+  $("#favStar")?.addEventListener("click", e => { e.stopPropagation(); $("#favBtn")?.click(); });
   $("#favBtn")?.addEventListener("click", () => { S.settings.favPrints = S.settings.favPrints || {}; if(S.settings.favPrints[c.id] === p.id) delete S.settings.favPrints[c.id]; else S.settings.favPrints[c.id] = p.id; S.save("settings"); renderSheet(opts); document.dispatchEvent(new CustomEvent("ncd:collection")); });
 }
 export function closeSheet(){
@@ -228,6 +275,11 @@ export function closeSheet(){
     if(dy > 110){ box.style.transform = "translateY(100%)"; setTimeout(closeSheet, 200); } else box.style.transform = ""; };
   box.addEventListener("pointerup", end); box.addEventListener("pointercancel", end);
   sheet.addEventListener("click", e => { if(e.target === sheet) closeSheet(); });
+  // swipe orizzontale (non sulle stampe, che scorrono di lato): carta precedente o successiva dell'elenco
+  let sx = null, sy = 0;
+  box.addEventListener("touchstart", e => { if(!SHEET_LIST || e.touches.length !== 1 || e.target.closest(".prints, input")) { sx = null; return; } sx = e.touches[0].clientX; sy = e.touches[0].clientY; }, { passive: true });
+  box.addEventListener("touchend", e => { if(sx == null) return; const t = e.changedTouches[0], dx = t.clientX - sx, dy2 = t.clientY - sy; sx = null; if(Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy2) * 1.6) sheetStep(dx < 0 ? 1 : -1); }, { passive: true });
+  document.addEventListener("keydown", e => { if(!sheet.classList.contains("on") || e.target.closest?.("input, textarea")) return; if(e.key === "ArrowRight") sheetStep(1); else if(e.key === "ArrowLeft") sheetStep(-1); else if(e.key === "Escape") closeSheet(); });
 })();
 
 /* ------------------------------------------------------------ lente con zoom */

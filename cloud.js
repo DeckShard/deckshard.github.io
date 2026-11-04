@@ -317,9 +317,11 @@ export async function sendMessage(id, body){
 }
 
 /* ---------------------------------------------------------------- feedback (anche senza account) */
-export async function sendFeedback({ kind, body, contact, version, lang }){
+const standalone = () => { try{ return matchMedia("(display-mode: standalone)").matches || navigator.standalone === true; }catch(e){ return false; } };
+export async function sendFeedback({ kind, body, contact, version, lang, platform }){
   const c = await client(); if(!c) throw new Error("Servizio non configurato");
-  const device = `${navigator.userAgent.match(/\(([^)]+)\)/)?.[1] || ""} · ${innerWidth}×${innerHeight}`.slice(0, 200);
+  // in testa quello che ha scelto chi scrive (Telefono / Tablet / PC), poi il browser e la finestra
+  const device = `${platform ? platform.toUpperCase() + " · " : ""}${standalone() ? "app installata · " : ""}${navigator.userAgent.match(/\(([^)]+)\)/)?.[1] || ""} · ${innerWidth}×${innerHeight}`.slice(0, 200);
   const { error } = await c.from("feedback").insert({ kind, body, contact: contact || null, app_version: version, lang, device });
   if(error) throw error;
 }

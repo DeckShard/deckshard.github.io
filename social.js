@@ -3,7 +3,7 @@
    chat privata, blocco e segnalazione, feedback dalle Impostazioni.   */
 
 import { S, wipe } from "./store.js";
-import { $, $$, esc, toast, filtersHTML, passes, bindFilters, sortCards } from "./ui.js";
+import { $, $$, esc, toast, filtersHTML, setFilters, passes, bindFilters, sortCards, makeFilters } from "./ui.js";
 import { cardQty } from "./store.js";
 import * as cloud from "./cloud.js";
 import { DATA, thumbUrl } from "./data.js";
@@ -72,6 +72,26 @@ export function friendsHTML(){
   </div>`;
 }
 
+/* ---------------------------------------------------------------- scheda Chat (barra in basso)
+   Le conversazioni con gli amici: prima chi ha messaggi da leggere, poi chi è in linea. Un tocco apre la chat. */
+export function renderChatTab(){
+  const root = $("#p-chat"); if(!root) return;
+  if(!root.dataset.wired){ root.dataset.wired = "1"; root.addEventListener("click", e => { const r = e.target.closest("[data-chatwith]"); if(r){ openChat(r.dataset.chatwith); return; } if(e.target.closest("#chGoSocial")) location.hash = "#profile"; }); }
+  if(!cloud.cloudConfigured() || !cloud.state.user){ root.innerHTML = `<div class="card"><h2>Chat</h2><p class="sub">Per scrivere agli amici serve un account: entra dal Social con Google, poi aggiungi i tuoi choom per nick.</p><button class="btn acc2" id="chGoSocial">Vai al Social</button></div>`; return; }
+  const online = cloud.state.online, fr = cloud.friends.filter(f => f.status === "accepted");
+  const req = cloud.friends.filter(f => f.status === "pending" && f.incoming).length;
+  const list = fr.slice().sort((a, b) => (b.unread - a.unread) || (online.has(b.id) - online.has(a.id)) || String(a.nick).localeCompare(String(b.nick)));
+  root.innerHTML = `<div class="card flush chats"><div class="hdr"><h2 style="margin:0">Chat</h2>${req ? `<button class="btn sm yel" id="chGoSocial">${req === 1 ? "1 richiesta di amicizia" : req + " richieste di amicizia"}</button>` : ""}</div>
+    ${list.length ? list.map(f => `<button class="chrow${f.unread ? " new" : ""}" data-chatwith="${f.id}">${miniAvatar(f, 42)}<span class="nm"><b>${esc(f.nick)}${online.has(f.id) ? ` <i class="dot on" title="in linea"></i>` : ""}</b><span>${f.unread ? (f.unread === 1 ? "1 messaggio nuovo" : f.unread + " messaggi nuovi") : online.has(f.id) ? "in linea" : esc(f.faction || "")}</span></span>${f.unread ? `<span class="badge">${f.unread}</span>` : ""}</button>`).join("")
+      : `<div class="sub" style="padding:14px">La tua crew è ancora vuota: aggiungi gli amici dal <a href="#profile">Social</a>.</div>`}</div>`;
+}
+/* dalla notifica di un messaggio (#chat/<id>) o dalla plancia: apre la conversazione appena l'amico è noto */
+export function openChatWith(id){
+  if(cloud.friends.some(f => f.id === id)){ openChat(id); return; }
+  let tries = 0; const t = setInterval(() => { if(cloud.friends.some(f => f.id === id)){ clearInterval(t); openChat(id); } else if(++tries > 40) clearInterval(t); }, 250);
+}
+document.addEventListener("ncd:openchat", e => openChatWith(e.detail));
+
 /* ---------------------------------------------------------------- chat */
 let chatWith = null, chatMsgs = [];
 async function openChat(id){
@@ -111,11 +131,17 @@ function renderChat(scroll){
 document.addEventListener("ncd:message", async e => {
   const m = e.detail;
   if(chatWith && m.sender === chatWith.id){ chatMsgs.push(m); renderChat(); try{ await cloud.markRead(chatWith.id); }catch(err){} }
-  else { const f = cloud.friends.find(x => x.id === m.sender); toast(`💬 ${f ? f.nick : "Nuovo messaggio"}: ${m.body.slice(0, 60)}`, 3500); }
+  else {
+    const f = cloud.friends.find(x => x.id === m.sender), board = $("#board");
+    // in partita niente avviso in mezzo allo schermo: la plancia mostra un pulsante «💬 nick» che apre la chat
+    if(board && !board.hidden) document.dispatchEvent(new CustomEvent("ncd:boardchat", { detail: { id: m.sender, nick: f ? f.nick : "Nuovo messaggio", body: m.body } }));
+    else toast(`💬 ${f ? f.nick : "Nuovo messaggio"}: ${m.body.slice(0, 60)}`, 3500);
+    if($("#p-chat")?.classList.contains("on")) renderChatTab();
+  }
 });
 document.addEventListener("click", async e => {
   if(!$("#chat") || $("#chat").hidden) return;
-  if(e.target.closest("#chClose") || e.target.id === "chat"){ closeChat(); rerender(); return; }
+  if(e.target.closest("#chClose") || e.target.id === "chat"){ closeChat(); rerender(); if($("#p-chat")?.classList.contains("on")) renderChatTab(); document.dispatchEvent(new Event("ncd:chatclosed")); return; }
   const dk = e.target.closest("[data-deck]"); if(dk){ closeChat(); openSharedDeck(dk.dataset.deck); return; }
   const m = e.target.closest(".msg:not(.me)");
   if(m && chatWith && confirm("Segnalare questo messaggio?")){ try{ await cloud.reportUser(chatWith.id, +m.dataset.mid, "messaggio in chat"); toast("Segnalazione inviata"); }catch(err){ toast(err.message, 4000); } }
@@ -191,13 +217,16 @@ async function friendMenu(id){
 }
 
 /* ---------------------------------------------------------------- feedback (Impostazioni) */
-let fbKind = "idea";
+let fbKind = "idea", fbDev = null;
+// dove si usa l'app: indovinato dallo schermo, ma chi scrive può correggerlo (una segnalazione da PC si legge in modo diverso)
+const guessDev = () => matchMedia("(pointer: coarse)").matches ? (Math.min(screen.width, screen.height) >= 700 ? "tablet" : "telefono") : "pc";
 export function feedbackHTML(){
   if(!cloud.cloudConfigured()) return "";
   return `<div class="card" id="fb">
     <h3>Feedback</h3>
     <div class="sub">Segnala un problema o proponi un'idea. Arriva in una casella privata letta solo da chi sviluppa l'app; non serve un account e non viene pubblicato niente.</div>
     <div class="field" style="margin-top:8px"><label>Tipo</label><span class="seg" id="fbKind">${[["bug", "Problema"], ["idea", "Idea"], ["altro", "Altro"]].map(([v, t]) => `<button data-v="${v}" aria-pressed="${fbKind === v}">${t}</button>`).join("")}</span></div>
+    <div class="field" style="margin-top:6px"><label>Da dove</label><span class="seg" id="fbDev">${[["telefono", "Telefono"], ["tablet", "Tablet"], ["pc", "PC"]].map(([v, t]) => `<button data-v="${v}" aria-pressed="${(fbDev || guessDev()) === v}">${t}</button>`).join("")}</span></div>
     <textarea class="inp" id="fbBody" rows="4" maxlength="2000" placeholder="Cosa è successo, o cosa ti piacerebbe trovare nell'app" style="width:100%;margin-top:6px"></textarea>
     <input class="inp" id="fbContact" maxlength="120" placeholder="Contatto (facoltativo, solo se vuoi una risposta)" style="width:100%;margin-top:6px" autocomplete="off">
     <div style="margin-top:8px"><button class="btn yel" id="fbSend">Invia feedback</button></div>
@@ -206,10 +235,11 @@ export function feedbackHTML(){
 export function wireFeedback(root, version){
   root.addEventListener("click", async e => {
     const k = e.target.closest("#fbKind button"); if(k){ fbKind = k.dataset.v; $$("#fbKind button").forEach(b => b.setAttribute("aria-pressed", String(b === k))); return; }
+    const dv = e.target.closest("#fbDev button"); if(dv){ fbDev = dv.dataset.v; $$("#fbDev button").forEach(b => b.setAttribute("aria-pressed", String(b === dv))); return; }
     if(!e.target.closest("#fbSend")) return;
     const body = $("#fbBody").value.trim(); if(body.length < 3){ toast("Scrivi qualche parola in più"); return; }
     const btn = e.target.closest("#fbSend"); btn.disabled = true;
-    try{ await cloud.sendFeedback({ kind: fbKind, body, contact: $("#fbContact").value.trim(), version, lang: S.profile.lang || "it" }); $("#fbBody").value = ""; $("#fbContact").value = ""; toast("Messaggio ricevuto, choom. Grazie!"); }
+    try{ await cloud.sendFeedback({ kind: fbKind, body, contact: $("#fbContact").value.trim(), version, lang: S.profile.lang || "it", platform: fbDev || guessDev() }); $("#fbBody").value = ""; $("#fbContact").value = ""; toast("Messaggio ricevuto, choom. Grazie!"); }
     catch(err){ toast("Invio non riuscito: " + (err.message || err), 4500); }
     btn.disabled = false;
   });
@@ -225,7 +255,7 @@ document.addEventListener("ncd:friendcoll", e => {
   const byCard = new Map();
   for(let [pid, n] of Object.entries(coll || {})){ const p = DATA.byPrint.get(pid); n = Math.max(0, Math.min(999, Math.floor(Number(n)) || 0)); if(!p || !n) continue; const c = p.card; const x = byCard.get(c.id) || { c, n: 0, p }; x.n += n; byCard.set(c.id, x); }
   const all = [...byCard.values()];
-  const F = { q: "", colors: new Set(), types: new Set(), cost: new Set(), rar: new Set(), cls: new Set(), sets: new Set(), owned: "", show: "all", sort: "name" };
+  const F = Object.assign(makeFilters("friend"), { owned: "", show: "all", sort: "name" });
   const el = document.createElement("div"); el.id = "mergeAsk"; el.className = "wide";
   el.innerHTML = `<div class="box fcoll"><h3>Collezione di ${esc(nick)}</h3><p class="sub">${all.length} di ${DATA.cards.length} carte · ${all.reduce((a, x) => a + x.n, 0)} copie</p>
     <div class="search" style="padding:0;margin:8px 0 6px"><input class="inp" id="fcQ" type="search" placeholder="Cerca per nome, testo o tratto…" autocomplete="off"><button class="btn sm" id="fcFilt">Filtri</button></div>
@@ -252,7 +282,7 @@ document.addEventListener("ncd:friendcoll", e => {
     if(ev.target.closest("#fcFilt")){ el.querySelector("#fcFilters").classList.toggle("on"); return; }
     const sh = ev.target.closest("#fcShow button"); if(sh){ F.show = sh.dataset.v; el.querySelectorAll("#fcShow button").forEach(b => b.setAttribute("aria-pressed", String(b === sh))); draw(); return; }
   });
-  bindFilters(el.querySelector("#fcFilters"), F, () => { el.querySelector("#fcFilters").innerHTML = filtersHTML(F); draw(); });
+  bindFilters(el.querySelector("#fcFilters"), F, () => { setFilters(el.querySelector("#fcFilters"), F); draw(); });
   el.querySelector("#fcQ").addEventListener("input", ev => { F.q = ev.target.value.trim(); draw(); });
   el.querySelector("#fcSort").addEventListener("change", ev => { F.sort = ev.target.value; draw(); });
   document.body.appendChild(el); draw();

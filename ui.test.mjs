@@ -16,7 +16,7 @@ page.on("console", m => { if(m.type() === "error") errors.push(m.text()); });
 await page.goto(BASE + "/index.html");
 /* home: pagina d'accoglienza al centro della barra, Social dall'avatar */
 await page.waitForSelector("#p-home.on .emblem");
-ok((await page.locator("nav.tabs button").evaluateAll(bs => bs.map(b => b.dataset.tab))).join(",") === "collection,deck,home,sim,rules", "barra: Collection, Deckbuilder, Home, Simulator, Regole");
+ok((await page.locator("nav.tabs button").evaluateAll(bs => bs.map(b => b.dataset.tab))).join(",") === "collection,deck,home,sim,chat", "barra: Collection, Deckbuilder, Home, Simulator, Chat");
 ok(await page.locator("#homeSocial").count() === 1 && /Benvenuto|Bentornato/.test(await page.locator(".hhello").textContent()), "home con avatar e saluto");
 await page.click("#homeSocial"); await page.waitForTimeout(300);
 ok(await page.locator("#p-profile.on").count() === 1 && await page.locator('nav.tabs button[data-tab="home"][aria-selected="true"]').count() === 1, "avatar → Social, con Home accesa nella barra");
@@ -135,7 +135,10 @@ const row = page.locator('#deckEdit .dlist .row:has-text("Mantis")');
 await row.locator('[data-dq="1"]').click();
 ok((await row.locator(".qtyctl b").textContent()) === "2", "quantità 2");
 // cambio artwork dalla miniatura del browser
-await page.click("#deckRows .row .thumb");
+// la carta aggiunta passa nella sezione «Nel mazzo» (chiusa all'inizio): la si apre
+ok(await page.locator("#deckRows .dsec.in:not([open])").count() === 1 && await page.locator("#deckRows .dsec.out").count() === 0, "elenco diviso: la carta trovata è in «Nel mazzo» (chiusa), «Non nel mazzo» vuota non compare");
+await page.click("#deckRows .dsec.in > summary");
+await page.click("#deckRows .dsec.in .row .thumb");
 await page.waitForSelector("#sheet.on");
 ok(await page.locator("#pickBtn").count() === 1, "modale in modalità scelta stampa");
 await page.click("#sheetBox .pt:last-child"); await page.click("#pickBtn");
@@ -331,10 +334,17 @@ ok((await page.locator("#simSetup .chip").first().textContent()).includes("1 sco
 /* hot-seat: passaggio del dispositivo */
 await page.click('#simMode [data-v="hot"]');
 await page.click("#simStart");
-await openingChoice();
-await page.click('[data-mull="keep"]'); await page.waitForSelector('[data-mull="keep"]'); await page.click('[data-mull="keep"]');
-await page.waitForTimeout(200);
-if(await page.locator("#simAsk [data-ask]").count()) await page.click("#simAsk [data-ask]");
+// tiro, scelta di chi inizia e i due mulligan, con le schermate di passaggio in mezzo (una per giocatore)
+let hands = 0;
+for(let k = 0; k < 14; k++){
+  await page.waitForTimeout(250);
+  if(await page.locator("#bHand").count()){ hands++; await page.click("#bHand"); continue; }
+  if(await page.locator('[data-mull="keep"]').count()){ await page.click('[data-mull="keep"]'); continue; }
+  if(await page.locator("#simAsk [data-react]").count()){ await page.click("#simAsk [data-react]"); continue; }
+  if(await page.locator("#simAsk [data-ask]").count()){ await page.click("#simAsk [data-ask]"); continue; }
+  if(await page.locator("#bEnd").count() && !(await page.locator("#simAsk").count())) break;
+}
+ok(hands >= 1, "hot-seat: schermata di passaggio tra i mulligan");
 ok(await page.locator("#bEnd").count() === 1, "hot-seat: turno del primo");
 await page.click("#bEnd");
 ok(await page.locator(".handoff").count() === 1, "schermata passa il dispositivo");
@@ -344,7 +354,8 @@ ok(await page.locator("#bEnd").count() === 1, "hot-seat: turno del secondo");
 await page.click("#bMenu"); await page.click('.pop button:has-text("Esci")');
 
 /* regole */
-await page.click('nav.tabs button[data-tab="rules"]');
+await page.click('nav.tabs button[data-tab="sim"]'); await page.click('.panel.on #simKind [data-v="rules"]'); await page.waitForTimeout(300);
+ok(await page.locator('nav.tabs button[data-tab="sim"][aria-selected="true"]').count() === 1, "Regole dentro il Simulator");
 ok(await page.locator("#p-rules .rulesec").count() >= 10, "pagina delle regole con le sezioni");
 await page.click('#rulesMode button[data-v="1"]'); await page.waitForSelector("details.rfull", { timeout: 8000 });
 ok(await page.locator(".rule").count() > 600 && (await page.locator("#p-rules").textContent()).includes("Comprehensive Rules"), "regole complete ufficiali caricate da rules.json");
@@ -356,7 +367,7 @@ await page.click('#rulesMode button[data-v="0"]');
 /* prerelease: apri il kit, costruisci, gioca contro il bot */
 await page.click('nav.tabs button[data-tab="sim"]');
 ok(await page.locator("#prOpen").count() === 0, "nella scheda Costruito niente Prerelease");
-await page.click('#simKind [data-v="sealed"]');
+await page.click('.panel.on #simKind [data-v="sealed"]');
 ok((await page.locator("#simMode button").allTextContents()).join(",") === "Sfida IA,Online", "Prerelease: solo Sfida IA e Online");
 await page.click("#prOpen");
 ok(await page.locator("#prKit .pack").count() === 8, "kit aperto: 6 buste + Leggende + promo");
@@ -366,7 +377,7 @@ await page.waitForSelector("#deckEdit:not([hidden])");
 ok((await page.locator("#deckEdit .legal").textContent()).includes("sealed"), "editor in modalità sealed");
 // scegli 3 Leggende dal kit e aggiungi carte fino a 30
 await page.click('#deckBrowse [data-b="legends"]'); await page.waitForTimeout(300);
-for(let i = 0; i < 3; i++){ await page.click(`#deckRows .row >> nth=${i}`); await page.waitForTimeout(250); }
+for(let i = 0; i < 3; i++){ await page.click(`#deckRows .dsec.out .row >> nth=0`); await page.waitForTimeout(250); }
 ok((await page.locator("#deckEdit .lslot img").count()) === 3, "3 Leggende scelte dal kit");
 await page.click('#deckBrowse [data-b="cards"]'); await page.waitForTimeout(300);
 // al massimo 3 colori: si filtra l'elenco sui 3 colori più presenti nel kit
@@ -374,7 +385,8 @@ await page.click('#deckBrowse [data-b="cards"]'); await page.waitForTimeout(300)
   await page.click("#deckFilt"); for(const c of top3){ await page.click(`#deckFilters [data-fk="colors"][data-fv="${c}"]`); await page.waitForTimeout(100); } }
 let addedRows = 0;
 for(let k = 0; k < 90 && addedRows < 60; k++){
-  const rows = page.locator("#deckRows .row"); const n = await rows.count(); if(!n) break;
+  if(await page.locator("#deckRows .dsec.in:not([open]) > summary").count()) await page.click("#deckRows .dsec.in > summary");
+  const rows = page.locator("#deckRows details[open] .row"); const n = await rows.count(); if(!n) break;
   const i = k % n; await rows.nth(i).click(); await page.waitForTimeout(120); addedRows++;
   const size = (await page.locator("#deckEdit .chip:has-text('carte')").first().textContent());
   if(/^3[0-9] carte/.test(size)) break;
@@ -392,7 +404,7 @@ await page.click("#bMenu"); await page.click('.pop button:has-text("Esci")');
 
 /* tutorial: partita guidata */
 ok(await page.locator('#simDeck0 option[value^="starter:"]').count() === 0, "Prerelease: solo mazzi da kit nella scelta");
-await page.click('#simKind [data-v="built"]'); await page.click('#simMode [data-v="tutorial"]');
+await page.click('.panel.on #simKind [data-v="built"]'); await page.click('#simMode [data-v="tutorial"]');
 ok((await page.locator("#simMode button").allTextContents()).join(",") === "Sfida IA,Offline,Online,Tutorial", "Costruito: Sfida IA, Offline, Online, Tutorial");
 await page.click("#simTutorial");
 await page.waitForSelector("#board:not([hidden])");
