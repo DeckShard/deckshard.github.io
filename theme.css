@@ -597,7 +597,7 @@ nav.tabs button.homebtn:not([aria-selected="true"]) svg{opacity:.85}
 /* lo zoom moltiplica anche le misure in dvh: le finestre (chat, scheda carta, unione account) restano entro lo schermo dividendo per lo stesso fattore */
 :root[data-text="l"]{--tz:1.12} :root[data-text="xl"]{--tz:1.25}
 :root[data-contrast="high"]{--mute:var(--ink2)!important;--line:color-mix(in srgb,var(--ink) 32%,transparent)!important;--line2:color-mix(in srgb,var(--ink) 58%,transparent)!important}
-:root[data-contrast="high"] :is(.sub, small, .note, .hline){color:var(--ink)!important}
+:root[data-contrast="high"] :is(.sub, small:not(.die > small), .note, .hline){color:var(--ink)!important}   /* le etichette dei dadi tengono il loro colore */
 :root[data-contrast="high"] .gc.dim img,:root[data-contrast="high"] .row.unowned .thumb{filter:grayscale(1) brightness(.85)!important;opacity:1!important}
 :root[data-motion="reduce"] *,:root[data-motion="reduce"] *::before,:root[data-motion="reduce"] *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
 :root[data-motion="reduce"]{--neon:none!important}

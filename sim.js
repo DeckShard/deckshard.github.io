@@ -1495,9 +1495,11 @@ function wire(){
       vx *= Math.pow(.955, dt); vy *= Math.pow(.955, dt);
       if(now - glitchT > 70){ glitchT = now; b.textContent = 1 + Math.floor(Math.random() * sides); g.classList.toggle("glitch", Math.random() < .45); g.style.setProperty("--gx", (Math.random() * 6 - 3).toFixed(1) + "px"); }
       g.style.left = x + "px"; g.style.top = y + "px"; g.style.transform = `rotate(${rot.toFixed(1)}deg)`;
-      if(now - t0 < 900 && Math.hypot(vx, vy) > .8) requestAnimationFrame(step); else land();
+      if(landedOnce) return; if(now - t0 < 900 && Math.hypot(vx, vy) > .8) requestAnimationFrame(step); else land();
     };
+    let landedOnce = false;
     const land = () => {
+      if(landedOnce) return; landedOnce = true;
       g.classList.remove("glitch", "tumbling");
       const M = G && G.players[me()], gig = M && M.gigs.find(x => x.uid === thrown.uid), tgt = $(`#board .die[data-gig="${thrown.uid}"]`);
       if(gig) b.textContent = gig.value;
@@ -1508,6 +1510,9 @@ function wire(){
       an.onfinish = done;
     };
     requestAnimationFrame(step);
+    // rete di sicurezza: se le animazioni si fermano (scheda in secondo piano), il dado arriva comunque
+    setTimeout(() => { if(g.isConnected && !landedOnce) land(); }, 1600);
+    setTimeout(() => { if(g.isConnected){ g.remove(); hideGig = null; $$("#board .thrownhide").forEach(x => x.classList.remove("thrownhide")); thrown = null; } }, 3200);
   }
   board.addEventListener("pointerup", ddEnd, true); board.addEventListener("pointercancel", ddEnd, true);
   board.addEventListener("click", e => { if(ddThrown && Date.now() - ddThrown < 400){ e.preventDefault(); e.stopPropagation(); } }, true);
