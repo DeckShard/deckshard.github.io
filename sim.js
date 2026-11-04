@@ -29,7 +29,7 @@ let drag = null;   // trascinamento in corso dalla mano
 let peekPid = null;   // carta ingrandita con la pressione lunga
 const peekInner = pid => `<img src="${imgUrl(pid)}" alt=""><div class="hint">Rilascia per chiudere · «Ingrandisci» nel menù per lo zoom</div>`;
 const clearDrop = () => $$("#board .drop").forEach(x => x.classList.remove("drop"));
-const killGhosts = () => { $$(".bc.ghost").forEach(g => g.remove()); $$("#board .dragging").forEach(x => x.classList.remove("dragging")); $$("#board .candrop").forEach(x => x.classList.remove("candrop")); $$("#board .fxsell").forEach(x => x.remove()); $("#board").classList.remove("fxdrag"); clearDrop(); };
+const killGhosts = () => { $$(".bc.ghost").forEach(g => g.remove()); $$("#board .dragging").forEach(x => x.classList.remove("dragging")); $$("#board .candrop").forEach(x => x.classList.remove("candrop", "sellside")); $$("#board .fxsell").forEach(x => x.remove()); $("#board").classList.remove("fxdrag"); clearDrop(); };
 /* all'inizio del trascinamento: evidenzia dove la carta può essere lasciata */
 function markDropZones(c){
   const M = G.players[me()];
@@ -38,7 +38,7 @@ function markDropZones(c){
     $$(`#board [data-field="${M.id}"] .bc`).forEach(x => x.classList.add("candrop"));
     for(const l of M.legends) if(l.faceUp && !l.onField && !l.removed){ const el = $(`#board [data-legend][data-uid="${l.uid}"]`); if(el) el.classList.add("candrop"); }
   } else { const f = $(`#board [data-field="${M.id}"]`); if(f) f.classList.add("candrop"); }
-  if(c.card.eddiable && !M.sold){ const e = $(`#board [data-eddies="${M.id}"]`); if(e) e.classList.add("candrop"); }
+  if(c.card.eddiable && !M.sold){ const e = $(`#board [data-eddies="${M.id}"]`); if(e){ e.classList.add("candrop"); const side = e.closest(".rs.mine"); if(side && !fxOn()) side.classList.add("candrop", "sellside"); } }
   // grafiche avanzate: mano in ombra, campo «Gioca», pila €$ che diventa un'area «Vendi» grande (è lei il bersaglio del rilascio)
   if(fxOn()){
     const board = $("#board"); board.classList.add("fxdrag");
@@ -710,10 +710,12 @@ function openBoard(){
   const b = $("#board"); b.hidden = false; document.body.style.overflow = "hidden";
   // app installata: niente schermo intero (il telefono mostrerebbe il suo avviso «scorri per uscire»), si prova solo a girare in orizzontale.
   // Nel browser lo schermo intero serve a togliere le barre; si può spegnere dalle Impostazioni.
+  // Senza schermo intero, se il telefono non si lascia girare, la plancia si ruota da sola dentro lo schermo (e si gioca lo stesso).
   const installed = matchMedia("(display-mode: standalone), (display-mode: fullscreen)").matches || navigator.standalone === true;
+  const full = S.settings.fullscreen ?? !installed;   // predefinito: sì nel browser, no nell'app installata
   try{
-    if(installed) screen.orientation?.lock?.("landscape").catch(() => {});
-    else if(S.settings.fullscreen !== false) document.documentElement.requestFullscreen?.().then(() => screen.orientation?.lock?.("landscape").catch(() => {})).catch(() => {});
+    if(full) document.documentElement.requestFullscreen?.().then(() => screen.orientation?.lock?.("landscape").catch(() => {})).catch(() => {});
+    else screen.orientation?.lock?.("landscape").catch(() => {});
   }catch(e){}
 }
 function closeBoard(){
@@ -1377,11 +1379,17 @@ function wire(){
   // trascinamento dalla mano: sulla plancia per giocare, su un'Unità/Leggenda per equipaggiare un Gear
   const rotated = () => matchMedia("(orientation: portrait) and (max-width: 760px)").matches;
 
-  const dropTarget = (x, y) => {
+  const dropTarget = (x, y, dd = drag) => {
     const M = G.players[me()], el = document.elementFromPoint(x, y); if(!el) return null;
     const ed = el.closest(`[data-eddies="${M.id}"]`); if(ed) return { kind: "sell", el: ed };
     let bc = el.closest(".bc"); if(bc && bc.dataset.gearOf) bc = bc.closest("[data-w]").querySelector(".bc.host") || bc;
     if(bc && bc.closest(`[data-field="${M.id}"]`)) return { kind: "unit", el: bc, uid: +bc.dataset.uid };
+    // vendita: il bersaglio non è solo la pila degli €$ ma tutta la tua zona dei contatori
+    // (a colonna: il tuo riquadro laterale; classica: Mazzo, €$ e Trash). Le Leggende restano bersagli dei Gear.
+    const dc = dd && dd.legendIdx == null ? M.hand.find(h => h.uid === dd.uid) : null, edp = $(`#board [data-eddies="${M.id}"]`);
+    if(dc && dc.card.eddiable && edp && !(dc.card.type === "Gear" && bc && bc.dataset.legend)){
+      const st = el.closest(".stack"); if(el.closest(".rs.mine") || (st && st.parentElement === edp.parentElement)) return { kind: "sell", el: edp };
+    }
     if(bc && bc.dataset.legend && +bc.dataset.lo === M.id){ const l = M.legends.find(l => l.uid === +bc.dataset.uid); if(l && l.faceUp && !l.onField && !l.removed) return { kind: "legend", el: bc, uid: l.uid }; if(l && !l.faceUp) return { kind: "facedown", el: null }; }
     const zone = el.closest(".bz.mine"); if(zone && !el.closest("[data-handrow], .rs")) return { kind: "field", el: zone.querySelector(`[data-field="${M.id}"]`) };
     return null;
@@ -1415,7 +1423,7 @@ function wire(){
     if(!drag || (e && e.pointerId !== drag.id && e.type !== "blur")) return;
     const d = drag; drag = null;
     // il bersaglio si legge prima di togliere le zone evidenziate (l'area «Vendi» grande è una di loro)
-    const t = d.active && e.type !== "pointercancel" ? dropTarget(e.clientX, e.clientY) : null;
+    const t = d.active && e.type !== "pointercancel" ? dropTarget(e.clientX, e.clientY, d) : null;
     killGhosts();
     if(!d.active) return;
     // (nessun "click" segue un trascinamento che finisce su un altro elemento: non serve ignorarlo)

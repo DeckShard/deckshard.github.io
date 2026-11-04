@@ -14,7 +14,7 @@ import { renderChatTab, openChatWith } from "./social.js";
 import { initI18n } from "./i18n.js";
 import { bootCloud, state as cloudState } from "./cloud.js";
 
-export const APP_VERSION = "1.9.19";
+export const APP_VERSION = "1.9.20";
 /* novità mostrate alla prima apertura dopo un aggiornamento (solo l'ultima versione; chi installa da zero non le vede) */
 const NEWS = { v: "1.9.19", items: [
   "Nuova scheda <b>Chat</b> nella barra in basso; le <b>Regole</b> sono la terza scheda del Simulator. Una notifica di messaggio apre la conversazione, e in partita puoi rispondere al tuo amico.",
@@ -31,7 +31,9 @@ const NEWS = { v: "1.9.19", items: [
 const HAD_DATA = (() => { try{ return ["settings", "decks", "coll", "record", "recent"].some(k => localStorage.getItem("ncd:" + k) != null); }catch(e){ return false; } })();
 function showNews(){
   const seen = S.settings.seenVer || (HAD_DATA ? "old" : null); S.settings.seenVer = APP_VERSION; S.save("settings");
-  if(!seen || seen === APP_VERSION || NEWS.v !== APP_VERSION) return;   // prima installazione o nessuna novità per questa versione
+  // si mostrano se l'ultima versione vista è precedente a quella delle novità (le correzioni piccole non le ripropongono)
+  const older = (a, b) => { const x = String(a).split(".").map(Number), y = String(b).split(".").map(Number); for(let i = 0; i < 3; i++){ if((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) < (y[i] || 0); } return false; };
+  if(!seen || !(seen === "old" || older(seen, NEWS.v))) return;   // prima installazione, o novità già viste
   const el = document.createElement("div"); el.id = "newsAsk"; el.setAttribute("role", "dialog"); el.setAttribute("aria-modal", "true"); el.setAttribute("aria-labelledby", "newsT");
   el.innerHTML = `<div class="box"><div class="kick">Aggiornamento · v${APP_VERSION}</div><h3 id="newsT">Novità in DeckShard</h3><ul>${NEWS.items.map(t => `<li>${t}</li>`).join("")}</ul><div class="opts"><button class="btn yel" id="newsOk">Ricevuto, choom</button></div></div>`;
   document.body.appendChild(el);

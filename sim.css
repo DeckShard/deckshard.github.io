@@ -190,6 +190,9 @@ html[data-motion="reduce"] .die.rolling,html[data-motion="reduce"] .die.landed,h
 #board .bc,#board .stack,#board .die{touch-action:none}
 #board .brow.field .bc{touch-action:pan-x pan-y}   /* le Unità in campo scorrono in orizzontale quando sono tante */
 #board .brow.hand .bc{touch-action:pan-x}
+/* plancia ruotata (telefono in verticale): il browser legge touch-action sugli assi dello schermo, quindi lo
+   scorrimento della mano (orizzontale nella plancia) è verticale sullo schermo; il gesto verso il campo resta al trascinamento */
+@media (orientation: portrait) and (max-width: 760px){ #board .brow.hand .bc{touch-action:pan-y} }
 #peek[hidden]{display:none}
 /* scelta tra carte: ricerca nel mazzo, trash, recupero, scarto */
 #simAsk.picker .box{max-width:min(860px,100%);display:flex;flex-direction:column;gap:8px;padding:10px 12px}
@@ -428,3 +431,6 @@ html[data-theme="light"] #board .bstrip.asking{background:rgba(255,255,255,.96)}
 #flyLayer .fxleg .term{position:absolute;left:50%;top:calc(100% + 16px);transform:translateX(-50%);width:max(100%,250px);background:rgba(8,5,6,.92);border:1px solid var(--line2);padding:5px 9px;font:500 10px var(--mono);color:var(--mute);white-space:nowrap;text-align:left}
 #flyLayer .fxleg .term b{color:var(--ink);font-weight:500} #flyLayer .fxleg .term em{font-style:normal;color:var(--yel)}
 html[data-theme="light"] #flyLayer .fxleg .term{background:rgba(255,255,255,.95)}
+/* a colonna, senza grafiche avanzate: tutto il tuo riquadro laterale accetta la vendita */
+#board .rs.mine.sellside{outline:2px dashed var(--yel);outline-offset:-3px;animation:none;background:color-mix(in srgb,var(--yel) 7%,transparent)}
+#board .rs.mine.sellside [data-eddies].drop{box-shadow:0 0 0 2px var(--yel),0 0 16px var(--yel)}
