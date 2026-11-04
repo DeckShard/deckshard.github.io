@@ -452,8 +452,10 @@ ok(playedT && await stepN() === "5", "giocata: passo 5 (chiama una Leggenda)");
 // passi 5→10: chiama, fine turno, secondo turno (dado, vendi, Bombus), attacca con Dexter, fine turno, reazione all'attacco del bot
 const step = stepN;
 const payLoop = async () => { for(let k = 0; k < 8 && /Paga \d+ €\$/.test(await page.locator(".bstrip .lg").textContent()); k++){ const ed = page.locator(".bz.mine [data-eddies].target"), lg = page.locator(".bz.mine [data-legend].target"); if(await ed.count()) await ed.click(); else if(await lg.count()) await lg.first().click(); await page.waitForTimeout(120); } };
-const asks = async (sel = "#simAsk [data-ask] >> nth=0") => { for(let i = 0; i < 8 && await page.locator("#simAsk [data-ask]").count(); i++){ await page.click(sel); await page.waitForTimeout(150); } };
-await page.click('.bz.mine [data-legend] >> nth=0'); await page.click('.pop button:has-text("Chiama")'); await payLoop(); await asks(); await page.waitForTimeout(300);
+// richieste in sospeso: nei riquadri «scegli una carta» (es. Viktor Vektor) prima si tocca una carta, poi si conferma
+const asks = async (sel = "#simAsk [data-ask] >> nth=0") => { for(let i = 0; i < 8 && await page.locator("#simAsk [data-ask]").count(); i++){ if(await page.locator("#simAsk [data-pick]").count() && !(await page.locator("#simAsk .pk.on").count())) await page.click("#simAsk [data-pick] >> nth=0"); const b = page.locator(sel); if(await b.isEnabled()) await page.click(sel); await page.waitForTimeout(150); } };
+await page.click('.bz.mine [data-legend] >> nth=0'); await page.click('.pop button:has-text("Chiama")'); await payLoop(); await page.waitForTimeout(300);
+await asks(); await page.waitForTimeout(300);
 ok(await step() === "6", "chiamata: passo 6 (fine turno)");
 await page.click("#bEnd");
 // il bot gioca; al mio turno arriva la scelta del dado (le opzioni iniziano con «d»), poi si vende e si gioca Bombus

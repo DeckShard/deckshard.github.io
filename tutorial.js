@@ -107,15 +107,15 @@ export const LESSONS = [
       decks: () => "starters", seed: 20771, first: 1, ensure: true, slow: true,
       steps: [
         { t: "Prima di iniziare decidi se tenere la mano: con 6 carte di costo basso di solito si tiene. Il mulligan rimescola la mano nel mazzo e ne pesca 6 nuove.", done: G => G.players.every(p => p.mulliganed) },
-        { t: "Inizia l'IA: guarda il suo turno. Ogni turno ha tre momenti: si prepara tutto, si pesca 1 carta e si tira un dado dal fixer, che diventa un Gig.", done: (G, me) => G.active === me && G.phase === "main" && !G.pending },
+        { bar: "bottom", t: "Inizia l'IA: guarda il suo turno. Ogni turno ha tre momenti: si prepara tutto, si pesca 1 carta e si tira un dado dal fixer, che diventa un Gig.", done: (G, me) => G.active === me && G.phase === "main" && !G.pending },
         { t: "Il tuo turno! Hai già pescato e tirato il dado. Ora vendi una carta: trascinala sulla pila €$ (o toccala → «Vendi»). Diventa 1 Eddie, qualunque fosse il suo costo; una sola a turno.", only: "sell", done: (G, me) => G.players[me].eddies.length >= 1, hl: HL.eddies },
         { t: "Gli Eddies pagano i costi; contano anche le Leggende pronte (1 €$ ciascuna). Gioca un'Unità con potenza (per esempio Dexter DeShawn): trascinala sul campo o toccala → «Gioca», poi paga toccando Eddies o Leggende.", only: "playUnit", done: (G, me) => G.players[me].field.length >= 1, hl: HL.hand },
         { t: "Un'Unità appena giocata ha il Lag: attaccherà dal prossimo turno. Ora chiama una Leggenda: tocca una Leggenda coperta → «Chiama» (1 €$). La scopri e ne attivi l'effetto {Call}. Una Chiamata per turno, anche nel turno del rivale.", only: "call", done: (G, me) => G.players[me].legends.some(l => l.faceUp), hl: HL.legends },
-        { t: "Quando hai finito premi «Fine turno». L'IA gioca il suo turno: guarda cosa fa nella barra e nel registro (≡).", only: "end", done: (G, me) => G.active !== me && G.players[me].turns >= 1, hl: HL.strip },
+        { bar: "bottom", t: "Quando hai finito premi «Fine turno». L'IA gioca il suo turno: guarda cosa fa nella barra e nel registro (≡).", only: "end", done: (G, me) => G.active !== me && G.players[me].turns >= 1, hl: HL.strip },
         { t: "Secondo turno: le tue carte spese si preparano, peschi e tiri un altro dado. Vendi di nuovo e gioca Secondhand Bombus, l'Unità con {Blocker}: ti servirà per difenderti.", only: "playBlocker", done: (G, me) => G.active === me && G.players[me].field.some(u => hasKw(u, "Blocker")) },
         { t: "Attacca: tocca l'Unità giocata al primo turno → «Attacca l'area Gig». Con potenza 1–9 rubi un Gig, 10–19 due, 20+ tre: scegli tu quale. Se il rivale ha Unità spese puoi invece attaccarle: lo scontro lo vince la potenza più alta.", only: "attack", done: (G, me) => G.players[me].field.some(u => u.spent && !hasKw(u, "Blocker")) || G.players[me].gigs.length >= 3 },
-        { t: "Premi «Fine turno» e tieni gli occhi aperti: ora l'IA ha Unità pronte e attaccherà. Il Lag di Bombus finisce con il tuo turno, quindi potrà bloccare.", only: "end", done: (G, me) => G.active !== me },
-        { t: "L'IA attacca: reagisci! Blocca con Secondhand Bombus (l'attacco va su di lei), oppure chiama una Leggenda coperta (1 €$) o usa una carta {Quick} dalla mano. Puoi reagire anche più volte.", done: (G, me) => G.active === me && G.players[me].turns >= 3 },
+        { bar: "bottom", t: "Premi «Fine turno» e tieni gli occhi aperti: ora l'IA ha Unità pronte e attaccherà. Il Lag di Bombus finisce con il tuo turno, quindi potrà bloccare.", only: "end", done: (G, me) => G.active !== me },
+        { reactBar: true, t: "L'IA attacca: reagisci! Blocca con Secondhand Bombus (l'attacco va su di lei), oppure chiama una Leggenda coperta (1 €$) o usa una carta {Quick} dalla mano. Puoi reagire anche più volte.", done: (G, me) => G.active === me && G.players[me].turns >= 3 },
         { t: "Ecco un turno completo. Continua a giocare se vuoi; quando sei pronto chiudi la lezione: la prossima parla di come si vince.", info: true, last: true },
       ] }] },
 
@@ -130,7 +130,7 @@ export const LESSONS = [
         { t: "Situazione: hai 6 Gig, l'IA 5. Si vince iniziando il proprio turno con 7 Gig: ti manca un furto.", info: true, hl: HL.dice },
         { t: "Attacca l'area Gig con Psycho Squad (potenza 6 = un Gig) e scegli quale rubare.", only: "attack", done: G => me0(G).gigs.length >= 7 },
         { t: "Hai 7 Gig, ma non hai ancora vinto: devi arrivarci all'inizio del tuo prossimo turno. Nel suo turno l'IA proverà a riprenderne uno.", info: true, hl: HL.dice },
-        { t: "Premi «Fine turno». L'IA non ha Unità pronte per attaccare: guarda cosa fa.", only: "end", done: G => G.winner != null },
+        { bar: "bottom", t: "Premi «Fine turno». L'IA non ha Unità pronte per attaccare: guarda cosa fa.", only: "end", done: G => G.winner != null },
         { t: "Vittoria! Hai iniziato il turno con 7 Gig. Ora l'overtime: «Avanti».", info: true, next: true },
       ] }, {
       decks: DATA => [namedDeck(DATA, "Tu", ["V: Corporate Exile", "Viktor Vektor", "Jackie Welles: Pour One Out"], [["Psycho Squad", 2], ["Dexter DeShawn", 2]]),
@@ -139,7 +139,7 @@ export const LESSONS = [
                rival: { field: [{ n: "Swordwise Huscle", spent: true }], eddies: [4, 0], gigs: [[4, 1], [6, 3], [8, 2], [10, 7], [12, 4], [20, 15]], fixer: [], turns: 8 } },
       steps: [
         { t: "Overtime: dopo il 7º turno di entrambi la partita va a morte improvvisa. Chi arriva a 7 Gig vince subito, senza aspettare il proprio turno.", info: true, hl: HL.strip },
-        { t: "Siete 6 a 6 e i fixer sono vuoti: i Gig si fanno solo rubando. Attacca l'area Gig con Psycho Squad.", only: "attack", done: G => G.winner != null },
+        { t: "Siete 6 a 6 e i fixer sono vuoti: i Gig si fanno solo rubando. Attacca l'area Gig con Psycho Squad.", hl: HL.rdice, only: "attack", done: G => G.winner != null },
         { t: "Vittoria immediata. Ricorda anche il deck-out: chi deve pescare da un mazzo vuoto perde. Lezione finita!", info: true, last: true },
       ] }] },
 
@@ -152,7 +152,7 @@ export const LESSONS = [
       steps: [
         { t: "Più potenza, più Gig: un attacco all'area Gig ne ruba 1 con potenza 1–9, 2 con 10–19, 3 con 20 o più. Animals Wrecker ha 10.", info: true, hl: HL.field },
         { t: "Attacca l'area Gig con Animals Wrecker e ruba due Gig.", only: "attack", onlyUnit: "Animals Wrecker", done: G => me0(G).gigs.length >= 4 },
-        { t: "Ora uno scontro: il Ruthless Lowlife del rivale è speso, quindi attaccabile. Attaccalo con Psycho Squad (6 contro 4): vince la potenza più alta e chi perde viene sconfitto.", only: "attack", onlyUnit: "Psycho Squad", done: G => !fieldHas(ai(G), "Ruthless Lowlife") },
+        { t: "Ora uno scontro: il Ruthless Lowlife del rivale è speso, quindi attaccabile. Attaccalo con Psycho Squad (6 contro 4): vince la potenza più alta e chi perde viene sconfitto.", hl: HL.rfield, only: "attack", onlyUnit: "Psycho Squad", done: G => !fieldHas(ai(G), "Ruthless Lowlife") },
         { t: "Evelyn Parker ha potenza 0: può attaccare, ma un'Unità a 0 non ruba Gig e in uno scontro perde contro chiunque abbia almeno 1. Le Unità a 0 servono per i loro effetti.", info: true, next: true },
       ] }, {
       decks: DATA => [namedDeck(DATA, "Tu", ["V: Corporate Exile", "Viktor Vektor", "Jackie Welles: Pour One Out"], [["Corpo Security", 1], ["Reboot Optics", 1], ["Dexter DeShawn", 1]]),
@@ -161,7 +161,7 @@ export const LESSONS = [
                rival: { field: [{ n: "Psycho Squad" }], eddies: [2, 0], gigs: [[4, 2], [6, 6]], fixer: [8, 10, 12, 20], turns: 5, sold: true } },
       bot: [[{ t: "attack", u: "Psycho Squad", to: "gigs" }]],
       steps: [
-        { t: "È il turno dell'IA e il suo Psycho Squad (6) sta per attaccare i tuoi Gig. Tu hai Corpo Security, un'Unità con {Blocker}, e in mano Reboot Optics, una carta {Quick}.", info: true, hl: HL.field },
+        { t: "È il turno dell'IA e il suo Psycho Squad (6) sta per attaccare i tuoi Gig. Tu hai Corpo Security, un'Unità con {Blocker}, e in mano Reboot Optics, una carta {Quick}.", info: true, hl: HL.rfield + ", " + HL.field, bar: "bottom" },
         { t: "Prima la carta Quick: nella finestra di reazione scegli «Quick: Reboot Optics» (2 €$). La prossima volta che un'Unità rivale combatte non sconfigge la tua.", react: "quick", done: G => !me0(G).hand.some(c => c.card.dn.startsWith("Reboot")) },
         { t: "Ora blocca con Corpo Security: l'attacco finisce su di lei invece che sui tuoi Gig. Perde lo scontro (2 contro 6), ma Reboot Optics la salva.", react: "block", done: G => G.log.some(e => /blocca/.test(e.text || "")) },
         { t: "Nessun Gig rubato e Corpo Security è ancora viva. I Blocker si usano solo se sono pronti, e una carta Quick si può giocare anche nel turno del rivale, quando si apre la finestra di reazione.", info: true, next: true },
@@ -182,7 +182,7 @@ export const LESSONS = [
                rival: { field: [{ n: "Offduty Malfini" }], eddies: [2, 0], gigs: [[4, 2], [6, 6]], fixer: [8, 10, 12, 20], turns: 6, sold: true } },
       bot: [[{ t: "attack", u: "Offduty Malfini", to: "Dexter DeShawn" }]],
       steps: [
-        { t: "L'IA attacca il tuo Dexter DeShawn, speso, con Offduty Malfini: 5 contro 4, perderesti. Ma hai una Leggenda coperta e 1 €$.", info: true, hl: HL.legends },
+        { t: "L'IA attacca il tuo Dexter DeShawn, speso, con Offduty Malfini: 5 contro 4, perderesti. Ma hai una Leggenda coperta e 1 €$.", info: true, hl: HL.rfield + ", " + HL.legends, bar: "bottom" },
         { t: "Reagisci chiamando la Leggenda: è Wakako Okada. Scegli l'effetto «-2 potenza a un'Unità rivale» e dallo a Offduty Malfini.", react: "call", choice: /-2/, done: G => me0(G).legends.some(l => l.faceUp && l.card.dn.startsWith("Wakako")) && !(G.pending && G.pending.player === 0 && G.pending.kind !== "block") },
         { t: "Ora non reagire più: lo scontro è 3 contro 4 e vince Dexter.", react: "none", done: G => !fieldHas(ai(G), "Offduty Malfini") },
         { t: "Ribaltato! Le Chiamate in risposta a un attacco cambiano gli scontri: ricordati che le Leggende coperte possono sempre sorprendere. Lezione finita.", info: true, last: true },
@@ -265,11 +265,14 @@ export function tutorialStep(G, me, force = false){
   return false;
 }
 export function nextPart(){ if(!L || part + 1 >= L.parts.length) return null; part++; idx = 0; const P = L.parts[part]; P._bt = null; return P; }
-export function tutorialBarHTML(G, me){
+export function tutorialBarHTML(G, me, fx = false){
   const s = curStep(), P = lessonPart(), n = P.steps.length;
   const btn = s.last ? (P.free ? "Chiudi la guida" : "Lezione completata") : s.next ? "Avanti" : s.info ? "Avanti" : "";
   const id = s.last ? "tutDone" : s.next ? "tutPart" : "tutNext";
-  return `<div class="tutbar"><span class="n"><b>${esc(L.title)}</b><small>${L.parts.length > 1 ? `${part + 1}/${L.parts.length} · ` : ""}${idx + 1}/${n}</small></span><span class="tx">${s.t}</span>
+  // nelle reazioni: con le grafiche avanzate si reagisce toccando le carte (anche in mano) → barra in alto;
+  // senza, le opzioni sono in una finestra al centro → barra in basso
+  const pos = (s.react || s.reactBar) ? (fx ? "top" : "bottom") : s.bar || (/rival/.test(s.hl || "") ? "bottom" : "top");
+  return `<div class="tutbar ${pos}"><span class="n"><b>${esc(L.title)}</b><small>${L.parts.length > 1 ? `${part + 1}/${L.parts.length} · ` : ""}${idx + 1}/${n}</small></span><span class="tx">${s.t}</span>
     ${btn ? `<button class="btn sm yel" id="${id}">${btn}</button>` : ""}</div>`;
 }
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));

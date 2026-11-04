@@ -219,7 +219,7 @@ function animateBoard(board, prev){
   for(const el of board.querySelectorAll(".die[data-gig]")){
     const uid = +el.dataset.gig; if(!uid) continue; const now = localRect(board, el); if(!now) continue;
     const was = prev.g.get(uid);
-    if(!was){ const owner = G.players.find(P => P.gigs.some(x => x.uid === uid)), gig = owner && owner.gigs.find(x => x.uid === uid); if(gig){ if(fx) fxRoll(board, el, gig, owner.id === me() ? "Tu" : owner.name, ms); else rollDie(el, gig.sides, gig.value, ms); } continue; }
+    if(!was){ const owner = G.players.find(P => P.gigs.some(x => x.uid === uid)), gig = owner && owner.gigs.find(x => x.uid === uid); if(gig && thrownNow() && owner.id === me()){ thrownNow().uid = uid; el.classList.add("thrownhide"); continue; } if(gig){ if(fx) fxRoll(board, el, gig, owner.id === me() ? "Tu" : owner.name, ms); else rollDie(el, gig.sides, gig.value, ms); } continue; }
     const dx = was.cx - now.cx, dy = was.cy - now.cy; if(Math.abs(dx) < 1 && Math.abs(dy) < 1) continue;
     const ownerNow = el.closest("[data-owner]"), changed = ownerNow && prev.g.get(uid) && was.owner != null && +ownerNow.dataset.owner !== was.owner;
     if(fx && changed){ const P = G.players[+ownerNow.dataset.owner], gig = P && P.gigs.find(x => x.uid === uid); if(gig){
@@ -248,6 +248,7 @@ function animateBoard(board, prev){
   const grown = G.players.map((P, i) => ({ e: P.eddies.slice(prev.eddies[i]), t: P.trash.slice(prev.trash[i]) }));
   for(const [uid, was] of prev.m){
     if(seen.has(uid) || was.back) continue;
+    if(G.players.some(P => P.hand.some(c => c.uid === uid))) continue;   // ancora in mano (nascosta: es. passaggio del dispositivo), non giocata
     const ePl = G.players.find(P => P.eddies.some(e => e.uid === uid)), tPl = G.players.find(P => P.trash.some(c => c.uid === uid));
     if(ePl){ fly(was, anchor("eddies", ePl.id), was.src, "sell"); if(was.hand) sfx("sell"); grown[ePl.id].e = grown[ePl.id].e.filter(e => e.uid !== uid); }
     else if(tPl){ const c = tPl.trash.find(c => c.uid === uid), prog = c && c.card && c.card.type === "Program";
@@ -1123,7 +1124,7 @@ function render(){
     </div>
     </div>
     ${logPanelHTML}
-    ${tutorialActive() ? tutorialBarHTML(G, me()) : ""}
+    ${tutorialActive() ? tutorialBarHTML(G, me(), fxOn()) : ""}
     ${showLog ? `<div id="simLog"><div style="display:flex;justify-content:space-between;align-items:center"><b>Registro</b><button class="btn sm icon" id="bLogClose">✕</button></div>${G.log.slice(-80).map(e => `<div class="e ${e.kind}">${esc(e.text)}</div>`).join("")}</div>` : ""}
     ${handoff !== false ? "" : mulliganPending() != null ? mulliganHTML() : pm || ob ? "" : G.pending && human[G.pending.player] ? askHTML() : ""}
     ${G.winner != null ? `<div class="winbox"><div class="box"><h2>${G.winner === -1 ? "PATTA" : G.winner === me() ? "VITTORIA" : gmode === "hot" ? "VINCE " + esc(G.players[G.winner].name).toUpperCase() : "SCONFITTA"}</h2><p class="wflav">${G.winner === -1 ? "Stavolta la città non è di nessuno." : G.winner === me() || gmode === "hot" ? "Night City ricorderà il tuo nome." : "Flatline. Rialzati, choom."}</p><p>${esc(G.reason)}</p><p style="color:var(--mute)">${G.turn} turni</p>${gmode === "online" ? seriesHTML() : ""}<div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">${gmode === "online" ? `<button class="btn" id="bChat2">💬 Chat</button>${series && series.next ? `<button class="btn acc2" id="bNextGame">Partita successiva</button>` : ""}<button class="btn yel" id="bExit">Torna alla lobby</button>` : `<button class="btn yel" id="bAgain">Rivincita</button><button class="btn" id="bExit">Esci</button>`}</div></div></div>` : ""}
@@ -1141,6 +1142,7 @@ function render(){
   const askEl = $("#simAsk"), askLeft = Math.max(fxAskUntil, fxBusyUntil) - performance.now();
   if(askEl && askLeft > 60 && fxOn()) askEl.animate([{ opacity: 0, visibility: "hidden" }, { opacity: 0, visibility: "hidden", offset: .97 }, { opacity: 1, visibility: "visible" }], { duration: askLeft, fill: "backwards" });
   if(ob && askLeft > 60){ board.classList.add("ask-wait"); const pend = G.pending; setTimeout(() => { if(G && G.pending === pend) board.classList.remove("ask-wait"); }, askLeft); }
+  if(hiddenThrow()) board.querySelector(`.die[data-gig="${hiddenThrow()}"]`)?.classList.add("thrownhide");
   const hl = tutorialHighlight(); if(hl) $$("#board " + hl.split(",").join(", #board ")).forEach(x => x.classList.add("tuthl"));
   if(showLog){ const l = $("#simLog"); l.scrollTop = l.scrollHeight; }
   // scelta tra carte: subito la miniatura, poi l'immagine grande appena è scaricata (leggibile anche il testo)
@@ -1346,6 +1348,9 @@ function menu(el){
 }
 
 /* ------------------------------------------------------------ eventi */
+/* dado lanciato trascinandolo: il Gig appena tirato resta nascosto finché il dado non atterra (vedi throwDie) */
+let thrown = null, hideGig = null;
+const thrownNow = () => thrown && Date.now() - thrown.at < 4000 ? thrown : null, hiddenThrow = () => hideGig;
 function wire(){
   const root = $("#simSetup");
   root.addEventListener("click", e => {
@@ -1455,16 +1460,55 @@ function wire(){
   }, true);
   const ddEnd = e => {
     if(!dd || e.pointerId !== dd.id) return; const d = dd; dd = null; if(!d.ghost) return;
-    const dx = e.clientX - d.x, dy = e.clientY - d.y, far = Math.hypot(dx, dy) > 40 && e.type !== "pointercancel";
+    const box = d.btn.closest("#simAsk .box"), br = box && box.getBoundingClientRect();
+    const inPanel = br && e.clientX >= br.left && e.clientX <= br.right && e.clientY >= br.top && e.clientY <= br.bottom;   // riportato nel pannello: si annulla
+    const dx = e.clientX - d.x, dy = e.clientY - d.y, far = Math.hypot(dx, dy) > 40 && e.type !== "pointercancel" && !inPanel;
     ddThrown = Date.now();
-    if(!far){ d.ghost.remove(); return; }
-    // la spinta segue la velocità del dito (gli ultimi movimenti), poi il dado sparisce girando e parte il tiro
-    const h = d.hist, a = h[0], z = h[h.length - 1], dt = Math.max(16, (z && a ? z.t - a.t : 16));
-    const vx = z && a ? (z.x - a.x) / dt : 0, vy = z && a ? (z.y - a.y) / dt : 0, k = 220;
-    const anim = d.ghost.animate([{ transform: d.ghost.style.transform, opacity: 1 }, { transform: `translate(${dx + vx * k}px, ${dy + vy * k}px) rotate(${Math.round((dx + dy) * .8) + 540}deg) scale(.7)`, opacity: 0 }], { duration: 320, easing: "cubic-bezier(.2,.7,.3,1)" });
-    anim.onfinish = () => d.ghost.remove();
-    if(G && G.pending && G.pending.kind === "die") setTimeout(() => { ddThrown = 0; if(d.btn.isConnected) d.btn.click(); }, 180);
+    if(!far){ const back = d.ghost.animate([{ transform: d.ghost.style.transform, opacity: 1 }, { transform: "none", opacity: .2 }], { duration: 180, easing: "ease-out" }); back.onfinish = () => d.ghost.remove(); return; }
+    if(!(G && G.pending && G.pending.kind === "die") || document.documentElement.dataset.motion === "reduce"){ d.ghost.remove(); ddThrown = 0; if(d.btn.isConnected && G && G.pending) d.btn.click(); return; }
+    throwDie(d, e);
   };
+  /* lancio trascinato: il dado parte con la velocità del dito, rotola e rimbalza sulla plancia glitchando
+     (numeri a caso, scatti, colori sdoppiati), poi vola al suo posto tra i tuoi Gig con il numero vero.
+     Il tiro vero parte subito (stato della partita), ma il nuovo Gig resta nascosto finché il dado non arriva. */
+  function throwDie(d, e){
+    const g = d.ghost, h = d.hist, a = h[0], z = h[h.length - 1], dtt = Math.max(16, (z && a ? z.t - a.t : 16));
+    let vx = z && a ? (z.x - a.x) / dtt * 16 : 0, vy = z && a ? (z.y - a.y) / dtt * 16 : 0;   // px per fotogramma
+    const sp = Math.hypot(vx, vy); if(sp < 6){ const k = 6 / Math.max(.01, sp); vx = sp ? vx * k : 6; vy = sp ? vy * k : -4; }
+    if(Math.hypot(vx, vy) > 38){ const k = 38 / Math.hypot(vx, vy); vx *= k; vy *= k; }
+    const r0 = g.getBoundingClientRect(), W = innerWidth, H = innerHeight, sz = r0.width;
+    let x = r0.left, y = r0.top, rot = 0, t0 = performance.now(), last = t0, glitchT = 0;
+    let b = g.querySelector("b"); if(!b){ b = document.createElement("b"); g.appendChild(b); }
+    g.querySelector("small")?.remove();   // l'etichetta del tipo di dado non rotola: resta solo il dado
+    const sides = +((d.btn.querySelector(".die").className.match(/\bd(\d+)\b/) || [])[1]) || 6;
+    g.style.transform = "none"; g.classList.add("tumbling");
+    thrown = { at: Date.now(), uid: null };
+    ddThrown = 0; d.btn.click();   // il tiro vero
+    if(!thrown.uid){ const M = G && G.players[me()], gg = M && M.gigs[M.gigs.length - 1]; if(gg) thrown.uid = gg.uid; }
+    if(thrown.uid) hideGig = thrown.uid; const hid = $(`#board .die[data-gig="${hideGig}"]`); if(hid) hid.classList.add("thrownhide");
+    sfx("roll");
+    const step = now => {
+      const dt = Math.min(2.5, (now - last) / 16.7); last = now;
+      x += vx * dt; y += vy * dt; rot += (vx + vy) * 2.2 * dt;
+      if(x < 4){ x = 4; vx = Math.abs(vx) * .7; } if(x > W - sz - 4){ x = W - sz - 4; vx = -Math.abs(vx) * .7; }
+      if(y < 4){ y = 4; vy = Math.abs(vy) * .7; } if(y > H - sz - 4){ y = H - sz - 4; vy = -Math.abs(vy) * .7; }
+      vx *= Math.pow(.955, dt); vy *= Math.pow(.955, dt);
+      if(now - glitchT > 70){ glitchT = now; b.textContent = 1 + Math.floor(Math.random() * sides); g.classList.toggle("glitch", Math.random() < .45); g.style.setProperty("--gx", (Math.random() * 6 - 3).toFixed(1) + "px"); }
+      g.style.left = x + "px"; g.style.top = y + "px"; g.style.transform = `rotate(${rot.toFixed(1)}deg)`;
+      if(now - t0 < 900 && Math.hypot(vx, vy) > .8) requestAnimationFrame(step); else land();
+    };
+    const land = () => {
+      g.classList.remove("glitch", "tumbling");
+      const M = G && G.players[me()], gig = M && M.gigs.find(x => x.uid === thrown.uid), tgt = $(`#board .die[data-gig="${thrown.uid}"]`);
+      if(gig) b.textContent = gig.value;
+      const done = () => { g.remove(); hideGig = null; const t = $(`#board .die[data-gig="${thrown.uid}"]`); if(t){ t.classList.remove("thrownhide"); t.classList.add("landed"); setTimeout(() => t.classList.remove("landed"), 600); } sfx("land"); thrown = null; };
+      if(!tgt){ g.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 250 }).onfinish = done; return; }
+      const tr = tgt.getBoundingClientRect(), sc = tr.width / sz;
+      const an = g.animate([{ transform: g.style.transform }, { transform: `translate(${tr.left - x + (tr.width - sz) / 2}px, ${tr.top - y + (tr.height - g.offsetHeight) / 2}px) rotate(0deg) scale(${sc.toFixed(3)})` }], { duration: 380, easing: "cubic-bezier(.3,.7,.2,1)", fill: "forwards" });
+      an.onfinish = done;
+    };
+    requestAnimationFrame(step);
+  }
   board.addEventListener("pointerup", ddEnd, true); board.addEventListener("pointercancel", ddEnd, true);
   board.addEventListener("click", e => { if(ddThrown && Date.now() - ddThrown < 400){ e.preventDefault(); e.stopPropagation(); } }, true);
   board.addEventListener("pointerdown", e => {

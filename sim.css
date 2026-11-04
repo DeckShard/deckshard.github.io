@@ -448,3 +448,35 @@ html[data-theme="light"] .die b{text-shadow:0 0 2px #fff,0 0 4px #fff}
 /* dadi da trascinare per lanciarli */
 #simAsk .btn.die-opt{touch-action:none}
 .die.dieghost{filter:drop-shadow(0 0 12px var(--c)) drop-shadow(0 6px 12px rgba(0,0,0,.6))}
+/* barra del tutorial: in basso quando si parla del rivale (non copre le sue carte), al centro nelle reazioni */
+.tutbar.bottom{top:auto;bottom:6px}
+#board.rail .tutbar.bottom{left:calc(50% + var(--railw, 0px) / 2)}
+/* ------------------------------------------------------------ dadi, stile F: contorno forte e sigla dentro
+   Bordo spesso del colore del dado, interno scuro, niente facce interne; il numero del Gig è del colore del dado.
+   Dove non c'è un numero (dadi del fixer, pannello del tiro) la sigla «d8» sta dentro, grande; sotto i Gig
+   l'etichetta è bianca su nero con il bordo del colore. */
+.die svg .out{stroke-width:3.2}
+.die svg .in{display:none}
+.die svg .fill{fill:color-mix(in srgb,var(--c) 10%,#0b0708)}
+.die{filter:drop-shadow(0 0 calc(var(--dw) * .1) color-mix(in srgb,var(--c) 55%,transparent))}
+.die b{color:var(--c);text-shadow:0 0 1px #000;font-weight:800;font-family:var(--display)}
+.die.d4 b{margin-top:calc(var(--dw) * .2);font-size:calc(var(--dw) * .36)}
+.die small{background:#0b0b0e;color:#fff;box-shadow:inset 0 0 0 1.5px var(--c);clip-path:none;padding:1px calc(var(--dw) * .1);bottom:calc(var(--dw) * -.22);font-size:max(9px, calc(var(--dw) * .26))}
+.die.fx{opacity:1}
+.die.fx svg .out{stroke-width:2.4}
+.die.fx small,.die:not(:has(b)) small,.die:has(b:empty) small{position:relative;left:auto;bottom:auto;transform:none;background:none;box-shadow:none;border:0;padding:0;
+  color:var(--c);font-size:calc(var(--dw) * .34);font-weight:900;letter-spacing:0;text-transform:none;text-shadow:0 0 1px #000,0 0 3px #000}
+.die.d4.fx small,.die.d4:not(:has(b)) small,.die.d4:has(b:empty) small{margin-top:calc(var(--dw) * .26);font-size:calc(var(--dw) * .28)}
+.die.d10.fx small,.die.d10:not(:has(b)) small,.die.d12.fx small,.die.d12:not(:has(b)) small,.die.d20.fx small,.die.d20:not(:has(b)) small{font-size:calc(var(--dw) * .27);letter-spacing:-.02em}
+.die:has(b:empty) b{display:none}
+html[data-theme="light"] .die svg .fill{fill:color-mix(in srgb,var(--c) 10%,#fff)}
+html[data-theme="light"] .die b{color:color-mix(in srgb,var(--c) 80%,#000);text-shadow:none}
+html[data-theme="light"] .die small{background:#fff;color:#14100f;box-shadow:inset 0 0 0 1.5px var(--c)}
+html[data-theme="light"] .die.fx small,html[data-theme="light"] .die:not(:has(b)) small,html[data-theme="light"] .die:has(b:empty) small{background:none;box-shadow:none;color:color-mix(in srgb,var(--c) 78%,#000);text-shadow:none}
+/* il dado che gira al centro: niente alone bianco, che impastava numero ed etichetta */
+#flyLayer .fxdie .die{filter:drop-shadow(0 0 12px var(--c))}
+/* lancio trascinato: rotola glitchando, il Gig vero compare quando arriva */
+.die.thrownhide{visibility:hidden}
+.die.dieghost.tumbling b{font-family:var(--mono, monospace)}
+.die.dieghost.glitch{filter:drop-shadow(var(--gx,2px) 0 0 #ff2e55) drop-shadow(calc(var(--gx,2px) * -1) 0 0 #00e5f2)}
+.die.dieghost.glitch svg{transform:translateX(var(--gx,2px)) skewX(-6deg)}
