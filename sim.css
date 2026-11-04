@@ -333,3 +333,46 @@ html[data-motion="reduce"] #board .bc{transition:none}
 #flyLayer{position:absolute;inset:0;z-index:45;pointer-events:none;overflow:visible}
 #board .bc.fly{position:absolute;pointer-events:none;margin:0;transform-origin:center;box-shadow:0 6px 18px rgba(0,0,0,.6);backface-visibility:hidden}
 #board .bc{backface-visibility:hidden}
+
+/* ---- grafiche avanzate (beta): vetrina, Gig al centro, fascia di turno, zone di rilascio ---- */
+#board.fx #oppFeed{top:4px;transform:translateX(-50%);font-size:12px;padding:5px 10px;opacity:.9;max-width:min(60%,420px)}
+#flyLayer .fxshow{position:absolute;transform-origin:center;font-family:var(--display);--fc:var(--acc)}
+#flyLayer .fxshow.yel{--fc:var(--yel)}
+#flyLayer .fxshow .crd{position:absolute;inset:0;border-radius:4px;overflow:hidden;background:var(--surf);box-shadow:0 0 0 1px rgba(255,255,255,.15),0 0 40px rgba(0,0,0,.8),0 0 28px color-mix(in srgb,var(--fc) 50%,transparent)}
+#flyLayer .fxshow .crd img{width:100%;height:100%;display:block;object-fit:cover} #flyLayer .fxshow .crd .n{display:grid;place-items:center;height:100%;padding:6px;text-align:center;font:700 12px var(--display);color:var(--ink)}
+#flyLayer .fxshow::before{content:"";position:absolute;inset:-9px;border:2px solid var(--fc);filter:drop-shadow(0 0 6px var(--fc));clip-path:polygon(0 0,18% 0,18% 2px,2px 2px,2px 18%,0 18%,0 100%,18% 100%,18% calc(100% - 2px),2px calc(100% - 2px),2px 82%,0 82%,0 0,100% 0,100% 18%,calc(100% - 2px) 18%,calc(100% - 2px) 2px,82% 2px,82% 0,100% 0,100% 100%,82% 100%,82% calc(100% - 2px),calc(100% - 2px) calc(100% - 2px),calc(100% - 2px) 82%,100% 82%)}
+#flyLayer .fxshow .kick{position:absolute;left:50%;bottom:calc(100% + 16px);transform:translateX(-50%);font:700 11px var(--display);letter-spacing:.3em;color:var(--fc);text-transform:uppercase;white-space:nowrap;text-shadow:0 0 10px var(--fc)}
+#flyLayer .fxshow .tag{position:absolute;right:-8px;bottom:-8px;background:var(--fc);color:#0b0b0e;font:700 9px var(--display);letter-spacing:.1em;padding:2px 7px;white-space:nowrap;clip-path:polygon(0 0,100% 0,100% 100%,8px 100%,0 calc(100% - 8px))}
+#flyLayer .fxshow .nm{position:absolute;left:50%;top:calc(100% + 16px);transform:translateX(-50%);font:600 12px var(--font);letter-spacing:.08em;color:var(--ink);white-space:nowrap;background:rgba(0,0,0,.6);padding:2px 10px;border:1px solid var(--line2);clip-path:polygon(0 0,100% 0,100% 70%,96% 100%,0 100%)}
+/* dado grande con anello */
+#flyLayer .fxdie{position:absolute;display:grid;place-items:center;transform-origin:center;--c:var(--acc2)}
+#flyLayer .fxdie .die{position:relative;margin:0;filter:drop-shadow(0 0 14px var(--c)) drop-shadow(0 0 2px #fff);cursor:default}
+#flyLayer .fxdie i{position:absolute;border-radius:50%}
+#flyLayer .fxdie .r1{inset:0;border:1.5px dashed color-mix(in srgb,var(--c) 70%,transparent);animation:fxSpin 6s linear infinite}
+#flyLayer .fxdie .r2{inset:11%;border:3px solid transparent;border-top-color:var(--c);border-right-color:var(--c);filter:drop-shadow(0 0 6px var(--c));animation:fxSpin 1.1s linear infinite}
+#flyLayer .fxdie .r3{inset:-5%;background:conic-gradient(from 0deg,transparent 0 83%,color-mix(in srgb,var(--c) 60%,transparent) 83% 86%,transparent 86% 100%);animation:fxSpin 2.4s linear infinite reverse;-webkit-mask:radial-gradient(circle,transparent 69%,#000 70%);mask:radial-gradient(circle,transparent 69%,#000 70%)}
+#flyLayer .fxdie.done .r2{animation-duration:.35s} #flyLayer .fxdie.done .r1,#flyLayer .fxdie.done .r3{opacity:.35}
+#flyLayer .fxdie .kick{position:absolute;left:50%;bottom:calc(100% + 6px);transform:translateX(-50%);font:700 11px var(--display);letter-spacing:.3em;color:var(--ink);text-transform:uppercase;white-space:nowrap;text-shadow:0 0 10px var(--acc2)}
+@keyframes fxSpin{to{transform:rotate(360deg)}}
+/* fascia di cambio turno */
+#flyLayer .fxbanner{position:absolute;left:0;right:0;height:52px;display:flex;align-items:center;justify-content:center;gap:16px;background:linear-gradient(90deg,transparent,rgba(0,0,0,.85) 18%,rgba(0,0,0,.85) 82%,transparent);border-top:1px solid var(--fc);border-bottom:1px solid var(--fc);box-shadow:0 0 24px rgba(0,0,0,.8);--fc:var(--acc)}
+#flyLayer .fxbanner.mine{--fc:var(--acc2)}
+#flyLayer .fxbanner::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(0deg,transparent 0 2px,rgba(255,255,255,.04) 2px 3px)}
+#flyLayer .fxbanner b{font:800 clamp(16px,2.6vw,24px) var(--display);letter-spacing:.3em;color:var(--fc);text-transform:uppercase;text-shadow:0 0 10px var(--fc),2px 0 0 color-mix(in srgb,var(--acc2) 50%,transparent);white-space:nowrap}
+#flyLayer .fxbanner.mine b{text-shadow:0 0 10px var(--fc),-2px 0 0 color-mix(in srgb,var(--acc) 50%,transparent)}
+#flyLayer .fxbanner small{font:600 11px var(--font);letter-spacing:.2em;color:var(--mute);text-transform:uppercase}
+/* trascinamento: mano in ombra, zone accese, area Vendi */
+#board.fxdrag [data-handrow] .bc:not(.dragging){opacity:.35;transition:opacity .15s}
+#board.fxdrag .brow.field.candrop{position:relative;outline:2px dashed var(--acc2Fill);background:color-mix(in srgb,var(--acc2Fill) 9%,transparent);box-shadow:inset 0 0 24px color-mix(in srgb,var(--acc2Fill) 20%,transparent);animation:none}
+#board.fxdrag .brow.field.candrop::after{content:"Gioca";position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font:700 14px var(--display);letter-spacing:.3em;color:var(--acc2);text-transform:uppercase;text-shadow:0 0 10px var(--acc2);pointer-events:none}
+#board.fxdrag .brow.field.drop::after{color:#fcee0a;text-shadow:0 0 10px #fcee0a}
+#board.fxdrag .bc.candrop{outline:2px solid var(--acc2Fill);outline-offset:0;box-shadow:0 0 0 2px color-mix(in srgb,var(--acc2Fill) 35%,transparent),0 0 16px var(--acc2Fill);animation:none}
+#board.fxdrag .stack.ed.candrop{visibility:hidden}
+#board .fxsell{position:absolute;z-index:46;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:rgba(10,6,7,.92);border:2px solid var(--yel);box-shadow:0 0 0 2px rgba(0,0,0,.6),0 0 26px color-mix(in srgb,var(--yel) 60%,transparent);clip-path:polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px);touch-action:none}
+#board .fxsell b{font:800 16px var(--display);letter-spacing:.24em;color:var(--yel);text-transform:uppercase;text-shadow:0 0 10px var(--yel)}
+#board .fxsell .hex{width:30px;height:30px;display:grid;place-items:center;background:var(--yel);color:#0b0b0e;font:800 14px var(--display);clip-path:polygon(25% 3%,75% 3%,100% 50%,75% 97%,25% 97%,0 50%)}
+#board .fxsell small{font:600 8px var(--font);letter-spacing:.12em;color:var(--ink2);text-transform:uppercase;white-space:nowrap}
+#board .fxsell.drop{background:rgba(40,36,4,.96);transform:scale(1.04);outline:none;box-shadow:0 0 0 2px rgba(0,0,0,.6),0 0 40px var(--yel)}
+html[data-theme="light"] #board .fxsell{background:rgba(255,255,255,.95)} html[data-theme="light"] #board .fxsell b{color:#7a6c00;text-shadow:none}
+html[data-theme="light"] #flyLayer .fxbanner{background:linear-gradient(90deg,transparent,rgba(255,255,255,.92) 18%,rgba(255,255,255,.92) 82%,transparent)}
+html[data-theme="light"] #flyLayer .fxshow .nm{background:rgba(255,255,255,.85)}

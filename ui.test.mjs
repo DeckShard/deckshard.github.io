@@ -4,7 +4,7 @@ import { chromium } from "playwright";
 const BASE = process.env.BASE || "http://127.0.0.1:8751";
 let fails = 0, passes = 0;
 /* tiro iniziale: se l'ha vinto il giocatore, sceglie chi inizia (prima opzione) e poi arriva il mulligan */
-const openingChoice = async () => { await page.waitForSelector("#simAsk"); for(let k = 0; k < 3 && !(await page.locator('[data-mull="keep"]').count()); k++){ if(await page.locator("#simAsk [data-ask]").count()) await page.click("#simAsk [data-ask] >> nth=0"); await page.waitForTimeout(250); } };
+const openingChoice = async () => { await page.waitForSelector("#simAsk"); for(let k = 0; k < 4 && !(await page.locator('[data-mull="keep"]').count()); k++){ if(await page.locator("#simAsk [data-react]").count()) await page.click("#simAsk [data-react]"); if(await page.locator("#simAsk [data-ask]").count()) await page.click("#simAsk [data-ask] >> nth=0"); await page.waitForTimeout(250); } };
 const ok = (c, m) => { if(c) passes++; else { fails++; console.log("  ✘", m); } };
 const errors = [];
 const browser = await chromium.launch({ executablePath: process.env.CHROME || "/opt/pw-browsers/chromium-1194/chrome-linux/chrome" });

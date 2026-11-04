@@ -170,6 +170,8 @@ export function renderSettings(){
       <h3>Simulator</h3>
       <div class="field fcol"><label>Plancia<small>«A colonna» (beta): contatori, Leggende e dadi in una colonna a sinistra, così le carte in campo e in mano sono più grandi, soprattutto sul telefono; su schermi larghi il registro resta aperto a destra.</small></label>
         <span class="seg" id="pfLayout">${[["classic", "Classica"], ["rail", "A colonna (beta)"]].map(([v, t]) => `<button data-v="${v}" aria-pressed="${(S.settings.boardLayout || "classic") === v}">${t}</button>`).join("")}</span></div>
+      <div class="field fcol"><label>Grafiche avanzate (beta)<small>Effetti in più sulla plancia: le carte giocate dall'avversario si mostrano grandi al centro prima di andare al loro posto, ogni Gig tirato gira al centro dentro un anello, una fascia annuncia il cambio di turno e, mentre trascini una carta, le zone dove puoi lasciarla si accendono con un'area «Vendi» grande. La durata segue i ritmi qui sotto; con «Animazioni ridotte» restano spente.</small></label>
+        <span class="seg" id="pfFx">${[["1", "Sì"], ["0", "No"]].map(([v, t]) => `<button data-v="${v}" aria-pressed="${(S.settings.fx ? "1" : "0") === v}">${t}</button>`).join("")}</span></div>
       <div class="field fcol"><label>Ritmo dell'avversario<small>Quanto aspetta l'IA (o l'avversario online) tra una mossa e l'altra, e quanto durano le animazioni delle sue carte. «Istantanea»: niente pause né movimenti.</small></label>
         <span class="seg" id="pfOppSpeed">${[["slow", "Lento"], ["normal", "Normale"], ["fast", "Veloce"], ["instant", "Istantaneo"]].map(([v, t]) => `<button data-v="${v}" aria-pressed="${(S.settings.oppSpeed || "normal") === v}">${t}</button>`).join("")}</span></div>
       <div class="field fcol"><label>Velocità delle tue animazioni<small>Le carte che giochi, vendi o spendi si muovono sulla plancia. «Istantanea»: la plancia cambia e basta, come prima.</small></label>
@@ -260,6 +262,7 @@ function wire(root){
     const os = e.target.closest("#pfOppSpeed button"); if(os){ S.settings.oppSpeed = os.dataset.v; S.save("settings"); rerender(); return; }
     const ly = e.target.closest("#pfLayout button"); if(ly){ S.settings.boardLayout = ly.dataset.v; S.save("settings"); rerender(); return; }
     const am = e.target.closest("#pfAnimMine button"); if(am){ S.settings.animMine = am.dataset.v; S.save("settings"); rerender(); return; }
+    const fx = e.target.closest("#pfFx button"); if(fx){ S.settings.fx = fx.dataset.v === "1"; S.save("settings"); rerender(); return; }
     const of = e.target.closest("#pfOppFeed button"); if(of){ S.settings.oppFeed = of.dataset.v === "1"; S.save("settings"); rerender(); return; }
     const ax = e.target.closest("#pfText button, #pfContrast button, #pfMotion button"); if(ax){
       const a = S.settings.a11y = { ...(S.settings.a11y || {}) }, id = ax.parentElement.id, v = ax.dataset.v;
