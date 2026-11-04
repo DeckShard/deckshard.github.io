@@ -68,7 +68,7 @@ function doMull(pi, d){ if(G.players[pi].mulliganed) return; markMove("mine"); m
    «Istantanea» o «Animazioni ridotte» = nessun movimento.                                              */
 let animWho = null;   // chi ha fatto l'ultima mossa: "mine" | "opp" | null (ridisegno senza animazione)
 let animBase = null;  // pile prima della mossa (Eddies e Trash): ciò che cresce va animato anche se la carta non era visibile (vendite e Programmi dell'avversario)
-function markMove(who){ animWho = who; animBase = G ? { eddies: G.players.map(P => P.eddies.length), trash: G.players.map(P => P.trash.length) } : null; }
+function markMove(who){ animWho = who; animBase = G ? { eddies: G.players.map(P => P.eddies.length), trash: G.players.map(P => P.trash.length), hand: new Map(G.players[me()].hand.map(c => [c.uid, c])) } : null; }   // anche la mano prima della mossa: un Programma in attesa di una scelta non è più da nessuna parte
 /* la plancia si ridisegna anche a metà animazione (tick, selezioni): le copie volanti vivono in uno strato
    che sopravvive al ridisegno, e le animazioni delle carte si riapplicano all'elemento nuovo dal punto in cui erano */
 const flyLayer = document.createElement("div"); flyLayer.id = "flyLayer";
@@ -97,7 +97,7 @@ function snapBoard(board){
   for(const el of board.querySelectorAll("[data-uid]")){ const r = localRect(board, el); if(!r) continue; const img = el.querySelector(":scope > img"); m.set(+el.dataset.uid, { ...r, src: img ? img.getAttribute("src") : "", spent: el.classList.contains("spent"), back: el.classList.contains("back"), leg: !!el.dataset.legend, gear: !!el.dataset.gearOf, hand: !!el.dataset.hand, t: getComputedStyle(el).transform }); }
   const g = new Map();
   for(const el of board.querySelectorAll(".die[data-gig]")){ const uid = +el.dataset.gig; if(!uid) continue; const r = localRect(board, el); const o = el.closest("[data-owner]"); if(r) g.set(uid, { ...r, owner: o ? +o.dataset.owner : null }); }
-  return { m, g, hand: new Map(G.players[me()].hand.map(c => [c.uid, c])), eddies: (animBase || {}).eddies || G.players.map(P => P.eddies.length), trash: (animBase || {}).trash || G.players.map(P => P.trash.length) };
+  return { m, g, hand: (animBase || {}).hand || new Map(G.players[me()].hand.map(c => [c.uid, c])), eddies: (animBase || {}).eddies || G.players.map(P => P.eddies.length), trash: (animBase || {}).trash || G.players.map(P => P.trash.length) };
 }
 /* tiro di un dado: disturbo con parametri casuali e cifre che scorrono, poi il lampo; il d20 fa girare le facce
    e apre un anello. Lo stato sta in liveDice, così un ridisegno a metà tiro lo ritrova sull'elemento nuovo. */
@@ -178,9 +178,11 @@ function animateBoard(board, prev){
     if(was){
       if(was.hand && !el.dataset.hand && !gearHost) sfx("play");   // carta giocata dalla mano (la tua: l'avversario passa dalla vetrina)
       if(gearHost && !was.gear && pid != null){ const c = findInst(G.players[+pid], uid); if(c) gearBadge(c, ms); }   // Gear appena equipaggiato dalla mano: somma della potenza
-      if(fxOpp && was.leg && !el.dataset.legend && el.closest(`[data-field="${R.id}"]`)){   // Leggenda chiamata in campo
-        const c = findInst(R, uid); fresh.add(uid); fxShowcase(board, { src: c && c.pid ? thumbUrl(c.pid) : "", label: `${oppName} chiama`, tag: "Leggenda", name: c ? c.card.dn : "", to: now, hideEl: el }, ms); continue; }
-      if(was.back !== el.classList.contains("back")){ fresh.add(uid); animEl(el, [{ transform: `${tf(endT)} rotateY(90deg)` }, { transform: `${tf(endT)} rotateY(0deg)` }], { duration: ms, easing: ease }); continue; }
+      if(fx && was.leg && !el.dataset.legend && el.closest("[data-field]")){ fresh.add(uid); fxSlam(board, el, ms); continue; }   // Go Solo: la Leggenda piomba in campo
+      if(fx && was.back && !el.classList.contains("back") && el.dataset.legend){   // Leggenda scoperta: scansione d'identità al centro, poi nello slot
+        const owner = G.players[+el.dataset.lo], c = owner && findInst(owner, uid);
+        if(c && c.pid){ fresh.add(uid); fxLegend(board, { src: thumbUrl(c.pid), name: c.card.dn, label: `${owner.id === me() ? "Chiami" : owner.name + " chiama"} una Leggenda`, to: now, hideEl: el }, ms); continue; } }
+      if(was.back !== el.classList.contains("back")){ if(was.back && el.dataset.legend) sfx("call"); fresh.add(uid); animEl(el, [{ transform: `${tf(endT)} rotateY(90deg)` }, { transform: `${tf(endT)} rotateY(0deg)` }], { duration: ms, easing: ease }); continue; }
       const dx = was.cx - now.cx, dy = was.cy - now.cy, sx = was.w / now.w, sy = was.h / now.h;
       if(Math.abs(dx) < 1 && Math.abs(dy) < 1 && Math.abs(sx - 1) < .02 && was.spent === el.classList.contains("spent")) continue;
       fresh.add(uid); animEl(el, [{ transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy}) ${tf(was.t)}` }, { transform: endT }], { duration: ms, easing: ease });
@@ -273,6 +275,8 @@ function sfx(kind, delay = 0){
     case "steal": tone("sine", 300, 900, t0, .26, .5); tone("triangle", 450, 1350, t0 + .02, .24, .25); break;
     case "turn": tone("sine", 523, 523, t0, .09, .5); tone("sine", 784, 784, t0 + .1, .16, .5); break;
     case "equip": tone("triangle", 400, 800, t0, .1, .4); tone("sine", 1200, 1200, t0 + .1, .08, .3); break;
+    case "slam": tone("sine", 70, 30, t0, .35, 1); noise(t0, .18, 400, .5, .9); noise(t0 + .05, .3, 2200, .3, .3); break;   // Go Solo: tonfo e crepe
+    case "call": noise(t0, .3, 1800, .4, .35); tone("sine", 392, 392, t0, .14, .45); tone("sine", 523, 523, t0 + .12, .14, .45); tone("sine", 784, 784, t0 + .24, .3, .5); break;   // Leggenda scoperta: accordo che sale
   }
 }
 const fxOn = () => !!S.settings.fx && document.documentElement.dataset.motion !== "reduce";
@@ -302,7 +306,7 @@ function fxShowcase(board, o, ms){
     { transform: "scale(1)", opacity: 1, offset: (enter + hold) / (enter + hold + exit), easing: fxEase },
     { transform: `translate(${dx}px, ${dy}px) scale(${sc})`, opacity: to ? .95 : 0 }];
   const a = g.animate(kf, { duration: enter + hold + exit, delay, fill: "both" });
-  sfx(o.cls === "yel" ? "sell" : "play", delay);
+  sfx(o.cls === "yel" ? "sell" : o.tag === "Leggenda" ? "call" : "play", delay);
   // etichette: sfumano prima dell'uscita
   for(const el of g.querySelectorAll(".kick, .nm, .tag, .ldr")) el.animate([{ opacity: 1, offset: (enter + hold) / (enter + hold + exit) }, { opacity: 0 }], { duration: enter + hold + exit, delay, fill: "both" });
   a.onfinish = () => g.remove(); setTimeout(() => g.remove(), total + 300);
@@ -415,6 +419,52 @@ function fxSteal(board, el, was, now, gig, who, ms){
     setTimeout(() => { g.remove(); applyDice($("#board")); }, total + 60);
   }, wait);
   setTimeout(() => applyDice($("#board")), wait + total + 600);
+}
+/* Leggenda scoperta: al centro, coperta da una cortina a strisce che una riga di scansione apre dall'alto in basso,
+   con la riga da terminale «scan identità… NN%» che finisce in «IDENTIFICATA»; poi la carta vola nel suo slot. */
+function fxLegend(board, o, ms){
+  const main = fxCenter(board), cw = parseFloat(getComputedStyle(board).getPropertyValue("--cw")) || 50;
+  const w = Math.max(60, Math.min(cw * 2.4, main.h * .56 / 1.4)), h = w * 1.4;
+  const enter = Math.max(200, ms * .8), scan = Math.max(900, ms * 2.6), hold = Math.max(450, ms * 1.2), exit = ms * 1.2, span = enter + scan + hold + exit, delay = fxSlot(span), total = delay + span;
+  const g = document.createElement("div"); g.className = "fxleg"; g.style.cssText = `left:${main.cx - w / 2}px;top:${main.cy - h / 2}px;width:${w}px;height:${h}px`;
+  const short = (o.name || "").split(":")[0].toUpperCase();
+  g.innerHTML = `<div class="kick">${esc(o.label)}</div><div class="crd"><img src="${o.src}" alt=""><div class="veil"></div><div class="scan"></div></div><div class="ring"></div><div class="term">&gt; scan identità… <b class="pc">0%</b> ▌ <em>${esc(short)}</em></div>`;
+  flyLayer.appendChild(g);
+  const to = o.to, dx = to ? to.cx - main.cx : 0, dy = to ? to.cy - main.cy : 0, sc = to ? Math.min(1, to.w / w, to.h / h) : .6;
+  g.animate([{ transform: "scale(.6)", opacity: 0, easing: fxEase }, { transform: "scale(1)", opacity: 1, offset: enter / span, easing: "linear" }, { transform: "scale(1)", opacity: 1, offset: (enter + scan + hold) / span, easing: fxEase }, { transform: `translate(${dx}px, ${dy}px) scale(${sc})`, opacity: to ? .95 : 0 }], { duration: span, delay, fill: "both" });
+  const veil = g.querySelector(".veil"), line = g.querySelector(".scan"), pc = g.querySelector(".pc"), term = g.querySelector(".term");
+  veil.animate([{ top: "0%" }, { top: "0%", offset: enter / span }, { top: "100%", offset: (enter + scan) / span }, { top: "100%" }], { duration: span, delay, fill: "both" });
+  line.animate([{ top: "0%", opacity: 0 }, { top: "0%", opacity: 1, offset: enter / span }, { top: "100%", opacity: 1, offset: (enter + scan) / span }, { top: "100%", opacity: 0, offset: (enter + scan) / span + .01 }, { opacity: 0 }], { duration: span, delay, fill: "both" });
+  for(const el of [g.querySelector(".kick"), term, g.querySelector(".ring")]) el.animate([{ opacity: 1, offset: (enter + scan + hold) / span }, { opacity: 0 }], { duration: span, delay, fill: "both" });
+  const t0 = performance.now() + delay + enter; const iv = setInterval(() => { const k = Math.max(0, Math.min(1, (performance.now() - t0) / scan)); pc.textContent = Math.round(k * 100) + "%"; if(k >= 1){ clearInterval(iv); term.innerHTML = `&gt; identità confermata ✓ <em>${esc(short)}</em>`; } }, 50); setTimeout(() => clearInterval(iv), total + 100);
+  sfx("call", delay + enter);
+  setTimeout(() => g.remove(), total + 300);
+  if(o.hideEl) animEl(o.hideEl, [{ opacity: 0 }, { opacity: 0, offset: .96 }, { opacity: 1 }], { duration: total, fill: "backwards" });
+  return total;
+}
+/* Go Solo: la Leggenda piomba in campo con un'onda d'urto e crepe nel terreno (SVG, linee spezzate casuali) che si richiudono */
+function fxSlam(board, el, ms){
+  const r = localRect(board, el); if(!r) return;
+  const dur = Math.max(260, ms * .7), hold = Math.max(900, ms * 2);
+  animEl(el, [{ transform: "scale(1.9) translateY(-18%)", opacity: 0, filter: "brightness(2)", easing: "cubic-bezier(.5,0,1,.6)" }, { transform: "scale(1)", opacity: 1, filter: "brightness(2)", offset: dur / (dur + hold) }, { transform: "scale(1)", filter: "brightness(1)" }], { duration: dur + hold });
+  setTimeout(() => {
+    const svgNS = "http://www.w3.org/2000/svg", sv = document.createElementNS(svgNS, "svg"); sv.setAttribute("class", "fxcrack"); sv.style.cssText = "position:absolute;left:0;top:0;width:100%;height:100%;overflow:visible";
+    const R0 = Math.max(r.w, r.h) * .55, L = Math.max(r.w, r.h) * (1.2 + Math.random() * .6); let d = "";
+    const n = 7 + Math.floor(Math.random() * 3);
+    for(let i = 0; i < n; i++){
+      const a = (i / n) * Math.PI * 2 + (Math.random() - .5) * .5; let x = r.cx + Math.cos(a) * R0 * .7, y = r.cy + Math.sin(a) * R0 * .7; d += `M${x.toFixed(1)} ${y.toFixed(1)}`;
+      const segs = 3 + Math.floor(Math.random() * 3), len = L * (.6 + Math.random() * .6);
+      for(let k = 1; k <= segs; k++){ const t = k / segs, ang = a + (Math.random() - .5) * .9; x = r.cx + Math.cos(ang) * (R0 * .7 + len * t); y = r.cy + Math.sin(ang) * (R0 * .7 + len * t) * .55; d += ` L${x.toFixed(1)} ${y.toFixed(1)}`; if(k < segs && Math.random() < .35){ const bx = x + (Math.random() - .5) * len * .4, by = y + (Math.random() - .5) * len * .25; d += ` M${bx.toFixed(1)} ${by.toFixed(1)} L${x.toFixed(1)} ${y.toFixed(1)}`; } }
+    }
+    sv.innerHTML = `<defs><filter id="fxcg"><feGaussianBlur stdDeviation="1.2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs><ellipse class="wave" cx="${r.cx}" cy="${r.cy}" rx="${R0}" ry="${R0 * .55}" fill="none" stroke="var(--yel)" stroke-width="3"/><path class="cr" d="${d}" fill="none" stroke="var(--yel)" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" pathLength="1" filter="url(#fxcg)"/><path class="cr2" d="${d}" fill="none" stroke="#fff" stroke-width=".6" pathLength="1" opacity=".8"/>`;
+    flyLayer.appendChild(sv);
+    sv.querySelector(".wave").animate([{ transform: "scale(.3)", opacity: 1 }, { transform: "scale(2.4)", opacity: 0 }], { duration: Math.max(500, ms * 1.4), easing: "cubic-bezier(.1,.8,.3,1)", fill: "forwards", composite: "replace" });
+    sv.querySelector(".wave").style.transformOrigin = `${r.cx}px ${r.cy}px`;
+    for(const p of sv.querySelectorAll(".cr, .cr2")) p.animate([{ strokeDasharray: "1", strokeDashoffset: 1, opacity: 1 }, { strokeDasharray: "1", strokeDashoffset: 0, opacity: 1, offset: .25 }, { strokeDashoffset: 0, opacity: 1, offset: .6 }, { strokeDashoffset: 0, opacity: 0 }], { duration: hold + 400, fill: "forwards" });
+    const main = board.querySelector(".bmain") || board; main.animate([{ transform: "translate(0,0)" }, { transform: "translate(-4px,3px)" }, { transform: "translate(4px,-2px)" }, { transform: "translate(-3px,-2px)" }, { transform: "translate(2px,2px)" }, { transform: "translate(0,0)" }], { duration: 360, easing: "linear" });
+    sfx("slam");
+    setTimeout(() => sv.remove(), hold + 600);
+  }, dur);
 }
 /* fascia di cambio turno */
 let fxTurnKey = null;
@@ -896,6 +946,7 @@ function render(){
   const waitMull = G.phase === "mulligan" && gmode === "online" && G.players[me()].mulliganed;
   const status = G.winner != null ? `Fine: ${esc(G.reason)}` : G.phase === "roll" ? (G.pending && human[G.pending.player] ? "Hai vinto il tiro: scegli chi inizia" : `${esc(G.players[G.pending ? G.pending.player : 0].name)} ha vinto il tiro e sceglie…`) : waitMull ? `Mulligan: in attesa di ${esc(R.name)}` : myTurn ? "Il tuo turno" : human[G.active] || gmode === "online" ? `Turno di ${esc(G.players[G.active].name)}` : "Turno dell'IA…";
   const last = G.log.slice(-1)[0];
+  const ob = onBoardAsk();   // reazione o bersaglio da scegliere toccando la plancia
   // misura delle carte dall'altezza disponibile: 2 righe rivale + campo + pile + mano (1,15×) + barra e margini
   // altezza utile: senza i margini di sicurezza (su iPhone in orizzontale la barra della home toglie ~20px)
   const cs = getComputedStyle(board), H = board.clientHeight - (parseFloat(cs.paddingTop) || 0) - (parseFloat(cs.paddingBottom) || 0);
@@ -939,11 +990,11 @@ function render(){
       ${rivalFieldHTML}
     </div>
 
-    <div class="bstrip">
-      <span class="st">T${G.turn} · ${status}</span>
-      <span class="lg" id="lastLog" title="${esc(last ? last.text : "")}">${payTxt ? payTxt + " · " : ""}${noteMsg ? `<b id="noteMsg" style="color:var(--acc2)">${esc(noteMsg)} · </b>` : ""}${pendingTxt ? `<b>${esc(pendingTxt)}</b> · ` : ""}${esc(last ? last.text : "")}</span>
-      ${myTurn && human[M.id] && tutorialAllows("end") ? `<button class="btn sm yel" id="bEnd">Fine turno</button>` : ""}
-      ${pm ? `${payOpt(o => o.kind === "alleddies") >= 0 ? `<button class="btn sm acc2" id="bPayAll">Tutto con Eddies</button>` : ""}<button class="btn sm" id="bPayCancel">Annulla</button>` : targeting ? `<button class="btn sm" id="bCancel">Annulla</button>` : ""}
+    <div class="bstrip${ob ? " asking" : ""}">
+      ${ob ? onBoardStrip(ob) : `<span class="st">T${G.turn} · ${status}</span>`}
+      ${ob ? "" : `<span class="lg" id="lastLog" title="${esc(last ? last.text : "")}">${payTxt ? payTxt + " · " : ""}${noteMsg ? `<b id="noteMsg" style="color:var(--acc2)">${esc(noteMsg)} · </b>` : ""}${pendingTxt ? `<b>${esc(pendingTxt)}</b> · ` : ""}${esc(last ? last.text : "")}</span>`}
+      ${!ob && myTurn && human[M.id] && tutorialAllows("end") ? `<button class="btn sm yel" id="bEnd">Fine turno</button>` : ""}
+      ${ob ? "" : pm ? `${payOpt(o => o.kind === "alleddies") >= 0 ? `<button class="btn sm acc2" id="bPayAll">Tutto con Eddies</button>` : ""}<button class="btn sm" id="bPayCancel">Annulla</button>` : targeting ? `<button class="btn sm" id="bCancel">Annulla</button>` : ""}
       ${gmode === "online" ? `<span id="onlBadge">${onlineBadgeHTML()}</span><button class="btn sm icon" id="bChat" title="Chat del tavolo">💬${ON.T.chatUnread && !chatOpen() ? `<span class="nbadge">${ON.T.chatUnread}</span>` : ""}</button>` : ""}
       ${logW ? "" : `<button class="btn sm icon" id="bLog" title="Registro">≡</button>`}
       <button class="btn sm icon" id="bMenu" title="Menù">⋯</button>
@@ -958,11 +1009,13 @@ function render(){
     ${logPanelHTML}
     ${tutorialActive() ? tutorialBarHTML(G, me()) : ""}
     ${showLog ? `<div id="simLog"><div style="display:flex;justify-content:space-between;align-items:center"><b>Registro</b><button class="btn sm icon" id="bLogClose">✕</button></div>${G.log.slice(-80).map(e => `<div class="e ${e.kind}">${esc(e.text)}</div>`).join("")}</div>` : ""}
-    ${mulliganPending() != null ? mulliganHTML() : pm ? "" : G.pending && human[G.pending.player] ? askHTML() : ""}
+    ${mulliganPending() != null ? mulliganHTML() : pm || ob ? "" : G.pending && human[G.pending.player] ? askHTML() : ""}
     ${G.winner != null ? `<div class="winbox"><div class="box"><h2>${G.winner === -1 ? "PATTA" : G.winner === me() ? "VITTORIA" : gmode === "hot" ? "VINCE " + esc(G.players[G.winner].name).toUpperCase() : "SCONFITTA"}</h2><p class="wflav">${G.winner === -1 ? "Stavolta la città non è di nessuno." : G.winner === me() || gmode === "hot" ? "Night City ricorderà il tuo nome." : "Flatline. Rialzati, choom."}</p><p>${esc(G.reason)}</p><p style="color:var(--mute)">${G.turn} turni</p>${gmode === "online" ? seriesHTML() : ""}<div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">${gmode === "online" ? `<button class="btn" id="bChat2">💬 Chat</button>${series && series.next ? `<button class="btn acc2" id="bNextGame">Partita successiva</button>` : ""}<button class="btn yel" id="bExit">Torna alla lobby</button>` : `<button class="btn yel" id="bAgain">Rivincita</button><button class="btn" id="bExit">Esci</button>`}</div></div></div>` : ""}
     ${gmode === "online" ? drawOfferHTML() : ""}
     ${peekPid ? `<div id="peek">${peekInner(peekPid)}</div>` : ""}
     ${handoff ? `<div class="handoff"><h2>Passa il dispositivo a ${esc(G.players[G.active].name)}</h2><p>Il tuo rivale non guarda, promesso.</p><button class="btn yel" id="bHand">Sono pronto</button></div>` : ""}`;
+  board.classList.toggle("asking", !!ob); board.classList.remove("ask-wait");
+  if(ob && !applyOnBoard(board, ob)){ askList = G.pending; render(); return; }   // nessuna carta trovata sulla plancia: finestra classica
   fitBoard(board, H);
   board.classList.toggle("fx", fxOn());
   fxBanner(board);   // prima delle animazioni: vetrina e dado si mettono in fila dopo la fascia
@@ -970,6 +1023,7 @@ function render(){
   // una scelta compare dopo la fascia e dopo gli effetti in fila (es. l'abilità di una Leggenda che scatta a scontro finito)
   const askEl = $("#simAsk"), askLeft = Math.max(fxAskUntil, fxBusyUntil) - performance.now();
   if(askEl && askLeft > 60 && fxOn()) askEl.animate([{ opacity: 0, visibility: "hidden" }, { opacity: 0, visibility: "hidden", offset: .97 }, { opacity: 1, visibility: "visible" }], { duration: askLeft, fill: "backwards" });
+  if(ob && askLeft > 60){ board.classList.add("ask-wait"); const pend = G.pending; setTimeout(() => { if(G && G.pending === pend) board.classList.remove("ask-wait"); }, askLeft); }
   const hl = tutorialHighlight(); if(hl) $$("#board " + hl.split(",").join(", #board ")).forEach(x => x.classList.add("tuthl"));
   if(showLog){ const l = $("#simLog"); l.scrollTop = l.scrollHeight; }
   // scelta tra carte: subito la miniatura, poi l'immagine grande appena è scaricata (leggibile anche il testo)
@@ -977,6 +1031,50 @@ function render(){
   if(tutorialActive() && tutorialStep(G, me())) { /* passo completato: la barra si aggiorna al prossimo ridisegno */ setTimeout(() => { if(G) render(); }, 0); }
 }
 
+/* richieste risolte direttamente sulla plancia (grafiche avanzate): la reazione a un attacco (Blocker, Leggende coperte,
+   carte Quick in mano e abilità Quick si accendono con un'etichetta; «Non reagire» e «Lista» nella barra) e il bersaglio
+   di un effetto fra le carte in campo («Scegli» sulle candidate, la carta che produce l'effetto nella barra).
+   «Lista» riapre la finestra classica per la richiesta in corso. */
+let askList = null;
+function onBoardAsk(){
+  const p = G && G.pending; if(!p || !human[p.player] || !fxOn() || askList === p || tutorialTour()) return null;
+  if(gmode === "hot" && p.player !== G.active && reactCover !== p) return null;
+  const P = G.players[p.player];
+  if(p.kind === "block"){
+    const marks = [], extra = [];
+    p.options.forEach((o, i) => {
+      if(o.kind === "none"){ extra.push({ i, label: o.label, cls: "yel" }); return; }
+      if(o.kind === "block") marks.push({ i, uid: o.uid, label: "Blocca" });
+      else if(o.kind === "call"){ const l = P.legends[o.idx]; if(l) marks.push({ i, uid: l.uid, label: "Chiama", cost: "1 €$", cls: "yel" }); else extra.push({ i, label: o.label }); }
+      else if(o.kind === "quick") marks.push({ i, uid: o.uid, label: "Quick", cost: `${(o.c && o.c.card.cost) || 0} €$` });
+      else if(o.kind === "qspend") marks.push({ i, uid: o.uid, label: "Quick", cost: "abilità", cls: "yel" });
+      else extra.push({ i, label: o.label });
+    });
+    const a = p.ctx && p.ctx.attacker, t = p.ctx && p.ctx.target;
+    const text = a ? `<b>${esc(a.card.dn)} (${powerIn(G, G.players[G.active], a, { attacking: true })})</b> attacca ${t ? `<em>${esc(t.card.dn)} (${shownPower(t)})</em>` : "la tua area Gig"} · tocca un Blocker, una Leggenda coperta o una carta Quick` : "Reagisci: tocca una carta accesa";
+    return { kind: "block", title: "Reazione", marks, extra, text, hot: a ? a.uid : null, focus: t ? t.uid : null };
+  }
+  if(p.kind === "target"){
+    const marks = [], extra = [];
+    for(const [i, o] of p.options.entries()){ if(o.unit && o.unit.uid != null) marks.push({ i, uid: o.unit.uid, label: "Scegli" }); else if(!o.unit) extra.push({ i, label: o.label }); else return null; }
+    if(!marks.length) return null;
+    const text = `${p.ctx && p.ctx.src ? `<b>${esc(p.ctx.src)}</b> · ` : ""}${esc(p.ctx && p.ctx.text ? p.ctx.text : "scegli il bersaglio")} <em>(tocca la carta)</em>`;
+    return { kind: "target", title: "Scelta", marks, extra, text, srcPid: p.ctx && p.ctx.srcPid };
+  }
+  return null;
+}
+function onBoardStrip(ob){
+  return `<span class="st">${ob.title}</span>${ob.srcPid ? `<img class="rsrc" src="${thumbUrl(ob.srcPid)}" alt="">` : ""}<span class="lg react">${ob.text}</span>${ob.extra.map(x => `<button class="btn sm ${x.cls || ""}" data-ask="${x.i}">${esc(x.label)}</button>`).join("")}<button class="btn sm" id="bAskList" title="Mostra le opzioni in una finestra">Lista</button>`;
+}
+function applyOnBoard(board, ob){
+  const find = uid => [...board.querySelectorAll(`[data-uid="${uid}"]`)].find(e => !e.closest("#flyLayer") && !e.classList.contains("up"));
+  let any = false;
+  for(const m of ob.marks){ const el = find(m.uid); if(!el) continue; any = true; el.dataset.rx = m.i; el.dataset.rlabel = m.label; if(m.cost) el.dataset.rcost = m.cost; if(m.cls) el.classList.add("rx-" + m.cls); }
+  if(ob.hot != null){ const el = find(ob.hot); if(el) el.classList.add("rhot"); }
+  if(ob.focus != null){ const el = find(ob.focus); if(el) el.classList.add("rfocus"); }
+  board.classList.add("asking");
+  return any;
+}
 /* richieste del motore (dado, blocco, furto, bersaglio…) */
 function askHTML(){
   const p = G.pending, P = G.players[p.player];
@@ -992,7 +1090,8 @@ function askHTML(){
       <div style="flex:1"></div><div class="side"><span>Fixer di ${esc(R.name)}</span>${R.fixer.length ? R.fixer.map(s => `<span class="die d${s} fx">${dieSVG(s)}<small>d${s}</small></span>`).join("") : "<span>—</span>"}</div></div>
       <div class="side">Street Cred · <b>${P.id === me() ? "tu" : esc(P.name)} ${streetCred(P)}</b> · <b>${esc(R.name)} ${streetCred(R)}</b></div></div></div>`;
   }
-  const srcLine = p.ctx && p.ctx.src && p.kind !== "die" && p.kind !== "block" && p.kind !== "steal" ? `<div class="sub" style="margin:-4px 0 8px"><b>${esc(p.ctx.src)}</b>${p.ctx.text ? ` — ${esc(p.ctx.text)}` : ""}</div>` : "";
+  // da dove viene la richiesta (anche per un furto di Gig dovuto a un Gear o a un Programma, es. Gorilla Arms: il furto dell'attacco non ha fonte)
+  const srcLine = p.ctx && p.ctx.src && p.kind !== "die" && p.kind !== "block" ? `<div class="sub" style="margin:-4px 0 8px">${p.ctx.srcPid ? `<img src="${thumbUrl(p.ctx.srcPid)}" alt="" style="width:28px;vertical-align:middle;border-radius:2px;margin-right:6px">` : ""}<b>${esc(p.ctx.src)}</b>${p.ctx.text ? ` — ${esc(p.ctx.text)}` : ""}</div>` : "";
   return `<div id="simAsk"><div class="box"><h3>${titles[p.kind] || "Scegli"}</h3>${srcLine}${ctx}<div class="opts">${p.options.map((o, i) => {
     const pid = o.unit?.pid || o.c?.pid || o.g?.pid, gig = o.gig && o.gig.sides ? o.gig : null;
     // un Gig da scegliere (rubare, scambiare, copiare) si mostra come dado con il valore; resta il prefisso del testo («tuo», «rivale», «come»)
@@ -1261,6 +1360,8 @@ function wire(){
     if(t.closest("#bExit")){ closeBoard(); return; }
     if(t.closest("#bHand")){ handoff = false; render(); tick(); return; }
     if(t.closest("[data-react]")){ reactCover = G.pending; render(); return; }
+    const rx = t.closest("[data-rx]"); if(rx && G.pending && !board.classList.contains("ask-wait")){ if(G.pending.kind === "block") G.tutReacted = true; res(+rx.dataset.rx); render(); tick(); return; }
+    if(t.closest("#bAskList")){ askList = G.pending; render(); return; }
     if(t.closest("#tutNext")){ tutorialStep(G, me(), true); render(); return; }
     if(payMode()){
       const pm = payMode();
