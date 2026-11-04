@@ -376,3 +376,14 @@ html[data-motion="reduce"] #board .bc{transition:none}
 html[data-theme="light"] #board .fxsell{background:rgba(255,255,255,.95)} html[data-theme="light"] #board .fxsell b{color:#7a6c00;text-shadow:none}
 html[data-theme="light"] #flyLayer .fxbanner{background:linear-gradient(90deg,transparent,rgba(255,255,255,.92) 18%,rgba(255,255,255,.92) 82%,transparent)}
 html[data-theme="light"] #flyLayer .fxshow .nm{background:rgba(255,255,255,.85)}
+/* blocco 2: colpo, somma di potenza, Gig rubato, barra dei Programmi */
+#flyLayer .fxpw{position:absolute;transform:translate(-50%,-50%);background:#0b0b0e;border:1px solid var(--acc2);color:#fff;font:800 15px var(--display);padding:3px 9px;letter-spacing:.06em;white-space:nowrap;box-shadow:0 0 12px color-mix(in srgb,var(--acc2) 60%,transparent);clip-path:polygon(6px 0,100% 0,100% calc(100% - 6px),calc(100% - 6px) 100%,0 100%,0 6px)}
+#flyLayer .fxpw em{font-style:normal;color:var(--acc2)} #flyLayer .fxpw i{font-style:normal;color:var(--mute);font-size:11px;margin:0 3px}
+#flyLayer .fxpw.hot{border-color:var(--acc);box-shadow:0 0 12px color-mix(in srgb,var(--acc) 60%,transparent)} #flyLayer .fxpw.hot em{color:var(--acc)}
+#flyLayer .fxdie.steal .r2{animation-duration:.7s}
+#flyLayer .fxshow .ldr{position:absolute;left:50%;top:calc(100% + 14px);transform:translateX(-50%);width:max(100%,220px);background:rgba(8,5,6,.92);border:1px solid var(--line2);padding:5px 9px 7px;font-family:var(--mono)}
+#flyLayer .fxshow .ldr .l1{display:flex;justify-content:space-between;font:600 10px var(--mono);letter-spacing:.12em;color:var(--acc2);text-transform:uppercase} #flyLayer .fxshow .ldr .l1 span:last-child{color:var(--ink2)}
+#flyLayer .fxshow .ldr .bar{margin-top:4px;height:8px;background:rgba(255,255,255,.08);overflow:hidden}
+#flyLayer .fxshow .ldr .bar i{display:block;height:100%;width:0;background:repeating-linear-gradient(90deg,var(--acc2) 0 8px,transparent 8px 10px);box-shadow:0 0 8px var(--acc2)}
+#flyLayer .fxshow .ldr .l2{margin-top:4px;font:500 10px var(--mono);color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis} #flyLayer .fxshow .ldr .l2 b{color:var(--ink);font-weight:500}
+html[data-theme="light"] #flyLayer .fxpw{background:#fff;color:#1a1012} html[data-theme="light"] #flyLayer .fxshow .ldr{background:rgba(255,255,255,.95)}

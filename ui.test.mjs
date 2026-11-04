@@ -49,7 +49,8 @@ ok(await page.locator("#collRows .row").count() > 100, "vista elenco");
 await page.click('#collOwned [data-o="yes"]');
 ok(await page.locator("#collRows .row").count() === 1, "solo possedute: 1");
 await page.click('#collOwned [data-o="no"]');
-ok(await page.locator("#collRows .row").count() === 150, "mancanti: 150");
+const NC = await page.evaluate(async () => { const { DATA } = await import("./data.js"); return [DATA.cards.length, DATA.cards.reduce((a, c) => a + c.prints.length, 0)]; });
+ok(await page.locator("#collRows .row").count() === NC[0] - 1, `mancanti: ${NC[0] - 1}`);
 await page.click('#collOwned [data-o=""]');
 // pressione lunga sulla tessera: +1 senza aprire la scheda
 await page.click('#collView [data-v="grid"]');
@@ -196,7 +197,7 @@ ok(/v\d+\.\d+/.test(await page.locator("#p-settings").textContent()) && (await p
   ok(nArt > 151 && /illustrazioni/.test(await page.locator("#tOwnedN").textContent()), `collezione per illustrazione: ${nArt} voci`);
   await page.click("#btnSettings"); await page.waitForTimeout(200); await page.click('#pfCollView button[data-v="print"]'); await page.waitForTimeout(200);
   await page.click('nav.tabs button[data-tab="collection"]'); await page.waitForTimeout(600);
-  ok(await page.locator("#collRows .gc").count() === 860 && /860 edizioni/.test(await page.locator("#tOwnedN").textContent()), "collezione per edizione: 860 voci");
+  ok(await page.locator("#collRows .gc").count() === NC[1] && new RegExp(NC[1] + " edizioni").test(await page.locator("#tOwnedN").textContent()), `collezione per edizione: ${NC[1]} voci`);
   await page.click("#btnSettings"); await page.waitForTimeout(200); await page.click('#pfCollView button[data-v="card"]'); await page.waitForTimeout(200);
   ok(await page.locator("#pfCollPick").count() === 1, "regola dell'illustrazione mostrata solo in modalità per carta");
   await page.click('nav.tabs button[data-tab="collection"]'); await page.waitForTimeout(400);

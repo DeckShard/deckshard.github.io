@@ -13,7 +13,7 @@ import { renderHome, wireHome } from "./home.js";
 import { initI18n } from "./i18n.js";
 import { bootCloud, state as cloudState } from "./cloud.js";
 
-export const APP_VERSION = "1.9.8";
+export const APP_VERSION = "1.9.9";
 setOnlineVersion(APP_VERSION);
 
 const TABS = { home: renderHome, collection: renderCollection, deck: renderDeck, profile: renderProfile, sim: renderSim, rules: renderRules, settings: renderSettings };
@@ -68,6 +68,10 @@ async function boot(){
 
   wireHome(t => showTab(t));
   if(!sharedDeck()) showTab(location.hash.slice(1) || "home", false);
+  // su PC la barra delle sezioni resta appiccicata sotto l'intestazione: le si passa l'altezza (al netto dello zoom del testo)
+  const hdr = $("header.top"), nav = $("nav.tabs");
+  const navTop = () => { const z = parseFloat(getComputedStyle(nav).zoom) || 1; document.documentElement.style.setProperty("--hdrH", (hdr.getBoundingClientRect().height / z).toFixed(1) + "px"); };
+  navTop(); if(typeof ResizeObserver !== "undefined") new ResizeObserver(navTop).observe(hdr); window.addEventListener("resize", navTop);
 
   // account: dati arrivati da un altro dispositivo → si ridisegna la scheda aperta; badge di messaggi e richieste
   const current = () => ($(".panel.on") || {}).dataset?.tab || "home";

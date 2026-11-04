@@ -77,7 +77,7 @@ export function mulligan(G, pi, doIt){
 }
 
 /* ------------------------------------------------------------ fasi */
-function say(G, text, kind = "info"){ G.log.push({ t: G.turn, p: G.active, text, kind }); if(G.log.length > 400) G.log.shift(); }
+function say(G, text, kind = "info", d){ G.log.push({ t: G.turn, p: G.active, text, kind, ...(d ? { d } : {}) }); if(G.log.length > 400) G.log.shift(); }
 export const rival = (G, P) => G.players[1 - P.id];
 export const streetCred = P => P.gigs.reduce((a, g) => a + g.value, 0);
 export const power = u => Math.max(0, (u.card.power ?? 0) + (u.gear || []).reduce((a, g) => a + (g.card.power ?? 0), 0) + (u.mod || 0));
@@ -420,13 +420,13 @@ export function attack(G, pi, uid, target){
     if(!R.gigs.length) return err(G, "Il rivale non ha Gig");
   }
   u.spent = true; u.attackReady = false; u.mustAttack = false; G.attacker = u;
-  say(G, `${P.name}: ${u.card.dn} (${powerIn(G, P, u, { attacking: true })}) attacca ${tu ? tu.card.dn + " (" + power(tu) + ")" : "l'area Gig"}.`, "attack");
+  say(G, `${P.name}: ${u.card.dn} (${powerIn(G, P, u, { attacking: true })}) attacca ${tu ? tu.card.dn + " (" + power(tu) + ")" : "l'area Gig"}.`, "attack", { a: u.uid, t: tu ? tu.uid : null, pa: powerIn(G, P, u, { attacking: true }), pd: tu ? power(tu) : null, who: pi });
   // finestra di reazione del difensore: Chiamata, Quick, Blocker
   const proceed = blocker => {
     if(G.winner != null) return;
     if(blocker){
       blocker.spent = true;
-      say(G, `${R.name}: ${blocker.card.dn} blocca (${power(blocker)}).`, "attack");
+      say(G, `${R.name}: ${blocker.card.dn} blocca (${power(blocker)}).`, "attack", { block: blocker.uid, a: u.uid, pb: power(blocker) });
       onSpent(G, R, blocker, () => fireEvent(G, R, "block", { unit: blocker }, () => fireEvent(G, R, "friendlyBlock", { unit: blocker }, () => fight(G, P, u, R, blocker, true))));
       return;
     }
