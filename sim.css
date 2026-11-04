@@ -76,7 +76,7 @@ html[data-theme="light"] .die b{color:#1a1012;text-shadow:none} html[data-theme=
 .die.fx{opacity:.42;filter:none;cursor:default}.die.fx svg .out{stroke-dasharray:5 4}.die.fx svg .fill{display:none}.die.fx small{background:none;color:var(--c);border:1px solid var(--c);clip-path:none}
 .dice .cred{align-self:center;margin-bottom:calc(var(--dw,30px) * .18)}
 /* scelta del dado dal fixer: pulsanti con l'icona */
-#simAsk .btn.die-opt{padding:8px 14px 12px}#simAsk .btn.die-opt .die{--dw:38px;cursor:inherit}
+#simAsk .btn.die-opt{padding:10px 16px 16px}#simAsk .btn.die-opt .die{--dw:clamp(38px, calc(40px * var(--bz, 1)), 96px);cursor:inherit}#simAsk .box:has(.die-opt){width:auto;min-width:min(92%,340px)} #simAsk .box:has(.die-opt) .opts{justify-content:center;gap:10px}
 /* tiro: disturbo (parametri casuali impostati da JS), poi lampo con le staffe agli angoli; il d20 ruota le sue facce */
 .die.rolling{animation:dieGlitch .09s steps(2) infinite}
 .die.rolling b{font-family:var(--mono)}
@@ -369,8 +369,8 @@ html[data-motion="reduce"] #board .bc{transition:none}
 #board.fxdrag .bc.candrop{outline:2px solid var(--acc2Fill);outline-offset:0;box-shadow:0 0 0 2px color-mix(in srgb,var(--acc2Fill) 35%,transparent),0 0 16px var(--acc2Fill);animation:none}
 #board.fxdrag .stack.ed.candrop{visibility:hidden}
 #board .fxsell{position:absolute;z-index:46;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:rgba(10,6,7,.92);border:2px solid var(--yel);box-shadow:0 0 0 2px rgba(0,0,0,.6),0 0 26px color-mix(in srgb,var(--yel) 60%,transparent);clip-path:polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px);touch-action:none}
-#board .fxsell b{font:800 16px var(--display);letter-spacing:.24em;color:var(--yel);text-transform:uppercase;text-shadow:0 0 10px var(--yel)}
-#board .fxsell .hex{width:30px;height:30px;display:grid;place-items:center;background:var(--yel);color:#0b0b0e;font:800 14px var(--display);clip-path:polygon(25% 3%,75% 3%,100% 50%,75% 97%,25% 97%,0 50%)}
+#board .fxsell b{font:800 clamp(16px, calc(14px * var(--bz, 1)), 26px) var(--display);letter-spacing:.24em;color:var(--yel);text-transform:uppercase;text-shadow:0 0 10px var(--yel)}
+#board .fxsell .hex{width:clamp(30px, calc(26px * var(--bz, 1)), 48px);height:clamp(30px, calc(26px * var(--bz, 1)), 48px);display:grid;place-items:center;background:var(--yel);color:#0b0b0e;font:800 clamp(14px, calc(12px * var(--bz, 1)), 22px) var(--display);clip-path:polygon(25% 3%,75% 3%,100% 50%,75% 97%,25% 97%,0 50%)}
 #board .fxsell small{font:600 8px var(--font);letter-spacing:.12em;color:var(--ink2);text-transform:uppercase;white-space:nowrap}
 #board .fxsell.drop{background:rgba(40,36,4,.96);transform:scale(1.04);outline:none;box-shadow:0 0 0 2px rgba(0,0,0,.6),0 0 40px var(--yel)}
 html[data-theme="light"] #board .fxsell{background:rgba(255,255,255,.95)} html[data-theme="light"] #board .fxsell b{color:#7a6c00;text-shadow:none}

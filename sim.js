@@ -37,10 +37,13 @@ function markDropZones(c){
   if(fxOn()){
     const board = $("#board"); board.classList.add("fxdrag");
     const e = c.card.eddiable && !M.sold ? board.querySelector(`[data-eddies="${M.id}"]`) : null;
-    // plancia a colonna: l'area copre i contatori (Mazzo, Trash) sopra gli €$, così non si sovrappone alle Leggende, che sono bersagli per i Gear
-    const cnt = e && board.classList.contains("rail") ? board.querySelector(".rs.mine .cnt") : null, r = e && localRect(board, cnt || e);
-    if(r){
-      const w = cnt ? r.w : Math.max(r.w * 2.6, 150), h = cnt ? Math.max(r.h, 64) : Math.max(r.h + 8, 72), x = Math.max(2, Math.min(board.clientWidth - w - 2, r.cx - w / 2)), y = Math.max(2, cnt ? r.y + r.h - h : r.y - 4);
+    // l'area «Vendi» prende tutto lo spazio sopra le Leggende (che sono bersagli per i Gear): a colonna, dal nome ai contatori della tua colonna;
+    // classica, i contatori della tua fila (Mazzo, €$, Trash) fino alle Leggende
+    let box = null;
+    if(e && board.classList.contains("rail")){ const side = board.querySelector(".rs.mine"), rv = board.querySelector(".rs.rival"), res = side && side.querySelector(".res"); const rres = rv && rv.querySelector(".res"), a = side && localRect(board, side), top = rres && localRect(board, rres), b = res && localRect(board, res); if(a && b){ const y0 = top ? top.y + top.h + 4 : a.y + 2; /* dalle Leggende del rivale (sopra non ci sono bersagli) alle tue */ box = { x: a.x + 2, y: y0, w: a.w - 4, h: Math.max(56, b.y - y0 - 6) }; } }
+    else if(e){ const row = e.parentElement, legs = row && row.querySelector(".legs"), first = row && row.querySelector(".stack"); const a = first && localRect(board, first), b = legs && localRect(board, legs), r0 = localRect(board, e); if(a && b && r0) box = { x: a.x, y: Math.min(a.y, r0.y) - 3, w: Math.max(150, b.x - a.x - 6), h: Math.max(a.h, r0.h) + 6 }; }
+    if(box){
+      const w = Math.min(box.w, board.clientWidth - 4), h = box.h, x = Math.max(2, Math.min(board.clientWidth - w - 2, box.x)), y = Math.max(2, box.y);
       const z = document.createElement("div"); z.className = "fxsell"; z.dataset.eddies = M.id; z.style.cssText = `left:${x}px;top:${y}px;width:${w}px;height:${h}px`;
       z.innerHTML = `<b>Vendi</b><span class="hex">+1</span><small>per 1 €$ · una volta a turno</small>`; board.appendChild(z);
     }
@@ -133,18 +136,33 @@ function animateBoard(board, prev){
   const anchor = (kind, pid) => { const el = board.querySelector(`[data-${kind}="${pid}"]`); return el ? localRect(board, el) : null; };
   const srcOf = (kind, pid) => anchor(kind, pid) || anchor("deck", pid);
   const tf = t => t && t !== "none" ? t : "";
-  // attacchi dichiarati dall'ultimo ridisegno: colpo di pistola (le carte sconfitte partono per il Trash dopo l'impatto)
-  const hitDelay = new Map();
+  // attacchi dichiarati dall'ultimo ridisegno: lo scontro si disegna per ultimo (dopo vetrine e dadi degli effetti
+  // innescati), e le carte sconfitte partono per il Trash solo a scontro finito
+  const shots = [], hitUids = new Set(), deferredFly = [], deferredSteal = [];   // il Gig rubato parte dopo lo scontro
   if(fx){
     const i = fxLastLog ? G.log.lastIndexOf(fxLastLog) : -1, freshLog = i >= 0 ? G.log.slice(i + 1) : (fxLastLog ? G.log.slice(-6) : []);
-    for(const e of freshLog){
-      if(e.kind !== "attack" || !e.d || e.d.block != null) continue;
-      const aEl = board.querySelector(`.bz [data-uid="${e.d.a}"]`), aR = aEl ? localRect(board, aEl) : prev.m.get(e.d.a); if(!aR) continue;
-      const tEl = e.d.t != null ? board.querySelector(`.bz [data-uid="${e.d.t}"]`) : null, tR = e.d.t != null ? (tEl ? localRect(board, tEl) : prev.m.get(e.d.t)) : anchor("owner", 1 - e.d.who) || anchor("eddies", 1 - e.d.who);
-      if(!tR) continue;
-      const at = fxShot(board, aR, tR, e.d.pa, e.d.pd, ms, tEl); if(e.d.t != null) hitDelay.set(e.d.t, at);
+    // con una decisione in sospeso (quale Gig rubare, come bloccare: tua, del bot o dell'avversario online) lo scontro aspetta:
+    // la finestra lo coprirebbe, e un Blocker può ancora deviarlo
+    const humanWait = !!G.pending;
+    const list = humanWait ? [] : fxHeld.splice(0);
+    for(const e of freshLog){ if(e.kind !== "attack" || !e.d) continue; (humanWait ? fxHeld : list).push(e); }
+    for(const e of list){
+      if(e.d.block != null){ const prevShot = shots.find(x => x.a === e.d.a && !x.done); if(prevShot){ prevShot.t = e.d.block; prevShot.pd = e.d.pb; } continue; }   // un Blocker devia lo scontro su di sé
+      shots.push({ a: e.d.a, t: e.d.t, pa: e.d.pa, pd: e.d.pd, who: e.d.who });
     }
+    for(const x of shots){ hitUids.add(x.a); if(x.t != null) hitUids.add(x.t); }
   }
+  const fireShots = () => {
+    const hitDelay = new Map();
+    for(const x of shots){
+      const aEl = board.querySelector(`.bz [data-uid="${x.a}"]`), aR = aEl ? localRect(board, aEl) : prev.m.get(x.a); if(!aR) continue;
+      const tEl = x.t != null ? board.querySelector(`.bz [data-uid="${x.t}"]`) : null, tR = x.t != null ? (tEl ? localRect(board, tEl) : prev.m.get(x.t)) : anchor("owner", 1 - x.who) || anchor("eddies", 1 - x.who);
+      if(!tR) continue;
+      const at = fxShot(board, aR, tR, x.pa, x.pd, ms, tEl, aEl); hitDelay.set(x.a, at); if(x.t != null) hitDelay.set(x.t, at);
+    }
+    for(const f of deferredFly) fly(f.from, f.to, f.src, f.kind, hitDelay.get(f.uid) || 0);
+    for(const run of deferredSteal) run();
+  };
   fxLastLog = G.log[G.log.length - 1] || null;
   for(const el of board.querySelectorAll("[data-uid]")){
     const uid = +el.dataset.uid; seen.add(uid); const now = localRect(board, el); if(!now) continue;
@@ -180,7 +198,7 @@ function animateBoard(board, prev){
     if(!was){ const owner = G.players.find(P => P.gigs.some(x => x.uid === uid)), gig = owner && owner.gigs.find(x => x.uid === uid); if(gig){ if(fx) fxRoll(board, el, gig, owner.id === me() ? "Tu" : owner.name, ms); else rollDie(el, gig.sides, gig.value, ms); } continue; }
     const dx = was.cx - now.cx, dy = was.cy - now.cy; if(Math.abs(dx) < 1 && Math.abs(dy) < 1) continue;
     const ownerNow = el.closest("[data-owner]"), changed = ownerNow && prev.g.get(uid) && was.owner != null && +ownerNow.dataset.owner !== was.owner;
-    if(fx && changed){ const P = G.players[+ownerNow.dataset.owner], gig = P && P.gigs.find(x => x.uid === uid); if(gig){ fxSteal(board, el, was, now, gig, P.id === me() ? `Rubato a ${R.name}` : `${P.name} ti ruba un Gig`, ms); continue; } }
+    if(fx && changed){ const P = G.players[+ownerNow.dataset.owner], gig = P && P.gigs.find(x => x.uid === uid); if(gig){ const run = () => fxSteal(board, el, was, now, gig, P.id === me() ? `Rubato a ${R.name}` : `${P.name} ti ruba un Gig`, ms); if(shots.length){ el.style.visibility = "hidden"; deferredSteal.push(run); } else run(); continue; } }
     el.animate([{ transform: `translate(${dx}px, ${dy}px) scale(1.3)`, filter: "drop-shadow(0 0 10px var(--c))" }, { transform: "none" }], { duration: ms * 1.4, easing: ease });
   }
   // copie volanti
@@ -206,7 +224,8 @@ function animateBoard(board, prev){
     if(ePl){ fly(was, anchor("eddies", ePl.id), was.src, "sell"); grown[ePl.id].e = grown[ePl.id].e.filter(e => e.uid !== uid); }
     else if(tPl){ const c = tPl.trash.find(c => c.uid === uid), prog = c && c.card && c.card.type === "Program";
       if(fx && prog && who === "mine" && tPl.id === me()) fxShowcase(board, { src: was.src, label: "Lanci un Programma", tag: "Programma", name: c.card.dn, bar: true, who: "mine", to: anchor("trash", tPl.id) }, ms);
-      else fly(was, anchor("trash", tPl.id), was.src, prog ? "program" : "trash", hitDelay.get(uid) || 0);
+      else if(hitUids.has(uid)) deferredFly.push({ uid, from: was, to: anchor("trash", tPl.id), src: was.src, kind: prog ? "program" : "trash" });
+      else fly(was, anchor("trash", tPl.id), was.src, prog ? "program" : "trash");
       grown[tPl.id].t = grown[tPl.id].t.filter(c => c.uid !== uid); }
     else fly(was, was, was.src, "fade");
   }
@@ -219,6 +238,7 @@ function animateBoard(board, prev){
       if(fxOpp) fxShowcase(board, { src: c.pid ? thumbUrl(c.pid) : "", label: `${oppName} ${ty === "Program" ? "lancia" : ty === "Quick" ? "gioca" : "scarta"}`, tag: ty || "", name: c.card ? c.card.dn : "", bar: ty === "Program", to: anchor("trash", P.id) }, ms);
       else fly(srcOf("handc", P.id), anchor("trash", P.id), c.pid ? thumbUrl(c.pid) : "", ty === "Program" ? "program" : "trash"); }
   }
+  fireShots();
 }
 
 /* ------------------------------------------------------------ grafiche avanzate (beta)
@@ -231,7 +251,7 @@ const fxCenter = board => { const main = board.querySelector(".bmain") || board;
 const fxEase = "cubic-bezier(.2,.7,.2,1)";
 /* gli effetti al centro si mettono in fila: ognuno parte quando il precedente è uscito (fascia, dado,
    vetrina), così nessuno copre l'altro; se la fila si allunga troppo (più di 3 s) si sovrappongono */
-let fxBusyUntil = 0, fxAskUntil = 0, fxLastLog = null;   // fxLastLog: ultima riga del registro già vista (per gli attacchi)
+let fxBusyUntil = 0, fxAskUntil = 0, fxLastLog = null, fxHeld = [];   // fxLastLog: ultima riga del registro già vista (per gli attacchi); fxHeld: colpi rimandati
 function fxSlot(dur){ const now = performance.now(), start = Math.min(Math.max(now, fxBusyUntil), now + 3000); fxBusyUntil = start + dur; return start - now; }
 /* carta in vetrina: entra al centro, resta, poi scivola dove è finita (to). L'elemento vero (hideEl)
    resta invisibile finché la copia non arriva, così il ridisegno non la mostra in anticipo. */
@@ -283,36 +303,58 @@ function fxRollNow(board, el, gig, who, ms){
   setTimeout(() => { g.remove(); applyDice(board); }, total + 60);
   g.animate([{ opacity: 0, transform: "scale(.6)" }, { opacity: 1, transform: "none" }], { duration: Math.max(150, ms * .5), easing: fxEase });
 }
-/* colpo di pistola: dall'Unità che attacca al bersaglio (Unità o fila dei Gig), con traccianti, vampa e impatto;
-   la pistola è un contorno neon a glitch (disegno nostro). Il bersaglio vibra all'impatto. */
-function fxShot(board, a, t, pa, pd, ms, targetEl){
-  const dur = Math.max(700, ms * 2.6), impactAt = .45;
+/* scontro: l'Unità che attacca spara al bersaglio (Unità o fila dei Gig) con la pistola gialla a contorno neon; se il
+   bersaglio è un'Unità risponde con la pistola rossa, oppure, se ha potenza 0, con la mano a pistola (gesto di
+   scherno, olografico). Traccianti, vampa e impatto; chi è colpito vibra. Tutto disegno nostro.
+   Restituisce il momento (ms da ora) in cui lo scontro è finito, per far partire dopo le carte sconfitte. */
+function fxShot(board, a, t, pa, pd, ms, targetEl, attackerEl){
+  const D = Math.max(1800, ms * 4.5), exchange = pd != null, total = exchange ? D * 1.6 : D, delay = fxSlot(total);
+  setTimeout(() => fxShotNow(board, a, t, pa, D, "#fcee0a", "gun", targetEl, true, pd), delay);
+  if(exchange) setTimeout(() => fxShotNow(board, t, a, pd, D, "#ff2e55", pd > 0 ? "gun" : "hand", attackerEl, false, null), delay + D * .6);
+  return delay + total * .9;
+}
+function fxShotNow(board, a, t, pw, dur, col, mode, targetEl, withBadge, pd){
+  const impactAt = .45;
   const dxx = t.cx - a.cx, dyy = t.cy - a.cy, L = Math.hypot(dxx, dyy) || 1, ux = dxx / L, uy = dyy / L;
   const ax = a.cx + ux * a.h * .3, ay = a.cy + uy * a.h * .3, tx = t.cx - ux * Math.min(t.h, t.w) * .25, ty = t.cy - uy * Math.min(t.h, t.w) * .25;
   const ang = Math.atan2(ty - ay, tx - ax) * 180 / Math.PI, len = Math.max(20, Math.hypot(tx - ax, ty - ay)), cw = parseFloat(getComputedStyle(board).getPropertyValue("--cw")) || 50, sc = Math.max(1, Math.min(1.8, cw / 52));
   const svgNS = "http://www.w3.org/2000/svg", sv = document.createElementNS(svgNS, "svg"); sv.setAttribute("class", "fxshot"); sv.style.cssText = "position:absolute;left:0;top:0;width:100%;height:100%;overflow:visible";
-  const tr = Math.max(10, len - 46 * sc);
+  const tr = Math.max(10, len - 46 * sc), hand = mode === "hand";
+  const gunPath = `<path d="M-2 -6 H 22 L 25 -4 V 0 H 9 L 7 3 L 5 11 H -1 L 1 3 L -2 0 Z"/>`;
+  const handPath = `<rect x="6" y="-3.5" width="18" height="3.6" rx="1.8"/><rect x="-5" y="-4" width="13" height="13" rx="2.5"/><path d="M-2 0.5 H 6 M-2 4 H 6 M-2 7.5 H 5" stroke-width="1"/><rect x="-1.5" y="-13" width="3.4" height="10" rx="1.7"/>`;
+  const weapon = hand ? handPath : gunPath;
   sv.innerHTML = `<defs><filter id="fxgl"><feGaussianBlur stdDeviation="2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
     <g transform="translate(${ax} ${ay}) rotate(${ang})" filter="url(#fxgl)">
-      <g class="gun" transform="scale(${sc})" fill="none" stroke-linejoin="round"><path d="M-2 -6 H 22 L 25 -4 V 0 H 9 L 7 3 L 5 11 H -1 L 1 3 L -2 0 Z" stroke="var(--acc2)" stroke-width="1.4" opacity=".6" transform="translate(1.5 -1)"/><path d="M-2 -6 H 22 L 25 -4 V 0 H 9 L 7 3 L 5 11 H -1 L 1 3 L -2 0 Z" stroke="#fcee0a" stroke-width="1.4" stroke-dasharray="7 2 3 2"/><path d="M2 0 L 3 4 H 7" stroke="#fcee0a" stroke-width="1.2"/><path d="M2 -3 H 20" stroke="#fcee0a" stroke-width="1" opacity=".5"/></g>
-      <g class="tr"><rect x="${28 * sc}" y="-2" width="${tr}" height="4" rx="2" fill="#fcee0a" opacity=".55"/><rect x="${28 * sc}" y="-.6" width="${tr}" height="1.2" fill="#fff"/></g>
+      <g class="gun" transform="scale(${sc})" fill="none" stroke-linejoin="round" stroke-linecap="round"><g stroke="var(--acc2)" stroke-width="1.4" opacity=".55" transform="translate(1.5 -1)">${weapon}</g><g stroke="${col}" stroke-width="1.4" ${hand ? "" : 'stroke-dasharray="7 2 3 2"'}>${weapon}</g>${hand ? "" : `<path d="M2 0 L 3 4 H 7" stroke="${col}" stroke-width="1.2"/><path d="M2 -3 H 20" stroke="${col}" stroke-width="1" opacity=".5"/>`}</g>
+      ${hand ? `<g class="tr"><text x="${30 * sc}" y="-6" fill="${col}" font-size="${10 * sc}" font-family="var(--display)" font-weight="700" letter-spacing=".2em">PEW</text></g><g class="fl" transform="translate(${27 * sc} -2) scale(${sc * .3})" fill="#fff"><polygon points="0,0 14,-9 6,-1 20,0 6,1 14,9 0,0"/></g>`
+      : `<g class="tr"><rect x="${28 * sc}" y="-2" width="${tr}" height="4" rx="2" fill="${col}" opacity=".55"/><rect x="${28 * sc}" y="-.6" width="${tr}" height="1.2" fill="#fff"/></g>
       ${[0, 1, 2].map(i => `<rect class="bl b${i}" x="${28 * sc}" y="-2.5" width="14" height="5" rx="2.5" fill="#fff"/>`).join("")}
-      <g class="fl" transform="translate(${27 * sc} -3) scale(${sc * .5})" fill="#fff"><polygon points="0,0 14,-9 6,-1 20,0 6,1 14,9 0,0"/><circle r="3.5" fill="#fcee0a"/></g>
+      <g class="fl" transform="translate(${27 * sc} -3) scale(${sc * .5})" fill="#fff"><polygon points="0,0 14,-9 6,-1 20,0 6,1 14,9 0,0"/><circle r="3.5" fill="${col}"/></g>`}
     </g>
-    <g class="im" transform="translate(${tx} ${ty})" filter="url(#fxgl)"><circle r="14" fill="none" stroke="#ff2e55" stroke-width="2"/><circle r="24" fill="none" stroke="#ff2e55" stroke-width="1" opacity=".5"/>${[0,45,90,135,180,225,270,315].map(d => `<line x1="0" y1="0" x2="${Math.cos(d * Math.PI / 180) * 30}" y2="${Math.sin(d * Math.PI / 180) * 30}" stroke="#fff" stroke-width="1.5" opacity=".8" transform="rotate(12)"/>`).join("")}</g>`;
+    ${hand ? "" : `<g class="im" transform="translate(${tx} ${ty})" filter="url(#fxgl)"><circle r="14" fill="none" stroke="${col}" stroke-width="2"/><circle r="24" fill="none" stroke="${col}" stroke-width="1" opacity=".5"/>${[0,45,90,135,180,225,270,315].map(d => `<line x1="0" y1="0" x2="${Math.cos(d * Math.PI / 180) * 30}" y2="${Math.sin(d * Math.PI / 180) * 30}" stroke="#fff" stroke-width="1.5" opacity=".8" transform="rotate(12)"/>`).join("")}</g>`}`;
   flyLayer.appendChild(sv);
   const E = "cubic-bezier(.2,.7,.2,1)";
-  sv.querySelector(".gun").animate([{ opacity: 0, transform: `scale(${sc * .6})` }, { opacity: 1, transform: `scale(${sc})`, offset: .15 }, { opacity: 1, offset: .8 }, { opacity: 0 }], { duration: dur, easing: E, fill: "forwards" });
-  sv.querySelector(".tr").animate([{ opacity: 0 }, { opacity: 0, offset: .22 }, { opacity: 1, offset: .3 }, { opacity: .6, offset: .6 }, { opacity: 0 }], { duration: dur, fill: "forwards" });
-  sv.querySelector(".fl").animate([{ opacity: 0 }, { opacity: 0, offset: .22 }, { opacity: 1, offset: .26 }, { opacity: 0, offset: .4 }, { opacity: 1, offset: .44 }, { opacity: 0, offset: .55 }], { duration: dur, fill: "forwards" });
-  sv.querySelectorAll(".bl").forEach((b, i) => b.animate([{ transform: "translateX(0)", opacity: 0 }, { opacity: 0, offset: .22 + i * .05 }, { transform: "translateX(0)", opacity: 1, offset: .23 + i * .05 }, { transform: `translateX(${tr}px)`, opacity: 1, offset: impactAt + i * .05 }, { opacity: 0, offset: impactAt + .01 + i * .05 }], { duration: dur, fill: "forwards" }));
-  sv.querySelector(".im").animate([{ opacity: 0, transform: `translate(${tx}px, ${ty}px) scale(.3)` }, { opacity: 0, offset: impactAt }, { opacity: 1, transform: `translate(${tx}px, ${ty}px) scale(.6)`, offset: impactAt + .02 }, { opacity: 1, transform: `translate(${tx}px, ${ty}px) scale(1.1)`, offset: impactAt + .2 }, { opacity: 0, transform: `translate(${tx}px, ${ty}px) scale(1.4)` }], { duration: dur, fill: "forwards" });
-  const bx = (ax + tx) / 2 + 36, by = (ay + ty) / 2;
-  const badge = document.createElement("div"); badge.className = "fxpw hot"; badge.style.cssText = `left:${Math.max(40, Math.min(board.clientWidth - 40, bx))}px;top:${by}px`; badge.innerHTML = `<em>${pa}</em><i>⚔</i>${pd != null ? pd : "Gig"}`; flyLayer.appendChild(badge);
-  badge.animate([{ opacity: 0, transform: "translate(-50%,-50%) scale(.6)" }, { opacity: 1, transform: "translate(-50%,-50%) scale(1)", offset: .15 }, { opacity: 1, offset: .85 }, { opacity: 0, transform: "translate(-50%,-50%) scale(.9)" }], { duration: dur, fill: "forwards" });
-  if(targetEl) setTimeout(() => { targetEl.animate([{ transform: "translate(0,0)" }, { transform: "translate(-4px,2px)" }, { transform: "translate(4px,-2px)" }, { transform: "translate(-3px,-1px)" }, { transform: "translate(3px,1px)" }, { transform: "translate(0,0)" }], { duration: 320, easing: "linear", composite: "add" }); targetEl.animate([{ boxShadow: "0 0 0 3px #ff2e55, 0 0 24px #ff2e55" }, { boxShadow: "0 0 0 0 transparent" }], { duration: 600 }); }, dur * impactAt);
-  setTimeout(() => { sv.remove(); badge.remove(); }, dur + 100);
-  return dur * impactAt;
+  sv.querySelector(".gun").animate([{ opacity: 0, transform: `scale(${sc * .6})` }, { opacity: 1, transform: `scale(${sc})`, offset: .12 }, { opacity: 1, offset: .82 }, { opacity: 0 }], { duration: dur, easing: E, fill: "forwards" });
+  if(hand){
+    sv.querySelector(".gun").animate([{ transform: `scale(${sc}) rotate(0deg)` }, { transform: `scale(${sc}) rotate(0deg)`, offset: .3 }, { transform: `scale(${sc}) rotate(-18deg)`, offset: .36 }, { transform: `scale(${sc}) rotate(0deg)`, offset: .5 }], { duration: dur, composite: "add" });
+    sv.querySelector(".tr").animate([{ opacity: 0 }, { opacity: 0, offset: .34 }, { opacity: 1, offset: .38 }, { opacity: 1, offset: .62 }, { opacity: 0, offset: .75 }], { duration: dur, fill: "forwards" });
+    sv.querySelector(".fl").animate([{ opacity: 0 }, { opacity: 0, offset: .34 }, { opacity: 1, offset: .36 }, { opacity: 0, offset: .46 }], { duration: dur, fill: "forwards" });
+  } else {
+    sv.querySelector(".tr").animate([{ opacity: 0 }, { opacity: 0, offset: .22 }, { opacity: 1, offset: .3 }, { opacity: .6, offset: .6 }, { opacity: 0 }], { duration: dur, fill: "forwards" });
+    sv.querySelector(".fl").animate([{ opacity: 0 }, { opacity: 0, offset: .22 }, { opacity: 1, offset: .26 }, { opacity: 0, offset: .4 }, { opacity: 1, offset: .44 }, { opacity: 0, offset: .55 }], { duration: dur, fill: "forwards" });
+    sv.querySelectorAll(".bl").forEach((b, i) => b.animate([{ transform: "translateX(0)", opacity: 0 }, { opacity: 0, offset: .22 + i * .05 }, { transform: "translateX(0)", opacity: 1, offset: .23 + i * .05 }, { transform: `translateX(${tr}px)`, opacity: 1, offset: impactAt + i * .05 }, { opacity: 0, offset: impactAt + .01 + i * .05 }], { duration: dur, fill: "forwards" }));
+    sv.querySelector(".im").animate([{ opacity: 0, transform: `translate(${tx}px, ${ty}px) scale(.3)` }, { opacity: 0, offset: impactAt }, { opacity: 1, transform: `translate(${tx}px, ${ty}px) scale(.6)`, offset: impactAt + .02 }, { opacity: 1, transform: `translate(${tx}px, ${ty}px) scale(1.1)`, offset: impactAt + .2 }, { opacity: 0, transform: `translate(${tx}px, ${ty}px) scale(1.4)` }], { duration: dur, fill: "forwards" });
+    if(targetEl) setTimeout(() => { if(!targetEl.isConnected) return; targetEl.animate([{ transform: "translate(0,0)" }, { transform: "translate(-4px,2px)" }, { transform: "translate(4px,-2px)" }, { transform: "translate(-3px,-1px)" }, { transform: "translate(3px,1px)" }, { transform: "translate(0,0)" }], { duration: 320, easing: "linear", composite: "add" }); targetEl.animate([{ boxShadow: `0 0 0 3px ${col}, 0 0 24px ${col}` }, { boxShadow: "0 0 0 0 transparent" }], { duration: 600 }); }, dur * impactAt);
+  }
+  let badge = null;
+  if(withBadge){
+    const bx = (ax + tx) / 2 + 36, by = (ay + ty) / 2;
+    badge = document.createElement("div"); badge.className = "fxpw hot"; badge.style.cssText = `left:${Math.max(40, Math.min(board.clientWidth - 40, bx))}px;top:${by}px`; badge.innerHTML = `<em>${pw}</em><i>⚔</i>${pd != null ? pd : "Gig"}`; flyLayer.appendChild(badge);
+    const bd = pd != null ? dur * 1.6 : dur;
+    badge.animate([{ opacity: 0, transform: "translate(-50%,-50%) scale(.6)" }, { opacity: 1, transform: "translate(-50%,-50%) scale(1)", offset: Math.min(.15, 200 / bd) }, { opacity: 1, offset: .88 }, { opacity: 0, transform: "translate(-50%,-50%) scale(.9)" }], { duration: bd, fill: "forwards" });
+    setTimeout(() => badge && badge.remove(), bd + 100);
+  }
+  setTimeout(() => sv.remove(), dur + 100);
 }
 /* somma della potenza dopo un equipaggiamento: «3 + 1 = 4» sopra l'Unità */
 function fxPower(board, hostEl, base, plus, delay, ms){
@@ -486,7 +528,7 @@ function start(opts = {}){
   G = createGame([{ ...d0, name: nm[0] }, { ...d1, name: nm[1] }], DATA.byId, { bot0: !human[0], bot1: !human[1], autoPay: [!!S.profile.autoPay, !!S.profile.autoPay], seed: tut ? TUTORIAL_SEED : undefined, first: tut ? 1 : undefined, chooseFirst: !tut });
   if(tut) ensureHand(G, 0);
   G.decide = botDecide; G.mulliganAsked = [false, false];
-  sel = null; targeting = null; pop = null; handoff = false; lastSeen = { turn: 0, seen: 0 }; fxTurnKey = null; fxBusyUntil = 0; fxAskUntil = 0; fxLastLog = null;
+  sel = null; targeting = null; pop = null; handoff = false; lastSeen = { turn: 0, seen: 0 }; fxTurnKey = null; fxBusyUntil = 0; fxAskUntil = 0; fxLastLog = null; fxHeld = [];
   $("#board").innerHTML = ""; openBoard();
   // mulligan: ai bot no; agli umani lo chiede la plancia (vedi mulliganHTML: fa parte
   // dello stato, così un ridisegno — es. l'ingresso a schermo intero — non lo perde)
@@ -704,7 +746,7 @@ ON.setOnlineHooks(Object.assign(hooksForTest, {
     gmode = "online"; mode = "online"; gOnline = true; gSeat = seat; human = [seat === 0, seat === 1];
     // Prerelease: il mazzo dell'avversario deve venire davvero da un kit (si riapre e si confronta)
     const opp = seat === 0 ? row.guest_deck : row.host_deck; oppWarn = oppDeckIssue(opp);
-    sel = null; targeting = null; pop = null; handoff = false; showLog = false; lastSeen = { turn: 0, seen: 0 }; fxTurnKey = "resume"; fxBusyUntil = 0; fxAskUntil = 0; fxLastLog = null;
+    sel = null; targeting = null; pop = null; handoff = false; showLog = false; lastSeen = { turn: 0, seen: 0 }; fxTurnKey = "resume"; fxBusyUntil = 0; fxAskUntil = 0; fxLastLog = null; fxHeld = [];
     buildOnline(moves);
     if(location.hash !== "#sim") location.hash = "#sim";
     $("#board").innerHTML = ""; openBoard(); render(); tick();
