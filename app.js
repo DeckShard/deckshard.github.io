@@ -13,7 +13,7 @@ import { renderHome, wireHome } from "./home.js";
 import { initI18n } from "./i18n.js";
 import { bootCloud, state as cloudState } from "./cloud.js";
 
-export const APP_VERSION = "1.9.16";
+export const APP_VERSION = "1.9.17";
 setOnlineVersion(APP_VERSION);
 
 const TABS = { home: renderHome, collection: renderCollection, deck: renderDeck, profile: renderProfile, sim: renderSim, rules: renderRules, settings: renderSettings };

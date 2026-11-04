@@ -77,7 +77,7 @@ function animEl(el, kf, opts){ const uid = +el.dataset.uid; el.animate(kf, opts)
 function reapplyAnims(board, fresh){
   const now = performance.now();
   for(const [uid, a] of liveAnims){
-    const gone = now - a.at >= a.opts.duration; if(gone){ liveAnims.delete(uid); continue; }
+    const gone = now - a.at >= a.opts.duration + (a.opts.delay || 0); if(gone){ liveAnims.delete(uid); continue; }
     if(fresh.has(uid)) continue;
     const el = board.querySelector(`[data-uid="${uid}"]`); if(!el) continue;
     const an = el.animate(a.kf, a.opts); an.currentTime = now - a.at;
@@ -111,6 +111,7 @@ function rollDie(el, sides, finalValue, ms){
 }
 function applyDice(board){
   const now = performance.now();
+  for(const el of board.querySelectorAll('.die[data-gig][style*="hidden"]')) if(!liveDice.has(+el.dataset.gig)) el.style.visibility = "";   // rete di sicurezza: nessun dado resta nascosto senza un effetto in corso
   for(const [uid, d] of liveDice){
     const el = board.querySelector(`.die[data-gig="${uid}"]`); if(!el){ if(now > d.until + 1000) liveDice.delete(uid); continue; }
     if(d.big){ if(now < d.until) el.style.visibility = "hidden"; else { el.style.visibility = ""; el.classList.add("landed"); setTimeout(() => el.classList.remove("landed"), 900); liveDice.delete(uid); } continue; }
@@ -146,7 +147,7 @@ function animateBoard(board, prev){
     // la finestra lo coprirebbe, e un Blocker può ancora deviarlo
     // …ma se lo scontro è già risolto (riga «fight» o «steal» dopo l'attacco: la decisione in sospeso è un effetto successivo,
     // es. River Ward a Unità sconfitta) si disegna subito, altrimenti le carte sconfitte sarebbero già sparite
-    const resolved = e => { const i = G.log.indexOf(e); return i >= 0 && G.log.slice(i + 1).some(x => x.kind === "fight" || x.kind === "steal"); };
+    const resolved = e => { if(G.pending && G.pending.kind === "steal") return false; const i = G.log.indexOf(e); return i >= 0 && G.log.slice(i + 1).some(x => x.kind === "fight" || x.kind === "steal"); };   // con due Gig da rubare si scelgono entrambi, poi lo scontro
     const humanWait = !!G.pending;
     const list = humanWait ? fxHeld.filter(resolved) : fxHeld.splice(0); if(humanWait) fxHeld = fxHeld.filter(e => !resolved(e));
     for(const e of freshLog){ if(e.kind !== "attack" || !e.d) continue; (humanWait && !resolved(e) ? fxHeld : list).push(e); }
@@ -156,6 +157,10 @@ function animateBoard(board, prev){
     }
     for(const x of shots){ hitUids.add(x.a); if(x.t != null) hitUids.add(x.t); }
   }
+  // le altre carte della fila di una Unità sconfitta non si stringono finché lo scontro non è finito e la carta non è partita
+  const onBoardUid = uid => !!board.querySelector(`.bz [data-uid="${uid}"]`);
+  const hitRows = new Set(); for(const x of shots){ if(!onBoardUid(x.a)) hitRows.add(x.who); if(x.t != null && !onBoardUid(x.t)) hitRows.add(1 - x.who); }
+  const deferredFlip = [];
   const fireShots = () => {
     const hitDelay = new Map();
     for(const x of shots){
@@ -165,6 +170,9 @@ function animateBoard(board, prev){
       const at = fxShot(board, aR, tR, x.pa, x.pd, ms, tEl, aEl); hitDelay.set(x.a, at); if(x.t != null) hitDelay.set(x.t, at);
     }
     for(const f of deferredFly) fly(f.from, f.to, f.src, f.kind, hitDelay.get(f.uid) || 0);
+    const rowDelay = new Map(); for(const f of deferredFly){ const owner = f.owner; if(owner == null) continue; rowDelay.set(owner, Math.max(rowDelay.get(owner) || 0, (hitDelay.get(f.uid) || 0) + ms * 1.1)); }
+    for(const d of deferredFlip) animEl(d.el, d.kf, { duration: ms, easing: ease, delay: rowDelay.get(d.pid) || Math.max(0, ...rowDelay.values(), 0), fill: "backwards" });
+    if(shots.length) for(const h of fxHeldSteals.splice(0)){ const e2 = board.querySelector(`.die[data-gig="${h.uid}"]`); if(e2){ const now2 = localRect(board, e2); if(now2) fxSteal(board, e2, h.was, now2, h.gig, h.who, ms); } else liveDice.delete(h.uid); }   // prima il Gig rubato per primo
     for(const run of deferredSteal) run();
   };
   fxLastLog = G.log[G.log.length - 1] || null;
@@ -185,7 +193,10 @@ function animateBoard(board, prev){
       if(was.back !== el.classList.contains("back")){ if(was.back && el.dataset.legend) sfx("call"); fresh.add(uid); animEl(el, [{ transform: `${tf(endT)} rotateY(90deg)` }, { transform: `${tf(endT)} rotateY(0deg)` }], { duration: ms, easing: ease }); continue; }
       const dx = was.cx - now.cx, dy = was.cy - now.cy, sx = was.w / now.w, sy = was.h / now.h;
       if(Math.abs(dx) < 1 && Math.abs(dy) < 1 && Math.abs(sx - 1) < .02 && was.spent === el.classList.contains("spent")) continue;
-      fresh.add(uid); animEl(el, [{ transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy}) ${tf(was.t)}` }, { transform: endT }], { duration: ms, easing: ease });
+      fresh.add(uid);
+      const rowOwner = el.closest("[data-field]"); const kfMove = [{ transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy}) ${tf(was.t)}` }, { transform: endT }];
+      if(rowOwner && hitRows.has(+rowOwner.dataset.field)) deferredFlip.push({ el, kf: kfMove, pid: +rowOwner.dataset.field });
+      else animEl(el, kfMove, { duration: ms, easing: ease });
       continue;
     }
     // carta nuova: arriva dal mazzo (mia) o dalla mano/mazzo dell'avversario
@@ -205,7 +216,11 @@ function animateBoard(board, prev){
     if(!was){ const owner = G.players.find(P => P.gigs.some(x => x.uid === uid)), gig = owner && owner.gigs.find(x => x.uid === uid); if(gig){ if(fx) fxRoll(board, el, gig, owner.id === me() ? "Tu" : owner.name, ms); else rollDie(el, gig.sides, gig.value, ms); } continue; }
     const dx = was.cx - now.cx, dy = was.cy - now.cy; if(Math.abs(dx) < 1 && Math.abs(dy) < 1) continue;
     const ownerNow = el.closest("[data-owner]"), changed = ownerNow && prev.g.get(uid) && was.owner != null && +ownerNow.dataset.owner !== was.owner;
-    if(fx && changed){ const P = G.players[+ownerNow.dataset.owner], gig = P && P.gigs.find(x => x.uid === uid); if(gig){ const run = () => fxSteal(board, el, was, now, gig, P.id === me() ? `Rubato a ${R.name}` : `${P.name} ti ruba un Gig`, ms); if(shots.length){ el.style.visibility = "hidden"; deferredSteal.push(run); } else run(); continue; } }
+    if(fx && changed){ const P = G.players[+ownerNow.dataset.owner], gig = P && P.gigs.find(x => x.uid === uid); if(gig){
+      const run = () => fxSteal(board, el, was, now, gig, P.id === me() ? `Rubato a ${R.name}` : `${P.name} ti ruba un Gig`, ms);
+      if(shots.length){ el.style.visibility = "hidden"; liveDice.set(uid, { until: performance.now() + 15000, big: true }); deferredSteal.push(run); }
+      else if(fxHeld.length){ el.style.visibility = "hidden"; liveDice.set(uid, { until: performance.now() + 15000, big: true }); fxHeldSteals.push({ uid, was, now, gig, who: P.id === me() ? `Rubato a ${R.name}` : `${P.name} ti ruba un Gig` }); }   // lo scontro è rimandato (altra scelta in corso): il dado parte con lui
+      else run(); continue; } }
     el.animate([{ transform: `translate(${dx}px, ${dy}px) scale(1.3)`, filter: "drop-shadow(0 0 10px var(--c))" }, { transform: "none" }], { duration: ms * 1.4, easing: ease });
   }
   // copie volanti
@@ -231,7 +246,7 @@ function animateBoard(board, prev){
     if(ePl){ fly(was, anchor("eddies", ePl.id), was.src, "sell"); if(was.hand) sfx("sell"); grown[ePl.id].e = grown[ePl.id].e.filter(e => e.uid !== uid); }
     else if(tPl){ const c = tPl.trash.find(c => c.uid === uid), prog = c && c.card && c.card.type === "Program";
       if(fx && prog && who === "mine" && tPl.id === me()) fxShowcase(board, { src: was.src, label: "Lanci un Programma", tag: "Programma", name: c.card.dn, bar: true, who: "mine", to: anchor("trash", tPl.id) }, ms);
-      else if(hitUids.has(uid)) deferredFly.push({ uid, from: was, to: anchor("trash", tPl.id), src: was.src, kind: prog ? "program" : "trash" });
+      else if(hitUids.has(uid)) deferredFly.push({ uid, owner: tPl.id, from: was, to: anchor("trash", tPl.id), src: was.src, kind: prog ? "program" : "trash" });
       else fly(was, anchor("trash", tPl.id), was.src, prog ? "program" : "trash");
       grown[tPl.id].t = grown[tPl.id].t.filter(c => c.uid !== uid); }
     else if(fx && who === "mine" && was.hand && prev.hand.get(uid) && prev.hand.get(uid).card.type === "Program") fxShowcase(board, { src: was.src, label: "Lanci un Programma", tag: "Programma", name: prev.hand.get(uid).card.dn, bar: true, who: "mine", to: anchor("trash", me()) }, ms);   // Programma in attesa di una scelta: finirà nel Trash
@@ -275,6 +290,8 @@ function sfx(kind, delay = 0){
     case "steal": tone("sine", 300, 900, t0, .26, .5); tone("triangle", 450, 1350, t0 + .02, .24, .25); break;
     case "turn": tone("sine", 523, 523, t0, .09, .5); tone("sine", 784, 784, t0 + .1, .16, .5); break;
     case "equip": tone("triangle", 400, 800, t0, .1, .4); tone("sine", 1200, 1200, t0 + .1, .08, .3); break;
+    case "launch": noise(t0, .25, 600, .6, .8); tone("sawtooth", 220, 90, t0, .25, .35); break;      // partenza del missile
+    case "boom": tone("sine", 60, 25, t0, .5, 1); noise(t0, .35, 300, .4, 1); noise(t0 + .05, .4, 1500, .3, .4); break;   // esplosione
     case "slam": tone("sine", 70, 30, t0, .35, 1); noise(t0, .18, 400, .5, .9); noise(t0 + .05, .3, 2200, .3, .3); break;   // Go Solo: tonfo e crepe
     case "call": noise(t0, .3, 1800, .4, .35); tone("sine", 392, 392, t0, .14, .45); tone("sine", 523, 523, t0 + .12, .14, .45); tone("sine", 784, 784, t0 + .24, .3, .5); break;   // Leggenda scoperta: accordo che sale
   }
@@ -284,7 +301,7 @@ const fxCenter = board => { const main = board.querySelector(".bmain") || board;
 const fxEase = "cubic-bezier(.2,.7,.2,1)";
 /* gli effetti al centro si mettono in fila: ognuno parte quando il precedente è uscito (fascia, dado,
    vetrina), così nessuno copre l'altro; se la fila si allunga troppo (più di 3 s) si sovrappongono */
-let fxBusyUntil = 0, fxAskUntil = 0, fxLastLog = null, fxHeld = [];   // fxLastLog: ultima riga del registro già vista (per gli attacchi); fxHeld: colpi rimandati
+let fxBusyUntil = 0, fxAskUntil = 0, fxLastLog = null, fxHeld = [], fxHeldSteals = [];   // fxLastLog: ultima riga del registro già vista (per gli attacchi); fxHeld: colpi rimandati
 function fxSlot(dur){ const now = performance.now(), start = Math.min(Math.max(now, fxBusyUntil), now + 3000); fxBusyUntil = start + dur; return start - now; }
 /* carta in vetrina: entra al centro, resta, poi scivola dove è finita (to). L'elemento vero (hideEl)
    resta invisibile finché la copia non arriva, così il ridisegno non la mostra in anticipo. */
@@ -346,11 +363,57 @@ function fxRollNow(board, el, gig, who, ms){
 function fxShot(board, a, t, pa, pd, ms, targetEl, attackerEl){
   // durata: 1,3 s con le animazioni normali (o veloci), 2,3 s con quelle lente
   const D = Math.max(1300, 1300 + (ms - 380) * 3.7), exchange = pd != null, total = exchange ? D * 1.6 : D, delay = fxSlot(total);
-  setTimeout(() => fxShotNow(board, a, t, pa, D, "#fcee0a", pa > 0 ? "gun" : "hand", targetEl, true, pd), delay);
-  if(exchange) setTimeout(() => fxShotNow(board, t, a, pd, D, "#ff2e55", pd > 0 ? "gun" : "hand", attackerEl, false, null), delay + D * .6);
+  const weapon = pw => pw >= 10 ? "missile" : pw > 0 ? "gun" : "hand";
+  setTimeout(() => fxShotNow(board, a, t, pa, D, "#fcee0a", weapon(pa), targetEl, true, pd), delay);
+  if(exchange) setTimeout(() => fxShotNow(board, t, a, pd, D, "#ff2e55", weapon(pd), attackerEl, false, null), delay + D * .6);
   return delay + total * .9;
 }
+/* lanciamissili (potenza ≥ 10): tubo a spalla con mirino, il missile parte con un arco e una scia, esplosione a doppio anello;
+   tre missili dalla potenza 20 in su. Stesso contorno neon a glitch delle pistole. */
+function fxMissile(board, a, t, pw, dur, col, targetEl, withBadge, pd){
+  const impactAt = .5, n = pw >= 20 ? 3 : 1;
+  const dxx = t.cx - a.cx, dyy = t.cy - a.cy, L = Math.hypot(dxx, dyy) || 1, ux = dxx / L, uy = dyy / L;
+  const ax = a.cx + ux * a.h * .3, ay = a.cy + uy * a.h * .3, tx = t.cx - ux * Math.min(t.h, t.w) * .25, ty = t.cy - uy * Math.min(t.h, t.w) * .25;
+  const ang = Math.atan2(ty - ay, tx - ax) * 180 / Math.PI, cw = parseFloat(getComputedStyle(board).getPropertyValue("--cw")) || 50, sc = Math.max(1, Math.min(1.8, cw / 52));
+  // arco: il punto di controllo sta dalla parte «alta» della plancia rispetto alla linea di tiro
+  const mx = (ax + tx) / 2, my = (ay + ty) / 2, nx = -uy, ny = ux, lift = Math.min(140, L * .45) * (ny < 0 ? 1 : -1);
+  const cx = mx + nx * lift, cy = my + ny * lift, path = `M${ax.toFixed(1)} ${ay.toFixed(1)} Q ${cx.toFixed(1)} ${cy.toFixed(1)} ${tx.toFixed(1)} ${ty.toFixed(1)}`;
+  const svgNS = "http://www.w3.org/2000/svg", sv = document.createElementNS(svgNS, "svg"); sv.setAttribute("class", "fxshot"); sv.style.cssText = "position:absolute;left:0;top:0;width:100%;height:100%;overflow:visible";
+  const launcher = `<path d="M-10 -5 H 34 V 3 H -10 Z"/><path d="M34 -7 H 40 V 5 H 34"/><path d="M-10 -4 H -18 L -20 -2 V 1 L -18 3 H -10"/><path d="M4 -5 V -11 H 14 V -5"/><path d="M6 -9 H 12"/><path d="M6 3 L 4 12 H 11 L 12 3"/><path d="M12 3 L 13 7 H 17"/><path d="M-6 3 V 8 H 2 V 3"/><path d="M18 -5 V -8 H 30 V -5"/>`;
+  const missile = `<polygon points="0,-3 14,-3 20,0 14,3 0,3" fill="#fff"/><polygon points="0,-3 -6,-7 -3,0 -6,7 0,3" fill="${col}"/><circle cx="-9" cy="0" r="3" fill="none" stroke="#fff" opacity=".6"/><circle cx="-16" cy="0" r="4.5" fill="none" stroke="#fff" opacity=".3"/>`;
+  sv.innerHTML = `<defs><filter id="fxgl"><feGaussianBlur stdDeviation="2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+    <path class="trail" d="${path}" fill="none" stroke="${col}" stroke-width="2" stroke-dasharray="6 5" opacity=".55" pathLength="1"/>
+    <g transform="translate(${ax} ${ay}) rotate(${ang})" filter="url(#fxgl)">
+      <g class="gun" transform="scale(${sc})" fill="none" stroke-linejoin="round" stroke-linecap="round"><g stroke="var(--acc2)" stroke-width="1.3" opacity=".55" transform="translate(1.5 -1)">${launcher}</g><g stroke="${col}" stroke-width="1.3" stroke-dasharray="9 2 4 2">${launcher}</g><rect x="-8" y="-3" width="6" height="2" fill="${col}"/><circle cx="24" cy="-1" r="1.5" fill="${col}"/></g>
+      <g class="fl" transform="translate(${42 * sc} -1) scale(${sc * .7})" fill="#fff"><polygon points="0,0 14,-9 6,-1 20,0 6,1 14,9 0,0"/><circle r="4" fill="${col}"/></g>
+      <g class="bk" transform="translate(${-22 * sc} -1) scale(${sc * .5})" fill="${col}" opacity=".8"><polygon points="0,0 -14,-7 -6,0 -14,7"/></g>
+    </g>
+    ${Array.from({ length: n }, (_, i) => `<g class="ms m${i}" style="offset-path:path('${path}');offset-rotate:auto;offset-distance:0%" transform="scale(${sc * .9})">${missile}</g>`).join("")}
+    <g class="im" transform="translate(${tx} ${ty})" filter="url(#fxgl)"><circle class="fl2" r="12" fill="#fff"/><circle r="22" fill="none" stroke="${col}" stroke-width="3"/><circle r="40" fill="none" stroke="${col}" stroke-width="1.2" opacity=".6"/><circle r="56" fill="none" stroke="${col}" stroke-width="1" opacity=".3"/>${[0,30,60,90,120,150,180,210,240,270,300,330].map(d => `<line x1="0" y1="0" x2="${Math.cos(d * Math.PI / 180) * 52}" y2="${Math.sin(d * Math.PI / 180) * 52}" stroke="#fff" stroke-width="1.5" opacity=".75" transform="rotate(7)"/>`).join("")}</g>`;
+  flyLayer.appendChild(sv);
+  const E = "cubic-bezier(.2,.7,.2,1)", launch = .2, land = impactAt;
+  sv.querySelector(".gun").animate([{ opacity: 0, transform: `scale(${sc * .6})` }, { opacity: 1, transform: `scale(${sc})`, offset: .12 }, { opacity: 1, offset: .82 }, { opacity: 0 }], { duration: dur, easing: E, fill: "forwards" });
+  sv.querySelector(".fl").animate([{ opacity: 0 }, { opacity: 0, offset: launch - .01 }, { opacity: 1, offset: launch }, { opacity: 0, offset: launch + .08 }], { duration: dur, fill: "forwards" });
+  sv.querySelector(".bk").animate([{ opacity: 0 }, { opacity: 0, offset: launch - .01 }, { opacity: .9, offset: launch + .01 }, { opacity: 0, offset: launch + .12 }], { duration: dur, fill: "forwards" });
+  sv.querySelector(".trail").animate([{ strokeDashoffset: 1, opacity: 0 }, { strokeDashoffset: 1, opacity: .55, offset: launch }, { strokeDashoffset: 0, opacity: .55, offset: land }, { strokeDashoffset: 0, opacity: 0, offset: land + .25 }, { opacity: 0 }], { duration: dur, fill: "forwards" });
+  sv.querySelector(".trail").style.strokeDasharray = "1"; sv.querySelector(".trail").style.strokeDashoffset = "1";
+  sv.querySelectorAll(".ms").forEach((m, i) => { const o = i * .05; m.animate([{ offsetDistance: "0%", opacity: 0 }, { offsetDistance: "0%", opacity: 0, offset: launch + o }, { offsetDistance: "0%", opacity: 1, offset: launch + o + .005 }, { offsetDistance: "100%", opacity: 1, offset: land + o }, { offsetDistance: "100%", opacity: 0, offset: land + o + .005 }, { opacity: 0 }], { duration: dur, fill: "forwards", easing: "linear" }); });
+  const im = sv.querySelector(".im"); im.animate([{ opacity: 0, transform: `translate(${tx}px, ${ty}px) scale(.2)` }, { opacity: 0, offset: land }, { opacity: 1, transform: `translate(${tx}px, ${ty}px) scale(.5)`, offset: land + .02 }, { opacity: 1, transform: `translate(${tx}px, ${ty}px) scale(1.15)`, offset: land + .22 }, { opacity: 0, transform: `translate(${tx}px, ${ty}px) scale(1.5)` }], { duration: dur, fill: "forwards" });
+  sv.querySelector(".fl2").animate([{ opacity: 0 }, { opacity: 0, offset: land }, { opacity: 1, offset: land + .02 }, { opacity: 0, offset: land + .12 }], { duration: dur, fill: "forwards" });
+  sfx("launch", dur * launch); sfx("boom", dur * land);
+  if(targetEl) setTimeout(() => { if(!targetEl.isConnected) return; targetEl.animate([{ transform: "translate(0,0)" }, { transform: "translate(-6px,3px)" }, { transform: "translate(6px,-3px)" }, { transform: "translate(-4px,-2px)" }, { transform: "translate(4px,2px)" }, { transform: "translate(-2px,1px)" }, { transform: "translate(0,0)" }], { duration: 480, easing: "linear", composite: "add" }); targetEl.animate([{ boxShadow: `0 0 0 4px ${col}, 0 0 30px ${col}` }, { boxShadow: "0 0 0 0 transparent" }], { duration: 800 }); const main = board.querySelector(".bmain") || board; main.animate([{ transform: "translate(0,0)" }, { transform: "translate(-3px,2px)" }, { transform: "translate(3px,-2px)" }, { transform: "translate(0,0)" }], { duration: 260, easing: "linear" }); }, dur * land);
+  let badge = null;
+  if(withBadge){
+    const bx = (ax + tx) / 2 + 36, by = (ay + ty) / 2;
+    badge = document.createElement("div"); badge.className = "fxpw hot"; badge.style.cssText = `left:${Math.max(40, Math.min(board.clientWidth - 40, bx))}px;top:${by}px`; badge.innerHTML = `<em>${pw}</em><i>⚔</i>${pd != null ? pd : "Gig"}`; flyLayer.appendChild(badge);
+    const bd = pd != null ? dur * 1.6 : dur;
+    badge.animate([{ opacity: 0, transform: "translate(-50%,-50%) scale(.6)" }, { opacity: 1, transform: "translate(-50%,-50%) scale(1)", offset: Math.min(.15, 200 / bd) }, { opacity: 1, offset: .88 }, { opacity: 0, transform: "translate(-50%,-50%) scale(.9)" }], { duration: bd, fill: "forwards" });
+    setTimeout(() => badge && badge.remove(), bd + 100);
+  }
+  setTimeout(() => sv.remove(), dur + 100);
+}
 function fxShotNow(board, a, t, pw, dur, col, mode, targetEl, withBadge, pd){
+  if(mode === "missile"){ fxMissile(board, a, t, pw, dur, col, targetEl, withBadge, pd); return; }
   const impactAt = .45;
   const dxx = t.cx - a.cx, dyy = t.cy - a.cy, L = Math.hypot(dxx, dyy) || 1, ux = dxx / L, uy = dyy / L;
   const ax = a.cx + ux * a.h * .3, ay = a.cy + uy * a.h * .3, tx = t.cx - ux * Math.min(t.h, t.w) * .25, ty = t.cy - uy * Math.min(t.h, t.w) * .25;
@@ -442,28 +505,32 @@ function fxLegend(board, o, ms){
   if(o.hideEl) animEl(o.hideEl, [{ opacity: 0 }, { opacity: 0, offset: .96 }, { opacity: 1 }], { duration: total, fill: "backwards" });
   return total;
 }
-/* Go Solo: la Leggenda piomba in campo con un'onda d'urto e crepe nel terreno (SVG, linee spezzate casuali) che si richiudono */
+/* Go Solo: la Leggenda piomba in campo con uno schiacciamento; sotto si apre un cratere scuro dal bordo neon con l'ellisse
+   d'urto, poche crepe corte e detriti che schizzano; tutto si richiude in poco più di un secondo. Scossa della plancia e tonfo. */
 function fxSlam(board, el, ms){
   const r = localRect(board, el); if(!r) return;
-  const dur = Math.max(260, ms * .7), hold = Math.max(900, ms * 2);
-  animEl(el, [{ transform: "scale(1.9) translateY(-18%)", opacity: 0, filter: "brightness(2)", easing: "cubic-bezier(.5,0,1,.6)" }, { transform: "scale(1)", opacity: 1, filter: "brightness(2)", offset: dur / (dur + hold) }, { transform: "scale(1)", filter: "brightness(1)" }], { duration: dur + hold });
+  const dur = Math.max(260, ms * .7), hold = Math.max(1100, ms * 2.4);
+  animEl(el, [{ transform: "scale(1.9) translateY(-22%)", opacity: 0, filter: "brightness(2.2)", easing: "cubic-bezier(.5,0,1,.6)" }, { transform: "scale(1.08, .9)", opacity: 1, filter: "brightness(2)", offset: dur / (dur + hold), easing: "cubic-bezier(.2,.7,.2,1)" }, { transform: "scale(.98, 1.03)", filter: "brightness(1.3)", offset: (dur + 120) / (dur + hold) }, { transform: "scale(1)", filter: "brightness(1)", offset: (dur + 260) / (dur + hold) }, { transform: "scale(1)", filter: "brightness(1)" }], { duration: dur + hold });
   setTimeout(() => {
     const svgNS = "http://www.w3.org/2000/svg", sv = document.createElementNS(svgNS, "svg"); sv.setAttribute("class", "fxcrack"); sv.style.cssText = "position:absolute;left:0;top:0;width:100%;height:100%;overflow:visible";
-    const R0 = Math.max(r.w, r.h) * .55, L = Math.max(r.w, r.h) * (1.2 + Math.random() * .6); let d = "";
-    const n = 7 + Math.floor(Math.random() * 3);
-    for(let i = 0; i < n; i++){
-      const a = (i / n) * Math.PI * 2 + (Math.random() - .5) * .5; let x = r.cx + Math.cos(a) * R0 * .7, y = r.cy + Math.sin(a) * R0 * .7; d += `M${x.toFixed(1)} ${y.toFixed(1)}`;
-      const segs = 3 + Math.floor(Math.random() * 3), len = L * (.6 + Math.random() * .6);
-      for(let k = 1; k <= segs; k++){ const t = k / segs, ang = a + (Math.random() - .5) * .9; x = r.cx + Math.cos(ang) * (R0 * .7 + len * t); y = r.cy + Math.sin(ang) * (R0 * .7 + len * t) * .55; d += ` L${x.toFixed(1)} ${y.toFixed(1)}`; if(k < segs && Math.random() < .35){ const bx = x + (Math.random() - .5) * len * .4, by = y + (Math.random() - .5) * len * .25; d += ` M${bx.toFixed(1)} ${by.toFixed(1)} L${x.toFixed(1)} ${y.toFixed(1)}`; } }
-    }
-    sv.innerHTML = `<defs><filter id="fxcg"><feGaussianBlur stdDeviation="1.2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs><ellipse class="wave" cx="${r.cx}" cy="${r.cy}" rx="${R0}" ry="${R0 * .55}" fill="none" stroke="var(--yel)" stroke-width="3"/><path class="cr" d="${d}" fill="none" stroke="var(--yel)" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" pathLength="1" filter="url(#fxcg)"/><path class="cr2" d="${d}" fill="none" stroke="#fff" stroke-width=".6" pathLength="1" opacity=".8"/>`;
+    const RX = Math.max(r.w, r.h) * 1.15, RY = RX * .28, cx = r.cx, cy = r.y + r.h * .92;   // alla base della carta
+    const id = "fxcr" + Math.floor(Math.random() * 1e6); let cracks = "";
+    const n = 4 + Math.floor(Math.random() * 3);
+    for(let i = 0; i < n; i++){ const a = (i / n) * Math.PI * 2 + (Math.random() - .5) * .7, x0 = cx + Math.cos(a) * RX * .95, y0 = cy + Math.sin(a) * RY * .95, len = RX * (.25 + Math.random() * .35); let d = `M${x0.toFixed(1)} ${y0.toFixed(1)}`, x = x0, y = y0; for(let k = 1; k <= 2; k++){ const an = a + (Math.random() - .5) * .8; x += Math.cos(an) * len / 2; y += Math.sin(an) * len / 2 * .45; d += ` L${x.toFixed(1)} ${y.toFixed(1)}`; } cracks += d + " "; }
+    const debris = Array.from({ length: 9 }, () => { const a = Math.PI + Math.random() * Math.PI, sp = .6 + Math.random() * .8; return { x: cx + (Math.random() - .5) * r.w * .8, y: cy, vx: Math.cos(a) * RX * sp * .9, vy: Math.sin(a) * RY * sp * 5, s: 3 + Math.random() * 4, rot: Math.random() * 90 }; });
+    sv.innerHTML = `<defs><radialGradient id="${id}"><stop offset="0" stop-color="#000" stop-opacity=".95"/><stop offset=".7" stop-color="#000" stop-opacity=".6"/><stop offset="1" stop-color="var(--yel)" stop-opacity="0"/></radialGradient><filter id="${id}g"><feGaussianBlur stdDeviation="1.4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+      <g class="crat"><ellipse cx="${cx}" cy="${cy}" rx="${RX}" ry="${RY}" fill="url(#${id})"/><ellipse cx="${cx}" cy="${cy}" rx="${RX * .8}" ry="${RY * .72}" fill="none" stroke="var(--yel)" stroke-width="2" filter="url(#${id}g)"/><path d="${cracks}" fill="none" stroke="#0b0608" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><path d="${cracks}" fill="none" stroke="var(--yel)" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" filter="url(#${id}g)"/></g>
+      <ellipse class="wave" cx="${cx}" cy="${cy}" rx="${RX}" ry="${RY}" fill="none" stroke="var(--yel)" stroke-width="2.5"/>
+      ${debris.map((d, i) => `<rect class="db d${i}" x="${d.x - d.s / 2}" y="${d.y - d.s / 2}" width="${d.s}" height="${d.s}" fill="var(--yel)" transform="rotate(${d.rot} ${d.x} ${d.y})"/>`).join("")}`;
     flyLayer.appendChild(sv);
-    sv.querySelector(".wave").animate([{ transform: "scale(.3)", opacity: 1 }, { transform: "scale(2.4)", opacity: 0 }], { duration: Math.max(500, ms * 1.4), easing: "cubic-bezier(.1,.8,.3,1)", fill: "forwards", composite: "replace" });
-    sv.querySelector(".wave").style.transformOrigin = `${r.cx}px ${r.cy}px`;
-    for(const p of sv.querySelectorAll(".cr, .cr2")) p.animate([{ strokeDasharray: "1", strokeDashoffset: 1, opacity: 1 }, { strokeDasharray: "1", strokeDashoffset: 0, opacity: 1, offset: .25 }, { strokeDashoffset: 0, opacity: 1, offset: .6 }, { strokeDashoffset: 0, opacity: 0 }], { duration: hold + 400, fill: "forwards" });
+    const wave = sv.querySelector(".wave"); wave.style.transformOrigin = `${cx}px ${cy}px`;
+    wave.animate([{ transform: "scale(.35)", opacity: 1 }, { transform: "scale(1.9)", opacity: 0 }], { duration: Math.max(500, ms * 1.4), easing: "cubic-bezier(.1,.8,.3,1)", fill: "forwards" });
+    const crat = sv.querySelector(".crat"); crat.style.transformOrigin = `${cx}px ${cy}px`;
+    crat.animate([{ transform: "scale(.6)", opacity: 0 }, { transform: "scale(1)", opacity: 1, offset: .12 }, { opacity: 1, offset: .62 }, { transform: "scale(1)", opacity: 0 }], { duration: hold, easing: "cubic-bezier(.2,.7,.2,1)", fill: "forwards" });
+    sv.querySelectorAll(".db").forEach((e, i) => { const d = debris[i]; e.animate([{ transform: "translate(0,0)", opacity: 1 }, { transform: `translate(${d.vx * .6}px, ${d.vy * .6 - RY * 1.2}px)`, opacity: 1, offset: .45 }, { transform: `translate(${d.vx}px, ${Math.abs(d.vy) * .3}px)`, opacity: 0 }], { duration: hold * .8, easing: "cubic-bezier(.2,.7,.4,1)", fill: "forwards", composite: "add" }); });
     const main = board.querySelector(".bmain") || board; main.animate([{ transform: "translate(0,0)" }, { transform: "translate(-4px,3px)" }, { transform: "translate(4px,-2px)" }, { transform: "translate(-3px,-2px)" }, { transform: "translate(2px,2px)" }, { transform: "translate(0,0)" }], { duration: 360, easing: "linear" });
     sfx("slam");
-    setTimeout(() => sv.remove(), hold + 600);
+    setTimeout(() => sv.remove(), hold + 300);
   }, dur);
 }
 /* fascia di cambio turno */
@@ -613,7 +680,7 @@ function start(opts = {}){
   G = createGame([{ ...d0, name: nm[0] }, { ...d1, name: nm[1] }], DATA.byId, { bot0: !human[0], bot1: !human[1], autoPay: [!!S.profile.autoPay, !!S.profile.autoPay], seed: tut ? TUTORIAL_SEED : undefined, first: tut ? 1 : undefined, chooseFirst: !tut });
   if(tut) ensureHand(G, 0);
   G.decide = botDecide; G.mulliganAsked = [false, false];
-  sel = null; targeting = null; pop = null; handoff = false; lastSeen = { turn: 0, seen: 0 }; fxTurnKey = null; fxBusyUntil = 0; fxAskUntil = 0; fxLastLog = null; fxHeld = [];
+  sel = null; targeting = null; pop = null; handoff = false; lastSeen = { turn: 0, seen: 0 }; fxTurnKey = null; fxBusyUntil = 0; fxAskUntil = 0; fxLastLog = null; fxHeld = []; fxHeldSteals = [];
   $("#board").innerHTML = ""; openBoard();
   // mulligan: ai bot no; agli umani lo chiede la plancia (vedi mulliganHTML: fa parte
   // dello stato, così un ridisegno — es. l'ingresso a schermo intero — non lo perde)
@@ -670,7 +737,7 @@ function drainOpp(){
   if(targeting && !G.players[me()].hand.some(c => c.uid === targeting.uid) && !G.players[me()].field.some(u => u.uid === targeting.uid)) targeting = null;
   if(m.k !== "m") showOpp(b);
   render(); tick();
-  const d = m.k === "m" ? 0 : oppDelay(true);
+  const d = m.k === "m" ? 0 : Math.max(oppDelay(true), fxOn() ? fxBusyUntil - performance.now() + 150 : 0);
   if(oppQ.length){ oppQT = setTimeout(() => { oppQT = null; drainOpp(); }, d); }
 }
 const oppBusy = () => gOnline && (oppQ.length > 0);
@@ -688,7 +755,8 @@ function tick(){
     render(); tick(); return;
   }
   if(!human[G.active] && G.phase === "main" && !G.pending){
-    botTimer = setTimeout(() => { const b = snapBefore(); markMove("opp"); const more = botStep(G, G.active); showOpp(b); render(); if(G.winner != null) finish(); if(more || G.active !== undefined) tick(); }, oppDelay(false));
+    // la mossa successiva (anche la fine del turno) aspetta che gli effetti in fila siano finiti, così il tuo turno non comincia sopra le sue animazioni
+    botTimer = setTimeout(() => { const b = snapBefore(); markMove("opp"); const more = botStep(G, G.active); showOpp(b); render(); if(G.winner != null) finish(); if(more || G.active !== undefined) tick(); }, Math.max(oppDelay(false), fxOn() ? fxBusyUntil - performance.now() + 150 : 0));
     return;
   }
   render();
@@ -831,7 +899,7 @@ ON.setOnlineHooks(Object.assign(hooksForTest, {
     gmode = "online"; mode = "online"; gOnline = true; gSeat = seat; human = [seat === 0, seat === 1];
     // Prerelease: il mazzo dell'avversario deve venire davvero da un kit (si riapre e si confronta)
     const opp = seat === 0 ? row.guest_deck : row.host_deck; oppWarn = oppDeckIssue(opp);
-    sel = null; targeting = null; pop = null; handoff = false; showLog = false; lastSeen = { turn: 0, seen: 0 }; fxTurnKey = "resume"; fxBusyUntil = 0; fxAskUntil = 0; fxLastLog = null; fxHeld = [];
+    sel = null; targeting = null; pop = null; handoff = false; showLog = false; lastSeen = { turn: 0, seen: 0 }; fxTurnKey = "resume"; fxBusyUntil = 0; fxAskUntil = 0; fxLastLog = null; fxHeld = []; fxHeldSteals = [];
     buildOnline(moves);
     if(location.hash !== "#sim") location.hash = "#sim";
     $("#board").innerHTML = ""; openBoard(); render(); tick();
@@ -1047,7 +1115,7 @@ function onBoardAsk(){
       if(o.kind === "block") marks.push({ i, uid: o.uid, label: "Blocca" });
       else if(o.kind === "call"){ const l = P.legends[o.idx]; if(l) marks.push({ i, uid: l.uid, label: "Chiama", cost: "1 €$", cls: "yel" }); else extra.push({ i, label: o.label }); }
       else if(o.kind === "quick") marks.push({ i, uid: o.uid, label: "Quick", cost: `${(o.c && o.c.card.cost) || 0} €$` });
-      else if(o.kind === "qspend") marks.push({ i, uid: o.uid, label: "Quick", cost: "abilità", cls: "yel" });
+      else if(o.kind === "qspend") marks.push({ i, uid: o.uid, label: "Quick", cost: "abilità" });
       else extra.push({ i, label: o.label });
     });
     const a = p.ctx && p.ctx.attacker, t = p.ctx && p.ctx.target;
@@ -1069,7 +1137,7 @@ function onBoardStrip(ob){
 function applyOnBoard(board, ob){
   const find = uid => [...board.querySelectorAll(`[data-uid="${uid}"]`)].find(e => !e.closest("#flyLayer") && !e.classList.contains("up"));
   let any = false;
-  for(const m of ob.marks){ const el = find(m.uid); if(!el) continue; any = true; el.dataset.rx = m.i; el.dataset.rlabel = m.label; if(m.cost) el.dataset.rcost = m.cost; if(m.cls) el.classList.add("rx-" + m.cls); }
+  for(const m of ob.marks){ const el = find(m.uid); if(!el) continue; any = true; el.dataset.rx = m.i; if(!el.dataset.legend){ el.dataset.rlabel = m.label; if(m.cost) el.dataset.rcost = m.cost; } if(m.cls) el.classList.add("rx-" + m.cls); }   // sulle Leggende (piccole) solo il contorno: giallo per chiamare, ciano per l'abilità Quick
   if(ob.hot != null){ const el = find(ob.hot); if(el) el.classList.add("rhot"); }
   if(ob.focus != null){ const el = find(ob.focus); if(el) el.classList.add("rfocus"); }
   board.classList.add("asking");
