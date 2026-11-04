@@ -10,7 +10,7 @@ import { starterDeck, isLegal, validate, deckSize, openDeck } from "./deck.js";
 import { prereleaseSetupHTML, wirePrerelease, verifySealed } from "./prerelease.js";
 import * as ON from "./online.js";
 import { state as cloudState, friends as cloudFriends } from "./cloud.js";
-import { startTutorial, tutorialStep, tutorialBarHTML, tutorialActive, stopTutorial, tutorialAllows, ensureHand, TUTORIAL_SEED, tutorialTour, tutorialHighlight } from "./tutorial.js";
+import { tutorialStep, tutorialBarHTML, tutorialActive, stopTutorial, tutorialAllows, tutorialAllowsOption, ensureHand, tutorialTour, tutorialHighlight, tutorialSlow, LESSONS, startLesson, lessonSetup, lessonStage, lessonScripted, lessonBotAction, nextPart, lesson, lessonPart, tutProgress, unlocked, markDone } from "./tutorial.js";
 
 /* Strumenti manuali (spendi/prepara, ±potenza, sconfiggi, ±1 sui Gig, pesca…):
    permettono di applicare a mano gli effetti che il motore non interpreta,
@@ -90,7 +90,7 @@ function reapplyAnims(board, fresh){
   }
 }
 const ANIM_MS = { instant: 0, fast: 220, normal: 380, slow: 650 };
-const animMs = () => { if(!animWho || document.documentElement.dataset.motion === "reduce") return 0; const k = animWho === "mine" ? (ANIM_MS[S.settings.animMine] != null ? S.settings.animMine : "normal") : oppSpeed(); return ANIM_MS[k] || 0; };
+const animMs = () => { if(!animWho || document.documentElement.dataset.motion === "reduce") return 0; const k = tutorialSlow() ? "slow" : animWho === "mine" ? (ANIM_MS[S.settings.animMine] != null ? S.settings.animMine : "normal") : oppSpeed(); return ANIM_MS[k] || 0; };
 function localRect(board, el){
   let x = 0, y = 0, n = el;
   while(n && n !== board){ x += n.offsetLeft; y += n.offsetTop; n = n.offsetParent; if(!n || n === document.body) return null; }
@@ -614,6 +614,17 @@ function oppDeckIssue(opp){
     return ko.length ? "Mazzo avversario fuori regola: " + ko.join(" · ") : false;
   }catch(e){ return "Mazzo avversario illeggibile"; }
 }
+/* Tutorial: lezioni in fila, la successiva si sblocca finendo la precedente. Alla prima apertura si chiede
+   se è la prima notte a Night City: chi conosce già il gioco le trova tutte aperte. */
+function tutListHTML(){
+  const t = tutProgress(S);
+  if(!t.asked) return `<div class="tutask"><b>È la tua prima notte a Night City?</b><span>Se il gioco è nuovo, le lezioni si aprono una alla volta, dalla prima. Se lo conosci già, le trovi tutte aperte e scegli tu da dove partire.</span>
+    <div class="opts"><button class="btn acc2" data-tutfirst="1">Sì, insegnami tutto</button><button class="btn" data-tutfirst="0">No, conosco già il gioco</button></div></div>`;
+  return `<div class="tutlist">${LESSONS.map((l, i) => { const open = unlocked(S, i), done = t.done.includes(l.id);
+    return `<div class="tutitem${open ? "" : " locked"}"><div><b><i>${i + 1}.</i> <span class="tt">${esc(l.title)}</span>${done ? ` <span class="chip good">fatta</span>` : ""}</b><span>${esc(l.sub)}</span></div>
+      <button class="btn${open ? " acc2" : ""}" data-lesson="${l.id}"${open ? "" : " disabled"}>${open ? (done ? "Rifai" : "Inizia") : "🔒"}</button></div>`; }).join("")}</div>
+    <div class="sub" style="margin-top:8px">${t.vet ? "Tutte le lezioni sono aperte." : "Finisci una lezione per aprire la successiva."} <a href="#" data-tutreset="1">${t.vet ? "Riparti dalla prima" : "Conosco già il gioco: apri tutto"}</a></div>`;
+}
 const MODES = { built: [["bot", "Sfida IA"], ["hot", "Offline"], ["online", "Online"], ["tutorial", "Tutorial"]], sealed: [["bot", "Sfida IA"], ["online", "Online"]] };
 export function simKind(){ return kind || S.settings.simKind || "built"; }
 /* le tre schede del Simulator: Costruito · Prerelease · Regole (le Regole hanno una pagina a sé, #rules) */
@@ -641,9 +652,7 @@ export function renderSim(){
     : `<div>${lbl(mode === "bot" ? "Mazzo dell'IA" : "Mazzo del giocatore 2")}<select class="inp" id="simDeck1">${builtOpts(S.settings.simDeck1 || "starter:embracingpowerretailstarterdeck")}</select></div>`;
   const resume = G && G.winner == null && !gOnline ? `<button class="btn" id="simResume">Riprendi la partita in corso</button>` : "";
   let body;
-  if(mode === "tutorial") body = `<div class="tutlist">
-      <div class="tutitem"><div><b>Partita guidata</b><span>Conosci la plancia, poi una partita contro l'IA passo per passo: vendere, giocare, chiamare, attaccare, reagire.</span></div><button class="btn acc2" id="simTutorial">Inizia</button></div>
-    </div>${resume ? `<div style="margin-top:10px">${resume}</div>` : ""}`;
+  if(mode === "tutorial") body = tutListHTML() + (resume ? `<div style="margin-top:10px">${resume}</div>` : "");
   else if(mode === "online") body = `<div class="simdecks" style="margin-top:10px">${deck0}</div>${kind === "sealed" && !sealed.length ? "" : onlineLobbyHTML()}`;
   else body = `<div class="simdecks" style="margin-top:10px">${deck0}${deck1}</div>
       ${kind === "sealed" && !sealed.length ? "" : `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;align-items:center">
@@ -671,6 +680,15 @@ function deckFrom(v){
 }
 
 /* ------------------------------------------------------------ partita */
+/* partita di una lezione: mazzi e seme della lezione, poi la situazione già pronta (se c'è) */
+function startLessonGame(id, partIdx = 0){
+  if(id) startLesson(id, partIdx);
+  const ls = lessonSetup(DATA);
+  const decks = ls.decks === "starters" ? [starterDeck("theheistretailstarterdeck", "Tu"), starterDeck("embracingpowerretailstarterdeck", "IA")] : ls.decks;
+  mode = "bot"; human = [true, false];
+  start({ deck0: decks[0], deck1: decks[1], lesson: ls });
+  mode = "tutorial";
+}
 function start(opts = {}){
   const v0 = $("#simDeck0")?.value, v1 = $("#simDeck1")?.value;
   let d0 = opts.deck0 || (v0 && deckFrom(v0)), d1 = opts.deck1 || (v1 && deckFrom(v1));
@@ -685,9 +703,9 @@ function start(opts = {}){
   gmode = mode; gOnline = false;
   human = mode === "bot" ? [true, false] : [true, true];
   const nm = names();
-  const tut = tutorialActive();
-  G = createGame([{ ...d0, name: nm[0] }, { ...d1, name: nm[1] }], DATA.byId, { bot0: !human[0], bot1: !human[1], autoPay: [!!S.profile.autoPay, !!S.profile.autoPay], seed: tut ? TUTORIAL_SEED : undefined, first: tut ? 1 : undefined, chooseFirst: !tut });
-  if(tut) ensureHand(G, 0);
+  const ls = tutorialActive() ? opts.lesson : null; if(!ls && tutorialActive()) stopTutorial();
+  G = createGame([{ ...d0, name: nm[0] }, { ...d1, name: nm[1] }], DATA.byId, { bot0: !human[0], bot1: !human[1], autoPay: [!!S.profile.autoPay, !!S.profile.autoPay], seed: ls ? ls.seed : undefined, first: ls ? ls.first : undefined, chooseFirst: !ls });
+  if(ls){ G.lesson = true; if(ls.ensure) ensureHand(G, 0); if(ls.staged) lessonStage(G); }
   G.decide = botDecide; G.mulliganAsked = [false, false];
   sel = null; targeting = null; pop = null; handoff = false; holder = mode === "hot" ? 0 : null; seenLog = [null, null]; lastSeen = { turn: 0, seen: 0 }; fxTurnKey = null; fxBusyUntil = 0; fxAskUntil = 0; fxLastLog = null; fxHeld = []; fxHeldSteals = [];
   $("#board").innerHTML = ""; openBoard();
@@ -708,11 +726,9 @@ function mulliganHTML(){
 }
 function openBoard(){
   const b = $("#board"); b.hidden = false; document.body.style.overflow = "hidden";
-  // app installata: niente schermo intero (il telefono mostrerebbe il suo avviso «scorri per uscire»), si prova solo a girare in orizzontale.
-  // Nel browser lo schermo intero serve a togliere le barre; si può spegnere dalle Impostazioni.
-  // Senza schermo intero, se il telefono non si lascia girare, la plancia si ruota da sola dentro lo schermo (e si gioca lo stesso).
-  const installed = matchMedia("(display-mode: standalone), (display-mode: fullscreen)").matches || navigator.standalone === true;
-  const full = S.settings.fullscreen ?? !installed;   // predefinito: sì nel browser, no nell'app installata
+  // schermo intero + orizzontale: è l'unico modo perché Android giri davvero la plancia (mostra il suo avviso «scorri per uscire»).
+  // Con «No» nelle Impostazioni si prova solo a girare; se il telefono non si lascia, la plancia si ruota dentro lo schermo (su iPhone succede sempre).
+  const full = S.settings.fullscreen !== false;   // predefinito: sì (vero orizzontale, nessuna rotazione finta); «No» evita l'avviso del telefono
   try{
     if(full) document.documentElement.requestFullscreen?.().then(() => screen.orientation?.lock?.("landscape").catch(() => {})).catch(() => {});
     else screen.orientation?.lock?.("landscape").catch(() => {});
@@ -732,7 +748,7 @@ function closeBoard(){
    regolabile; ogni mossa compare in un riquadro sulla plancia e le carte appena entrate lampeggiano. */
 const boardLayout = () => S.settings.boardLayout === "rail" ? "rail" : "classic";
 const OPP_SPEED = { instant: [650, 0], fast: [1100, 700], normal: [1800, 1300], slow: [2800, 2300] };
-const oppSpeed = () => OPP_SPEED[S.settings.oppSpeed] ? S.settings.oppSpeed : "normal";
+const oppSpeed = () => tutorialSlow() ? "slow" : OPP_SPEED[S.settings.oppSpeed] ? S.settings.oppSpeed : "normal";
 const oppDelay = online => OPP_SPEED[oppSpeed()][online ? 1 : 0];
 let feed = [], feedT = null, flashUids = new Set(), oppQ = [], oppQT = null;
 const fieldUids = () => new Set(G.players.flatMap(P => [...P.field, ...P.legends].map(u => u.uid)));
@@ -773,7 +789,7 @@ function tick(){
   }
   if(!human[G.active] && G.phase === "main" && !G.pending){
     // la mossa successiva (anche la fine del turno) aspetta che gli effetti in fila siano finiti, così il tuo turno non comincia sopra le sue animazioni
-    botTimer = setTimeout(() => { const b = snapBefore(); markMove("opp"); const more = botStep(G, G.active); showOpp(b); render(); if(G.winner != null) finish(); if(more || G.active !== undefined) tick(); }, Math.max(oppDelay(false), fxOn() ? fxBusyUntil - performance.now() + 150 : 0));
+    botTimer = setTimeout(() => { const b = snapBefore(); markMove("opp"); const more = lessonScripted() ? (doAction(G, G.active, lessonBotAction(G, G.active)), true) : botStep(G, G.active); showOpp(b); render(); if(G.winner != null) finish(); if(more || G.active !== undefined) tick(); }, Math.max(oppDelay(false), fxOn() ? fxBusyUntil - performance.now() + 150 : 0));
     return;
   }
   render();
@@ -781,6 +797,7 @@ function tick(){
 }
 function finish(){
   if(!G || G.winner == null || G.recorded) return; G.recorded = true;
+  if(G.lesson){ render(); return; }   // le lezioni non contano nel record
   if(gmode === "online"){ finishOnline(); return; }
   if(gmode === "bot"){ if(G.winner === 0) S.record.wins = (S.record.wins || 0) + 1; else S.record.losses = (S.record.losses || 0) + 1; }
   S.record.games = [{ when: Date.now(), mode, winner: G.players[G.winner].name, reason: G.reason, turns: G.turn }, ...(S.record.games || [])].slice(0, 50);
@@ -1272,7 +1289,7 @@ function fieldCard(el, owner){
   }
   const items = [];
   if(mine && myTurn){
-    const can = canAttack(G, M, u) && tutorialAllows("attack");
+    const can = canAttack(G, M, u) && tutorialAllows("attack", u);
     const apw = powerIn(G, M, u, { attacking: true });
     items.push({ label: apw < 1 ? "Attacca l'area Gig (potenza 0: non ruba, ma attiva gli effetti)" : `Attacca l'area Gig (${1 + Math.floor(apw / 10)} Gig)`, cls: "acc", disabled: !can || !rival(G, M).gigs.length || u.fx.onlyUnits, fn: () => after(act(M.id, { t: "attack", uid: u.uid, target: { kind: "gigs" } })) });
     items.push({ label: "Attacca un'Unità spesa →", disabled: !can || !rival(G, M).field.some(x => x.spent), fn: () => { targeting = { kind: "attack", uid: u.uid }; sel = u.uid; render(); note("Tocca l'Unità rivale spesa da attaccare"); } });
@@ -1352,7 +1369,11 @@ function wire(){
     if(mode === "tutorial") mode = "bot"; renderSim(); if(d.format === "sealed"){ mode = "bot"; start(); } });
   root.addEventListener("click", e => { const z = e.target.closest(".pkg [data-zoom]"); if(z) openLens(imgUrl(z.dataset.zoom)); });
   wirePrerelease(root, id => { location.hash = "#deck"; openDeck(id); toast("Scegli 3 Leggende e almeno 30 carte, poi «Gioca»", 4000); });
-  root.addEventListener("click", e => { if(e.target.closest("#simTutorial")){ mode = "bot"; human = [true, false]; startTutorial(); start({ deck0: starterDeck("theheistretailstarterdeck", "Tutorial"), deck1: starterDeck("embracingpowerretailstarterdeck", "IA") }); mode = "tutorial"; } });
+  root.addEventListener("click", e => {
+    const f = e.target.closest("[data-tutfirst]"); if(f){ const t = tutProgress(S); t.asked = true; t.vet = f.dataset.tutfirst === "0"; S.settings.tut = t; S.save("settings"); renderSim(); return; }
+    const r = e.target.closest("[data-tutreset]"); if(r){ e.preventDefault(); const t = tutProgress(S); t.vet = !t.vet; if(!t.vet) t.done = []; S.settings.tut = t; S.save("settings"); renderSim(); return; }
+    const l = e.target.closest("[data-lesson]"); if(l && !l.disabled) startLessonGame(l.dataset.lesson);
+  });
 
   const board = $("#board");
   // pressione lunga: zoom
@@ -1411,6 +1432,41 @@ function wire(){
   const hsEnd = e => { if(hs && e.pointerId === hs.id){ if(hs.mode === "scroll") hsDone = Date.now(); hs = null; } };
   board.addEventListener("pointerup", hsEnd, true); board.addEventListener("pointercancel", hsEnd, true);
   board.addEventListener("click", e => { if(Date.now() - hsDone < 350){ e.preventDefault(); e.stopPropagation(); } }, true);
+  // dadi da lanciare: quando bisogna tirare dal fixer, un dado del pannello (o del tuo fixer sulla plancia) si può trascinare
+  // e lasciare andare: vola via girando e parte il tiro. Un tocco semplice sceglie il dado come prima.
+  let dd = null, ddThrown = 0;
+  const dieAskBtn = el => {
+    const opt = el.closest("#simAsk .die-opt"); if(opt) return opt;
+    const fx = el.closest(".die.fx"), own = fx && fx.closest(`.dice[data-owner="${me()}"]`); if(!own) return null;
+    const sides = (fx.className.match(/\bd(\d+)\b/) || [])[1]; return sides ? $$("#simAsk .die-opt").find(b => b.querySelector(`.die.d${sides}`) && !b.disabled) || null : null;
+  };
+  board.addEventListener("pointerdown", e => {
+    dd = null; if(!e.isPrimary || !G || !G.pending || G.pending.kind !== "die") return;
+    const btn = dieAskBtn(e.target); if(!btn || btn.disabled) return;
+    const src = e.target.closest(".die") || btn.querySelector(".die"); dd = { btn, src, x: e.clientX, y: e.clientY, id: e.pointerId, ghost: null, hist: [] };
+  }, true);
+  board.addEventListener("pointermove", e => {
+    if(!dd || e.pointerId !== dd.id) return;
+    const dx = e.clientX - dd.x, dy = e.clientY - dd.y; dd.hist.push({ x: e.clientX, y: e.clientY, t: performance.now() }); if(dd.hist.length > 6) dd.hist.shift();
+    if(!dd.ghost){ if(Math.hypot(dx, dy) < 12) return;
+      const r = dd.src.getBoundingClientRect(); dd.ghost = dd.src.cloneNode(true); dd.ghost.classList.add("dieghost"); dd.ghost.style.cssText = `position:fixed;left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px;--dw:${r.width}px;z-index:99;pointer-events:none;margin:0`;
+      document.body.appendChild(dd.ghost); dd.r = r; }
+    dd.ghost.style.transform = `translate(${dx}px, ${dy}px) rotate(${Math.round((dx + dy) * .8)}deg)`; e.preventDefault();
+  }, true);
+  const ddEnd = e => {
+    if(!dd || e.pointerId !== dd.id) return; const d = dd; dd = null; if(!d.ghost) return;
+    const dx = e.clientX - d.x, dy = e.clientY - d.y, far = Math.hypot(dx, dy) > 40 && e.type !== "pointercancel";
+    ddThrown = Date.now();
+    if(!far){ d.ghost.remove(); return; }
+    // la spinta segue la velocità del dito (gli ultimi movimenti), poi il dado sparisce girando e parte il tiro
+    const h = d.hist, a = h[0], z = h[h.length - 1], dt = Math.max(16, (z && a ? z.t - a.t : 16));
+    const vx = z && a ? (z.x - a.x) / dt : 0, vy = z && a ? (z.y - a.y) / dt : 0, k = 220;
+    const anim = d.ghost.animate([{ transform: d.ghost.style.transform, opacity: 1 }, { transform: `translate(${dx + vx * k}px, ${dy + vy * k}px) rotate(${Math.round((dx + dy) * .8) + 540}deg) scale(.7)`, opacity: 0 }], { duration: 320, easing: "cubic-bezier(.2,.7,.3,1)" });
+    anim.onfinish = () => d.ghost.remove();
+    if(G && G.pending && G.pending.kind === "die") setTimeout(() => { ddThrown = 0; if(d.btn.isConnected) d.btn.click(); }, 180);
+  };
+  board.addEventListener("pointerup", ddEnd, true); board.addEventListener("pointercancel", ddEnd, true);
+  board.addEventListener("click", e => { if(ddThrown && Date.now() - ddThrown < 400){ e.preventDefault(); e.stopPropagation(); } }, true);
   board.addEventListener("pointerdown", e => {
     if(drag) return;                                   // un secondo dito non avvia un altro trascinamento
     if(!e.isPrimary || !G || G.winner != null) return;
@@ -1484,9 +1540,14 @@ function wire(){
     if(t.closest("#bExit")){ closeBoard(); return; }
     if(t.closest("#bHand")){ const to = handoff; if(holder != null) seenLog[holder] = G.log[G.log.length - 1] || null; holder = to; handoff = false; render(); tick(); return; }
     if(t.closest("[data-react]")){ reactCover = G.pending; render(); return; }
-    const rx = t.closest("[data-rx]"); if(rx && G.pending && !board.classList.contains("ask-wait")){ if(G.pending.kind === "block") G.tutReacted = true; res(+rx.dataset.rx); render(); tick(); return; }
+    const rx = t.closest("[data-rx]"); if(rx && G.pending && !tutorialAllowsOption(G.pending, G.pending.options[+rx.dataset.rx])){ note("Segui il passo del tutorial"); return; }
+    if(rx && G.pending && !board.classList.contains("ask-wait")){ if(G.pending.kind === "block") G.tutReacted = true; res(+rx.dataset.rx); render(); tick(); return; }
     if(t.closest("#bAskList")){ askList = G.pending; render(); return; }
     if(t.closest("#tutNext")){ tutorialStep(G, me(), true); render(); return; }
+    if(t.closest("#tutPart")){ if(nextPart()) startLessonGame(null); else render(); return; }
+    if(t.closest("#tutDone") && (lessonPart() || {}).free){ const L = lesson(); if(L) markDone(S, L.id); stopTutorial(); render(); toast("Guida chiusa: la partita continua"); return; }
+    if(t.closest("#tutDone")){ const L = lesson(); if(L) markDone(S, L.id); const i = LESSONS.indexOf(L), nx = LESSONS[i + 1]; stopTutorial(); if(G) G.recorded = true; G = null; closeBoard(); mode = "tutorial"; renderSim();
+      toast(nx ? `Lezione completata: si apre «${nx.title}»` : "Tutorial completato: ora sei pronto per Night City", 4000); return; }
     if(payMode()){
       const pm = payMode();
       if(t.closest("#bPayCancel")){ res(payOpt(o => o.kind === "cancel")); render(); tick(); return; }
@@ -1496,10 +1557,11 @@ function wire(){
       if(!t.closest(".bstrip, .pop, #simLog")) note("Tocca un Eddie o una Leggenda, oppure Annulla");
       return;
     }
-    const mull = t.closest("[data-mull]"); if(mull){ const who = mulliganPending(); doMull(who, mull.dataset.mull === "redo"); if(tutorialActive() && who === 0) ensureHand(G, 0); render(); tick(); return; }
+    const mull = t.closest("[data-mull]"); if(mull){ const who = mulliganPending(); doMull(who, mull.dataset.mull === "redo"); if(tutorialActive() && (lessonPart() || {}).ensure && who === 0) ensureHand(G, 0); render(); tick(); return; }
     const zoom = t.closest("[data-zoom]"); if(zoom){ openLens(imgUrl(zoom.dataset.zoom)); return; }
     const pk = t.closest("[data-pick]"); if(pk && G.pending){ pickSel = { p: G.pending, i: +pk.dataset.pick }; render(); return; }
-    const ask = t.closest("[data-ask]"); if(ask){ if(G.pending && G.pending.kind === "block" && human[G.pending.player]) G.tutReacted = true; res(+ask.dataset.ask); render(); tick(); return; }
+    const ask = t.closest("[data-ask]"); if(ask && G.pending && !tutorialAllowsOption(G.pending, G.pending.options[+ask.dataset.ask])){ note("Segui il passo del tutorial"); return; }
+    if(ask){ if(G.pending && G.pending.kind === "block" && human[G.pending.player]) G.tutReacted = true; res(+ask.dataset.ask); render(); tick(); return; }
     const gc = t.closest("[data-gear-of]"); if(gc){ const host = +gc.dataset.gearOf; if(gearOpen !== host){ gearOpen = host; render(); } else gearCard(gc); return; }
     const hand = t.closest("[data-hand=\"1\"]"); if(hand){ handCard(hand, G.players[me()]); return; }
     const leg = t.closest("[data-legend]"); if(leg){ legendCard(leg, +leg.dataset.lo); return; }

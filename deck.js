@@ -365,6 +365,7 @@ function renderBrowser(){
   const d = CUR, lim = ramLimits(d);
   let list = DATA.cards.filter(c => browse === "legends" ? c.type === "Legend" : c.type !== "Legend").filter(c => passes(c, F));
   if(d.format === "sealed") list = list.filter(c => poolCount(d, c.id) > 0);
+  if(F.fav){ const fc = S.settings.favCards || {}; list = list.filter(c => fc[c.id]); }   // carte preferite della Collection
   if(F.ramOnly && browse === "cards" && d.format !== "sealed") list = list.filter(c => (c.ramN || 0) <= (lim[c.color] || 0));
   list = sortCards(list, F.sort || "color");
   $("#deckCount").textContent = `${list.length} carte`;

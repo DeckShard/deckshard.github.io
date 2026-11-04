@@ -9,6 +9,8 @@
 @media (orientation: portrait) and (max-width: 760px){
   #board, body:has(#board:not([hidden])) #lens, body:has(#board:not([hidden])) #sheet{width:100dvh;height:100dvw;transform:rotate(90deg) translateY(-100%);transform-origin:top left;inset:auto;top:0;left:0}
   body:has(#board:not([hidden])) #sheet #sheetBox{max-height:100dvw}
+  /* lente ruotata con la plancia: larghezza e altezza disponibili sono scambiate */
+  body:has(#board:not([hidden])) #lens img{max-width:96dvh;max-height:90dvw}
 }
 .bz{display:flex;align-items:center;gap:4px;padding:3px 8px;min-height:0}
 .bz.rival{flex:1 1 0;flex-direction:column;align-items:stretch;justify-content:flex-start;border-bottom:1px dashed var(--line2);overflow:hidden}
@@ -165,7 +167,7 @@ html[data-motion="reduce"] .die.rolling,html[data-motion="reduce"] .die.landed,h
 /* ---------- tutorial e prerelease ---------- */
 .tutbar{position:absolute;left:50%;top:6px;transform:translateX(-50%);z-index:49;display:flex;align-items:center;gap:8px;max-width:min(680px,94%);
   background:var(--bg2);border:1px solid var(--acc2Fill);box-shadow:0 0 0 3px color-mix(in srgb,var(--acc2Fill) 25%,transparent),var(--shadow);padding:8px 10px;font-size:13px;line-height:1.35}
-.tutbar .n{font-weight:800;color:var(--acc2);white-space:nowrap} .tutbar .tx{flex:1}
+.tutbar .n{font-weight:800;color:var(--acc2);max-width:10em;font-size:.92em;display:flex;flex-direction:column;gap:1px}.tutbar .n small{font-weight:600;opacity:.8} .tutbar .tx{flex:1}
 .kit{display:flex;flex-direction:column;gap:10px;margin-top:12px}
 .pack .pkh{font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--mute);margin-bottom:4px}
 .pkg{display:flex;gap:6px;flex-wrap:wrap}
@@ -434,3 +436,15 @@ html[data-theme="light"] #flyLayer .fxleg .term{background:rgba(255,255,255,.95)
 /* a colonna, senza grafiche avanzate: tutto il tuo riquadro laterale accetta la vendita */
 #board .rs.mine.sellside{outline:2px dashed var(--yel);outline-offset:-3px;animation:none;background:color-mix(in srgb,var(--yel) 7%,transparent)}
 #board .rs.mine.sellside [data-eddies].drop{box-shadow:0 0 0 2px var(--yel),0 0 16px var(--yel)}
+/* dadi leggibili: numero con contorno scuro (sul giallo del d8 e sul verde del d6 il bianco si perdeva), etichetta più grande,
+   dadi del fixer meno sbiaditi; sugli aspetti chiari l'etichetta è chiara con il bordo del colore del dado */
+.die b{text-shadow:0 0 2px #000,0 1px 3px rgba(0,0,0,.95),0 0 calc(var(--dw) * .18) var(--c)}
+.die small{font-size:max(9px, calc(var(--dw) * .24));font-weight:800;letter-spacing:.06em;line-height:1.15}
+.die.fx{opacity:.78}
+html[data-theme="light"] .die small{color:#14100f;background:color-mix(in srgb,var(--c) 22%,#fff);box-shadow:inset 0 0 0 1.5px var(--c)}
+html[data-theme="light"] .die.fx small{background:color-mix(in srgb,var(--c) 14%,#fff)}
+html[data-theme="light"] .die b{text-shadow:0 0 2px #fff,0 0 4px #fff}
+#simAsk .btn.die-opt .avg{font-size:10.5px;color:var(--ink2)}
+/* dadi da trascinare per lanciarli */
+#simAsk .btn.die-opt{touch-action:none}
+.die.dieghost{filter:drop-shadow(0 0 12px var(--c)) drop-shadow(0 6px 12px rgba(0,0,0,.6))}

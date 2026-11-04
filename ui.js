@@ -81,7 +81,7 @@ export function tileHTML(c, pid, opts = {}){
     ${p.img ? `<img src="${thumbUrl(p.id)}" alt="${esc(c.dn)}" loading="lazy" decoding="async">` : `<div class="ph">${esc(c.dn)}</div>`}
     ${opts.qty !== false ? `<span class="qty${q ? "" : " zero"}">${q ? "×" + q : "0"}</span>` : ""}
     ${p.rarity && p.rarity !== "Common" && opts.rarity !== false ? `<span class="tr">${esc(RARITY_IT[p.rarity] || p.rarity)}</span>` : ""}
-    ${opts.star ? (() => { const on = (S.settings.favPrints || {})[c.id] === p.id; return `<button class="favst${on ? " on" : ""}" data-favstar="${c.id}" data-favpid="${p.id}" aria-label="${on ? "Togli l'artwork preferito" : "Imposta come artwork preferito"}" title="${on ? "Artwork preferito" : "Imposta come artwork preferito"}">${on ? "★" : "☆"}</button>`; })() : ""}
+    ${opts.star ? (() => { const on = !!(S.settings.favCards || {})[c.id]; return `<button class="favst${on ? " on" : ""}" data-favcard="${c.id}" aria-label="${on ? "Togli dalle carte preferite" : "Aggiungi alle carte preferite"}" title="${on ? "Carta preferita" : "Aggiungi alle carte preferite"}">${on ? "★" : "☆"}</button>`; })() : ""}
     <div class="cap"><b>${pr ? eur(pr.trend) + (pr.approx ? " ~" : "") : "—"}</b>${esc(c.dn)}${opts.sub ? `<small>${esc(opts.sub)}</small>` : ""}</div>
   </div>`;
 }
@@ -102,15 +102,17 @@ export function rowHTML(c, pid, right = "", extra = "", compact = false, badge =
 
 /* ------------------------------------------------------------ filtri */
 export function makeFilters(scope){
-  return { q: "", colors: new Set(), types: new Set(), rar: new Set(), cls: new Set(), cost: new Set(), sets: new Set(), kw: new Set(), fx: new Set(), fav: false, open: new Set(), owned: false, scope };
+  return { q: "", colors: new Set(), types: new Set(), rar: new Set(), cls: new Set(), cost: new Set(), sets: new Set(), kw: new Set(), fx: new Set(), fav: false, favArt: false, open: new Set(), owned: false, scope };
 }
 /* parole chiave del gioco (quelle a inizio riga: una citata nel testo di un'altra carta non conta) e abilità a innesco */
 const KW_FILTERS = [["Blocker", c => c.kw.includes("Blocker")], ["Go Solo", c => c.kw.includes("Go Solo")], ["Quick", c => c.kw.includes("Quick") || /(^|\n)\{Quick\}/.test(c.text || "")], ["Adrenaline", c => c.kw.includes("Adrenaline")],
   ["Play", c => /\{Play\}/.test(c.text || "")], ["Attack", c => /\{Attack\}/.test(c.text || "")], ["Spend", c => /\{Spend\}/.test(c.text || "")], ["Call", c => /\{Call\}/.test(c.text || "")], ["Defeated", c => /\{Defeated\}/.test(c.text || "")]];
 /* effetti principali, letti dal testo inglese delle carte */
-const FX_FILTERS = [["Pesca", /\bdraws? (\d|a|an|one|two|three)\b/i], ["Sconfigge", /\bdefeat/i], ["Prepara", /\bready\b/i], ["Ruba Gig", /\bsteal/i], ["± Potenza", /[+−-]\d+ power/i], ["Scarta", /\bdiscard/i], ["Valore dei Gig", /(increase|decrease|adjust|set|change)\b.{0,40}\bgig|\bgig\b.{0,30}\bvalue/i]];
+const FX_FILTERS = [["Pesca", /\bdraws? (\d|a|an|one|two|three)\b/i], ["Sconfigge", /\bdefeats?\b/i], ["Prepara", /\bready\b/i], ["Gig in più", /\b(also steals? a gig|steal a rival gig|steals? (an )?(extra|additional|\d+ more) gigs?)\b/i], ["Quando ruba", /\b(when|whenever|the first time)\b[^.]*\bsteals?\b/i], ["Difende i Gig", /\b(can't steal|steals? \d+ fewer|would steal)\b/i], ["± Potenza", /[+−-]\d+ power/i], ["Scarta", /\bdiscard/i], ["Valore dei Gig", /(increase|decrease|adjust|set|change)\b.{0,40}\bgig|\bgig\b.{0,30}\bvalue/i]];
 const kwOk = (c, k) => { const d = KW_FILTERS.find(x => x[0] === k); return d ? d[1](c) : false; };
-const fxOk = (c, k) => { const d = FX_FILTERS.find(x => x[0] === k); return d ? d[1].test(c.text || "") : false; };
+// il testo di promemoria tra parentesi (es. «Units with power 0 don't steal Gigs») non conta come effetto
+const fxText = c => c.__fx ?? (c.__fx = (c.text || "").replace(/\([^)]*\)/g, ""));
+const fxOk = (c, k) => { const d = FX_FILTERS.find(x => x[0] === k); return d ? d[1].test(fxText(c)) : false; };
 /* le carte su cui il filtro lavora: Leggende o le altre nel deckbuilder, tutte nella Collection (serve per nascondere le voci vuote) */
 const filterPool = f => f.scope === "deck" ? DATA.cards.filter(c => f.browse === "legends" ? c.type === "Legend" : c.type !== "Legend") : DATA.cards;
 export function filtersHTML(f){
@@ -124,13 +126,13 @@ export function filtersHTML(f){
   const cls = classificationsOf().filter(k => f.cls.has(k) || pool.some(c => c.cls.includes(k))).map(k => `<button class="tag" data-fk="cls" data-fv="${esc(k)}" aria-pressed="${f.cls.has(k)}">${esc(k)}</button>`).join("");
   const kws = KW_FILTERS.filter(([k]) => f.kw.has(k) || pool.some(c => kwOk(c, k))).map(([k]) => `<button class="tag kwt" data-fk="kw" data-fv="${k}" aria-pressed="${f.kw.has(k)}">${k}</button>`).join("");
   const fxs = FX_FILTERS.filter(([k]) => f.fx.has(k) || pool.some(c => fxOk(c, k))).map(([k]) => `<button class="tag" data-fk="fx" data-fv="${k}" aria-pressed="${f.fx.has(k)}">${k}</button>`).join("");
-  const n = f.colors.size + f.types.size + f.rar.size + f.cls.size + f.cost.size + f.sets.size + f.kw.size + f.fx.size + (f.fav ? 1 : 0);
+  const n = f.colors.size + f.types.size + f.rar.size + f.cls.size + f.cost.size + f.sets.size + f.kw.size + f.fx.size + (f.fav ? 1 : 0) + (f.favArt ? 1 : 0);
   const row = (lbl, inner) => inner ? `<div class="frow"><span class="lbl">${lbl}</span><span class="fopts">${inner}</span></div>` : "";
   // le righe lunghe mostrano al massimo due righe di valori; «Tutti…» le apre
   const clamp = (key, lbl, inner, more) => inner ? `<div class="frow"><span class="lbl">${lbl}</span><div class="fcol"><span class="fopts clamp${f.open.has(key) ? " open" : ""}" data-row="${key}">${inner}</span><button class="tag more" data-fmore="${key}">${f.open.has(key) ? "Meno" : more}</button></div></div>` : "";
   return `${row("Colore", pips)}${row("Tipo", types)}${row("Costo", costs)}${clamp("rar", "Rarità", rar, "Tutte le rarità")}${clamp("cls", "Tratti", cls, "Tutti i tratti")}
     ${clamp("kw", "Parole chiave", kws, "Tutte le parole chiave")}${clamp("fx", "Effetti", fxs, "Tutti gli effetti")}
-    ${f.scope === "coll" ? row("Preferite", `<button class="tag" data-ffav="1" aria-pressed="${!!f.fav}">★ Artwork preferito</button>`) : ""}
+    ${f.scope === "coll" || f.scope === "deck" ? row("Preferite", `<button class="tag" data-ffav="1" aria-pressed="${!!f.fav}">★ Carte preferite</button>${f.scope === "coll" ? `<button class="tag" data-ffavart="1" aria-pressed="${!!f.favArt}">◆ Con artwork preferito</button>` : ""}`) : ""}
     ${n ? `<button class="btn sm" data-fclear="1">Azzera i ${n} filtri</button>` : ""}`;
 }
 /* dopo il disegno: le righe che stanno già in due righe non mostrano «Tutti…» */
@@ -150,7 +152,8 @@ export function filterClick(f, target){
   const b = target.closest("[data-fk]"); if(b){ const set = f[b.dataset.fk]; set.has(b.dataset.fv) ? set.delete(b.dataset.fv) : set.add(b.dataset.fv); return "list"; }
   const m = target.closest("[data-fmore]"); if(m){ f.open.has(m.dataset.fmore) ? f.open.delete(m.dataset.fmore) : f.open.add(m.dataset.fmore); return "filters"; }
   if(target.closest("[data-ffav]")){ f.fav = !f.fav; return "list"; }
-  if(target.closest("[data-fclear]")){ for(const k of ["colors", "types", "rar", "cls", "cost", "sets", "kw", "fx"]) f[k].clear(); f.fav = false; return "list"; }
+  if(target.closest("[data-ffavart]")){ f.favArt = !f.favArt; return "list"; }
+  if(target.closest("[data-fclear]")){ for(const k of ["colors", "types", "rar", "cls", "cost", "sets", "kw", "fx"]) f[k].clear(); f.fav = false; f.favArt = false; return "list"; }
   return null;
 }
 export function passes(c, f){
@@ -225,7 +228,7 @@ function renderSheet(opts){
   $("#sheetBox").innerHTML = `
     <div class="grab"><i></i></div>
     <div class="shd">
-      <div class="art">${p.img ? `<img id="sheetArt" src="${imgUrl(p.id)}" alt="${esc(c.dn)}">` : `<div class="ph">${esc(c.dn)}</div>`}${opts.pick ? "" : `<button class="favst big${(S.settings.favPrints || {})[c.id] === p.id ? " on" : ""}" id="favStar" aria-label="Artwork preferito" title="Artwork preferito">${(S.settings.favPrints || {})[c.id] === p.id ? "★" : "☆"}</button>`}</div>
+      <div class="art">${p.img ? `<img id="sheetArt" src="${imgUrl(p.id)}" alt="${esc(c.dn)}">` : `<div class="ph">${esc(c.dn)}</div>`}${opts.pick ? "" : `<button class="favst big${(S.settings.favCards || {})[c.id] ? " on" : ""}" id="favStar" aria-label="Carta preferita" title="${(S.settings.favCards || {})[c.id] ? "Carta preferita" : "Aggiungi alle carte preferite"}">${(S.settings.favCards || {})[c.id] ? "★" : "☆"}</button>`}</div>
       <div style="flex:1;min-width:0">
         <h3>${esc(c.dn)}</h3>
         <div class="ln"><i class="pip ${c.color}"></i> ${COLOR_IT[c.color] || ""} · ${TYPE_IT[c.type] || c.type}${c.cls.length ? " · " + esc(c.cls.join(", ")) : ""}</div>
@@ -246,7 +249,7 @@ function renderSheet(opts){
         <button data-q="-1" aria-label="meno">−</button><b id="sheetQty">${q}</b><button data-q="1" aria-label="più">+</button>
       </span>
       <span class="chip" id="sheetTot">${tot} in collezione</span>
-      <button class="btn sm${(S.settings.favPrints || {})[c.id] === p.id ? " acc2" : ""}" id="favBtn" title="L'artwork preferito è quello mostrato per questa carta nella Collection">${(S.settings.favPrints || {})[c.id] === p.id ? "★ Artwork preferito" : "☆ Artwork preferito"}</button>
+      <button class="btn sm${(S.settings.favPrints || {})[c.id] === p.id ? " acc2" : ""}" id="favBtn" title="L'artwork preferito è quello mostrato per questa carta nella Collection">${(S.settings.favPrints || {})[c.id] === p.id ? "◆ Artwork preferito" : "◇ Artwork preferito"}</button>
       <a class="btn sm" href="${cardmarketUrl(c, p.id)}" target="_blank" rel="noopener noreferrer">Cardmarket ↗</a>
       <a class="btn sm" href="https://cyberpunktcg.com/cards/${esc(c.slug)}?printing=${p.id}" target="_blank" rel="noopener noreferrer">Ufficiale ↗</a>
     </div>`}
@@ -272,7 +275,8 @@ function renderSheet(opts){
   $$("#sheetBox [data-print]").forEach(el => el.onclick = () => { SHEET_PRINT = DATA.byPrint.get(el.dataset.print); renderSheet(opts); });
   $("#pickBtn")?.addEventListener("click", () => { onPick && onPick(SHEET_PRINT.id); closeSheet(); });
   $("#sheetPrev")?.addEventListener("click", () => sheetStep(-1)); $("#sheetNext")?.addEventListener("click", () => sheetStep(1));
-  $("#favStar")?.addEventListener("click", e => { e.stopPropagation(); $("#favBtn")?.click(); });
+  // la stella è la CARTA preferita (vale per tutte le sue stampe); «Artwork preferito» sceglie quale stampa mostrare: sono indipendenti
+  $("#favStar")?.addEventListener("click", e => { e.stopPropagation(); const f = S.settings.favCards = S.settings.favCards || {}; if(f[c.id]) delete f[c.id]; else f[c.id] = true; S.save("settings"); renderSheet(opts); document.dispatchEvent(new CustomEvent("ncd:collection")); });
   $("#favBtn")?.addEventListener("click", () => { S.settings.favPrints = S.settings.favPrints || {}; if(S.settings.favPrints[c.id] === p.id) delete S.settings.favPrints[c.id]; else S.settings.favPrints[c.id] = p.id; S.save("settings"); renderSheet(opts); document.dispatchEvent(new CustomEvent("ncd:collection")); });
 }
 export function closeSheet(){
@@ -316,7 +320,10 @@ export function openLens(src){
     if(!pts.has(e.pointerId)) return;
     pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if(pts.size === 2){ const [a, b] = [...pts.values()]; const d = Math.hypot(a.x - b.x, a.y - b.y); scale = Math.min(5, Math.max(1, startScale * d / startDist)); apply(); }
-    else if(pts.size === 1 && scale > 1 && last){ tx += e.clientX - last.x; ty += e.clientY - last.y; last = { x: e.clientX, y: e.clientY }; apply(); }
+    else if(pts.size === 1 && scale > 1 && last){
+      // con la plancia aperta su un telefono in verticale la lente è ruotata di 90°: lo spostamento del dito va riportato ai suoi assi
+      const dx = e.clientX - last.x, dy = e.clientY - last.y, rot = matchMedia("(orientation: portrait) and (max-width: 760px)").matches && document.querySelector("#board:not([hidden])");
+      if(rot){ tx += dy; ty -= dx; } else { tx += dx; ty += dy; } last = { x: e.clientX, y: e.clientY }; apply(); }
   };
   const up = e => { pts.delete(e.pointerId); if(!pts.size){ last = null; if(scale <= 1.02){ scale = 1; tx = ty = 0; apply(); } } };
   const wheel = e => { e.preventDefault(); scale = Math.min(5, Math.max(1, scale * (e.deltaY < 0 ? 1.15 : 0.87))); if(scale === 1){ tx = ty = 0; } apply(); };

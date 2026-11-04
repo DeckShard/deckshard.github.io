@@ -42,7 +42,8 @@ export function renderCollection(){
   const order = [...cardsOk]; const pos = new Map(order.map((id, i) => [id, i]));
   let list = entries.filter(e => cardsOk.has(e.c.id));
   if(F.owned === "yes") list = list.filter(e => qtyOfEntry(e)); else if(F.owned === "no") list = list.filter(e => !qtyOfEntry(e));
-  if(F.fav){ const fav = S.settings.favPrints || {}; list = list.filter(e => fav[e.c.id] && (mode === "card" || e.prints.some(p => p.id === fav[e.c.id]))); }   // solo le carte con un artwork preferito
+  if(F.fav){ const fc = S.settings.favCards || {}; list = list.filter(e => fc[e.c.id]); }   // carte preferite (con qualsiasi artwork)
+  if(F.favArt){ const fav = S.settings.favPrints || {}; list = list.filter(e => fav[e.c.id] && (mode === "card" || e.prints.some(p => p.id === fav[e.c.id]))); }   // con un artwork preferito
   list.sort((a, b) => pos.get(a.c.id) - pos.get(b.c.id) || a.c.prints.indexOf(a.show) - b.c.prints.indexOf(b.show));
   shownList = list.map(e => ({ cid: e.c.id, pid: e.show.id }));
   $("#collCount").textContent = `${list.length} ${unit}`;
@@ -70,8 +71,8 @@ function wire(root){
   $("#collSort").addEventListener("change", e => { S.settings.sort = e.target.value; S.save("settings"); renderCollection(); });
   $$("#collView button").forEach(b => b.addEventListener("click", () => { S.settings.view = b.dataset.v; S.save("settings"); renderCollection(); }));
   $("#collRows").addEventListener("click", e => {
-    const st = e.target.closest("[data-favstar]");
-    if(st){ e.stopPropagation(); const fav = S.settings.favPrints = S.settings.favPrints || {}; if(fav[st.dataset.favstar] === st.dataset.favpid) delete fav[st.dataset.favstar]; else fav[st.dataset.favstar] = st.dataset.favpid; S.save("settings"); renderCollection(); return; }
+    const st = e.target.closest("[data-favcard]");
+    if(st){ e.stopPropagation(); const fc = S.settings.favCards = S.settings.favCards || {}; if(fc[st.dataset.favcard]) delete fc[st.dataset.favcard]; else fc[st.dataset.favcard] = true; S.save("settings"); renderCollection(); return; }
     const t = e.target.closest("[data-cid]"); if(!t) return;
     openCard(t.dataset.cid, t.dataset.pid, { list: shownList });
   });
@@ -80,7 +81,7 @@ function wire(root){
   // pressione lunga su una tessera: +1 copia della stampa predefinita, senza aprire la scheda
   let timer = null, fired = false;
   $("#collRows").addEventListener("pointerdown", e => {
-    const t = e.target.closest(".gc"); if(!t || e.target.closest("[data-favstar]")) return;
+    const t = e.target.closest(".gc"); if(!t || e.target.closest("[data-favcard]")) return;
     fired = false;
     timer = setTimeout(() => { fired = true; const c = DATA.byId.get(t.dataset.cid); const pid = (S.settings.collView || "card") === "card" ? c.def.id : t.dataset.pid; setQty(pid, qtyOf(pid) + 1); navigator.vibrate?.(12); toast(`+1 ${c.dn}`); renderCollection(); }, 480);
   });

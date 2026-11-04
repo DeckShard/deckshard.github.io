@@ -145,10 +145,9 @@ header.top::after{content:"";display:block;height:5px;background:var(--headerLin
 .top .bar{max-width:1100px;margin:0 auto;padding:9px 14px 7px;display:flex;align-items:center;gap:10px}
 .top .btn{background:transparent;color:var(--headerInk);border-color:color-mix(in srgb,var(--headerInk) 50%,transparent)}
 .brand{display:flex;align-items:center;gap:9px;flex:1;min-width:0}
-.brand .mark{width:26px;height:26px;background:var(--headerInk);position:relative;flex:0 0 auto;
-  clip-path:polygon(0 0,100% 0,100% 70%,70% 100%,0 100%)}
-.brand .mark::after{content:"";position:absolute;inset:6px;background:var(--headerBg);
-  clip-path:polygon(0 0,100% 0,100% 55%,55% 100%,0 100%)}
+/* il marchio: lo shard con la D (sagoma in mark.svg, colorata con il colore dell'intestazione) */
+.brand .mark{width:30px;height:30px;background:var(--headerInk);position:relative;flex:0 0 auto;
+  -webkit-mask:url(mark.svg) center/contain no-repeat;mask:url(mark.svg) center/contain no-repeat}
 .brand b{font-family:var(--display);font-size:15px;letter-spacing:.14em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:700;text-shadow:0 0 10px color-mix(in srgb,var(--headerInk) 60%,transparent)}
 .brand small{display:block;font-size:10.5px;opacity:.75;letter-spacing:.18em;margin-top:-3px;font-weight:600}
 .top .meta{font-size:12px;opacity:.8;white-space:nowrap;letter-spacing:.06em;text-transform:uppercase;font-weight:600}
@@ -656,3 +655,7 @@ nav.tabs button.homebtn:not([aria-selected="true"]) svg{opacity:.85}
   .infob{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;margin-left:7px;vertical-align:1px;border-radius:50%;border:1px solid var(--line2);background:none;color:var(--acc);font:700 11px/1 var(--display);padding:0;cursor:pointer}
   .field.iopen .infob{background:var(--accFill);color:var(--accInk);border-color:transparent}
 }
+/* tutorial: domanda iniziale e lezioni bloccate */
+.tutask{display:flex;flex-direction:column;gap:6px;margin-top:12px;padding:14px;border:1px solid var(--line2);border-left:3px solid var(--accFill);background:var(--surf2)}
+.tutask b{font-size:16px}.tutask span{font-size:13.5px;color:var(--ink2)}.tutask .opts{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+.tutitem.locked{opacity:.55}.tutitem b i{font-style:normal;color:var(--acc)}.tutitem b .tt{font-size:inherit;color:inherit}.tutitem .chip{font-size:10px;vertical-align:2px;margin-left:4px}

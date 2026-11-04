@@ -408,18 +408,28 @@ await page.click("#bMenu"); await page.click('.pop button:has-text("Esci")');
 ok(await page.locator('#simDeck0 option[value^="starter:"]').count() === 0, "Prerelease: solo mazzi da kit nella scelta");
 await page.click('.panel.on #simKind [data-v="built"]'); await page.click('#simMode [data-v="tutorial"]');
 ok((await page.locator("#simMode button").allTextContents()).join(",") === "Sfida IA,Offline,Online,Tutorial", "Costruito: Sfida IA, Offline, Online, Tutorial");
-await page.click("#simTutorial");
-await page.waitForSelector("#board:not([hidden])");
-await page.waitForSelector(".tutbar");
-ok((await page.locator(".tutbar .n").textContent()) === "1/17" && await page.locator("[data-mull]").count() === 0 && await page.locator("#board .tuthl").count() >= 1, "tutorial: tour della plancia, pezzo evidenziato, mulligan in attesa");
-for(let i = 0; i < 5; i++){ await page.click("#tutNext"); await page.waitForTimeout(120); }
-ok(await page.locator("#board .tuthl").count() === 0 && await page.locator("#simAsk.mull .mc").count() === 6, "dopo il tour: mulligan con le carte grandi");
+// prima apertura: «È la tua prima notte?» → Sì: solo la prima lezione aperta
+ok(await page.locator(".tutask").count() === 1, "tutorial: domanda «prima notte a Night City?»");
+await page.click('[data-tutfirst="1"]'); await page.waitForTimeout(200);
+ok(await page.locator(".tutitem").count() === 5 && await page.locator(".tutitem.locked").count() === 4, "tutorial: 5 lezioni, aperta solo la prima");
+await page.click('[data-lesson="basi"]');
+await page.waitForSelector("#board:not([hidden])"); await page.waitForSelector(".tutbar");
+ok(/Le basi.*1\/12/.test(await page.locator(".tutbar .n").textContent()) && await page.locator("[data-mull]").count() === 0 && await page.locator("#bEnd").count() === 0, "lezione 1: plancia già pronta, niente mulligan né fine turno");
+await page.click("#tutNext"); await page.waitForTimeout(150);
+ok(await page.locator("#board .tuthl").count() >= 1, "lezione 1: il pezzo di cui si parla è evidenziato");
+for(let i = 0; i < 10; i++){ await page.click("#tutNext"); await page.waitForTimeout(80); }
+await page.click("#tutDone"); await page.waitForTimeout(300);
+ok(await page.locator("#board").isHidden() && await page.locator(".tutitem.locked").count() === 3 && await page.locator('[data-lesson="turno"]:not([disabled])').count() === 1, "lezione 1 finita: si apre la seconda");
+await page.click('[data-lesson="turno"]');
+await page.waitForSelector("#board:not([hidden])"); await page.waitForSelector(".tutbar");
+ok(await page.locator("#simAsk.mull .mc").count() === 6, "lezione 2: mulligan con le carte grandi");
 await page.click('[data-mull="keep"]'); await page.waitForTimeout(300);
-{ const tn = await page.locator(".tutbar .n").textContent(); ok(/^(7|8)\/17/.test(tn), "tutorial: avanza dopo il mulligan (" + tn + ")"); }
+const stepN = async () => ((await page.locator(".tutbar .n").textContent().catch(() => "")).match(/(\d+)\/\d+$/) || [])[1];
+{ const tn = await stepN(); ok(tn === "2" || tn === "3", "tutorial: avanza dopo il mulligan (" + tn + ")"); }
 ok(await page.locator("#tutSkip").count() === 0, "tutorial senza pulsante di chiusura");
 // il bot inizia (partita seedata); al mio turno: dado, poi i passi guidati con le azioni giuste sempre disponibili
-for(let i = 0; i < 80; i++){ if(await page.locator("#simAsk [data-ask]").count()){ await page.click("#simAsk [data-ask] >> nth=0"); } if(/^8\/17/.test(await page.locator(".tutbar .n").textContent().catch(() => ""))) break; await page.waitForTimeout(300); }
-ok(/^8\/17/.test(await page.locator(".tutbar .n").textContent()), "tutorial: passo della vendita raggiunto al mio turno");
+for(let i = 0; i < 80; i++){ if(await page.locator("#simAsk [data-ask]").count()){ await page.click("#simAsk [data-ask] >> nth=0"); } if(await stepN() === "3") break; await page.waitForTimeout(300); }
+ok(await stepN() === "3", "tutorial: passo della vendita raggiunto al mio turno");
 ok(await page.locator("#bEnd").count() === 0, "fine turno nascosto finché il passo non è completato");
 // vendita: la carta vendibile c'è sempre
 let soldT = false;
@@ -428,7 +438,7 @@ for(let k = 0; k < (await page.locator('[data-handrow] .bc').count()) && !soldT;
   if(await sb.count() && await sb.isEnabled()){ await sb.click(); soldT = true; } else await page.click("#board .bstrip .st");
 }
 await page.waitForTimeout(300);
-ok(soldT && /^9\/17/.test(await page.locator(".tutbar .n").textContent()), "venduta: passo 4 (gioca un'Unità)");
+ok(soldT && await stepN() === "4", "venduta: passo 4 (gioca un'Unità)");
 // l'Unità con potenza da ≤3 €$ (Dexter) c'è sempre; le altre Unità sono disattivate in questo passo
 let playedT = false;
 for(let k = 0; k < (await page.locator('[data-handrow] .bc').count()) && !playedT; k++){
@@ -438,25 +448,25 @@ for(let k = 0; k < (await page.locator('[data-handrow] .bc').count()) && !played
 for(let k = 0; k < 6 && /Paga \d+ €\$/.test(await page.locator(".bstrip .lg").textContent()); k++){ const ed = page.locator(".bz.mine [data-eddies].target"), lg = page.locator(".bz.mine [data-legend].target"); if(await ed.count()) await ed.click(); else if(await lg.count()) await lg.first().click(); await page.waitForTimeout(120); }
 for(let i = 0; i < 6 && await page.locator("#simAsk [data-ask]").count(); i++){ await page.click("#simAsk [data-ask] >> nth=-1"); await page.waitForTimeout(150); }
 await page.waitForTimeout(300);
-ok(playedT && /^10\/17/.test(await page.locator(".tutbar .n").textContent()), "giocata: passo 5 (chiama una Leggenda)");
+ok(playedT && await stepN() === "5", "giocata: passo 5 (chiama una Leggenda)");
 // passi 5→10: chiama, fine turno, secondo turno (dado, vendi, Bombus), attacca con Dexter, fine turno, reazione all'attacco del bot
-const step = async () => (await page.locator(".tutbar .n").textContent().catch(() => "")).split("/")[0];
+const step = stepN;
 const payLoop = async () => { for(let k = 0; k < 8 && /Paga \d+ €\$/.test(await page.locator(".bstrip .lg").textContent()); k++){ const ed = page.locator(".bz.mine [data-eddies].target"), lg = page.locator(".bz.mine [data-legend].target"); if(await ed.count()) await ed.click(); else if(await lg.count()) await lg.first().click(); await page.waitForTimeout(120); } };
 const asks = async (sel = "#simAsk [data-ask] >> nth=0") => { for(let i = 0; i < 8 && await page.locator("#simAsk [data-ask]").count(); i++){ await page.click(sel); await page.waitForTimeout(150); } };
 await page.click('.bz.mine [data-legend] >> nth=0'); await page.click('.pop button:has-text("Chiama")'); await payLoop(); await asks(); await page.waitForTimeout(300);
-ok(await step() === "11", "chiamata: passo 6 (fine turno)");
+ok(await step() === "6", "chiamata: passo 6 (fine turno)");
 await page.click("#bEnd");
 // il bot gioca; al mio turno arriva la scelta del dado (le opzioni iniziano con «d»), poi si vende e si gioca Bombus
 let dieSeen = false;
 for(let i = 0; i < 80 && !dieSeen; i++){ const a = page.locator("#simAsk [data-ask]"); if(await a.count()){ const t = await a.first().textContent(); if(/^d\d+/.test(t)) dieSeen = true; await a.first().click(); } await page.waitForTimeout(300); }
 await page.waitForTimeout(400);
-ok(dieSeen && await step() === "12", "secondo turno: passo 7 (gioca Bombus)");
+ok(dieSeen && await step() === "7", "secondo turno: passo 7 (gioca Bombus)");
 { let s2 = false; for(let k = 0; k < (await page.locator('[data-handrow] .bc').count()) && !s2; k++){ await page.click(`[data-handrow] .bc >> nth=${k}`); const sb = page.locator('.pop button:has-text("Vendi")'); if(await sb.count() && await sb.isEnabled()){ await sb.click(); s2 = true; } else await page.click("#board .bstrip .st"); }
   let pb2 = false; for(let k = 0; k < (await page.locator('[data-handrow] .bc').count()) && !pb2; k++){ await page.click(`[data-handrow] .bc >> nth=${k}`); const pb = page.locator('.pop button:has-text("Gioca")'); if(await pb.count() && await pb.isEnabled()){ await pb.click(); pb2 = true; } else await page.click("#board .bstrip .st"); }
   await payLoop(); await asks(); await page.waitForTimeout(300); }
-ok(await step() === "13", "Bombus giocata: passo 8 (attacca)");
+ok(await step() === "8", "Bombus giocata: passo 8 (attacca)");
 await page.click('.bz.mine [data-field] .bc[title^="Dexter"]'); await page.click('.pop button:has-text("area Gig")'); await asks("#simAsk [data-ask] >> nth=-1"); await page.waitForTimeout(300);
-ok(await step() === "14", "attacco fatto: passo 9 (fine turno)");
+ok(await step() === "9", "attacco fatto: passo 9 (fine turno)");
 await page.click("#bEnd");
 let reacted = false;
 for(let i = 0; i < 80; i++){
@@ -465,7 +475,7 @@ for(let i = 0; i < 80; i++){
   if(await page.locator("#bEnd").count()) break;
   await page.waitForTimeout(400);
 }
-ok(reacted && ["16", "17"].includes(await step()), "bloccato con Bombus: passo 11 (" + await step() + ")");
+ok(reacted && ["10", "11"].includes(await step()), "bloccato con Bombus: passo 11 (" + await step() + ")");
 await page.click("#bMenu"); ok(await page.locator('.pop button:has-text("Abbandona il tutorial")').count() === 1 && await page.locator('.pop button:has-text("Mi arrendo")').count() === 0, "nel tutorial il menù ha «Abbandona il tutorial» al posto della resa");
 const lossesBefore = await page.evaluate(() => JSON.parse(localStorage.getItem("ncd:record") || "{}").losses || 0);
 await page.click('.pop button:has-text("Abbandona il tutorial")'); await page.waitForTimeout(300);

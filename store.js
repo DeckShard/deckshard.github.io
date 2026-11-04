@@ -36,7 +36,7 @@ function cleanDeck(d){
   if(Array.isArray(d.importErrors)) out.importErrors = d.importErrors.slice(0, 50).map(x => str(x, 200));
   return out;
 }
-const DEF_SETTINGS = () => ({ view: "grid", sort: "name", ownedOnly: false, collView: "card", collPick: "rarest", favPrints: {} });
+const DEF_SETTINGS = () => ({ view: "grid", sort: "name", ownedOnly: false, collView: "card", collPick: "rarest", favPrints: {}, favCards: {} });
 export function clean(k, v){
   if(k === "coll"){
     const out = {}; let n = 0;
@@ -58,6 +58,8 @@ export function clean(k, v){
     const out = {};
     for(const [key, val] of Object.entries(obj(v) || {})){
       if(!/^[A-Za-z0-9_]{1,40}$/.test(key)) continue;
+      if(key === "tut"){ const t = obj(val) || {}; out.tut = { asked: !!t.asked, vet: !!t.vet, done: (Array.isArray(t.done) ? t.done : []).filter(x => typeof x === "string" && /^[a-z]{2,20}$/.test(x)).slice(0, 20) }; continue; }   // progresso del tutorial
+      if(key === "favCards"){ const f = {}; for(const [c, v] of Object.entries(obj(val) || {})) if(isId(c) && v) f[c] = true; out.favCards = f; continue; }   // carte preferite (indipendenti dall'artwork)
       if(key === "favPrints"){ const f = {}; for(const [c, p] of Object.entries(obj(val) || {})) if(isId(c) && isId(p)) f[c] = p; out.favPrints = f; continue; }
       if(plain(val)) out[key] = val;
       else if(obj(val)){ const o = {}; for(const [a, b] of Object.entries(val)) if(/^[A-Za-z0-9_]{1,40}$/.test(a) && plain(b)) o[a] = b; out[key] = o; }

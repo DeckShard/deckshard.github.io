@@ -14,18 +14,16 @@ import { renderChatTab, openChatWith } from "./social.js";
 import { initI18n } from "./i18n.js";
 import { bootCloud, state as cloudState } from "./cloud.js";
 
-export const APP_VERSION = "1.9.21";
+export const APP_VERSION = "1.9.22";
 /* novità mostrate alla prima apertura dopo un aggiornamento (solo l'ultima versione; chi installa da zero non le vede) */
-const NEWS = { v: "1.9.19", items: [
-  "Nuova scheda <b>Chat</b> nella barra in basso; le <b>Regole</b> sono la terza scheda del Simulator. Una notifica di messaggio apre la conversazione, e in partita puoi rispondere al tuo amico.",
-  "Partita offline sullo stesso telefono: dopo il mulligan c'è la schermata di passaggio, e chi prende il telefono vede cosa ha fatto l'altro nel suo turno.",
-  "Collection: <b>★ Artwork preferito</b> direttamente sulla carta, filtro delle preferite e scorrimento a destra e sinistra tra le carte aperte.",
-  "Filtri più compatti (al massimo due righe, poi «Tutti…»), con i nuovi filtri <b>Parole chiave</b> ed <b>Effetti</b>.",
-  "Deckbuilder: l'elenco si divide in <b>Nel mazzo</b> e <b>Non nel mazzo</b>, a scomparsa.",
-  "Nuovo aspetto scuro <b>NetWatch</b> e sette nuovi aspetti chiari; Girlypop diventa <b>Us Cracks</b>; nuovi emblemi per Holophone, Samurai, Us Cracks e Voodoo Boys.",
-  "Nell'app installata la plancia non chiede più lo schermo intero (niente avviso del telefono); nel browser si può spegnere dalle Impostazioni.",
-  "Nel feedback puoi indicare se scrivi da telefono, tablet o PC.",
-  "Ritocchi: conferme e finestre nello stile dell'app (non più quelle del telefono), niente lampo dell'aspetto scuro quando ricarichi, le spiegazioni lunghe delle Impostazioni dietro il pulsante <b>i</b>."
+const NEWS = { v: "1.9.22", items: [
+  "Nuovo <b>tutorial a lezioni</b> nel Simulator: le basi, un turno passo per passo, come si vince, i casi particolari e una partita libera. Alla prima apertura ti chiede se è la tua prima notte a Night City.",
+  "Nuovo logo: lo <b>shard con la D</b>, anche nelle notifiche (dove prima compariva un quadrato).",
+  "<b>Carte preferite</b> e <b>artwork preferito</b> ora sono due cose diverse: la stellina ☆ segna la carta (con qualsiasi stampa), «◇ Artwork preferito» nella scheda sceglie quale stampa mostrare. Il filtro Preferite c'è anche nel deckbuilder.",
+  "I <b>dadi del fixer si lanciano</b>: trascina un dado e lascialo andare (un tocco va ancora bene). Numeri ed etichette dei dadi più leggibili.",
+  "Plancia su telefono: torna di serie lo schermo intero in orizzontale (si spegne dalle Impostazioni); sistemati trascinamento, scorrimento della mano e ingrandimento delle carte quando la plancia è ruotata.",
+  "Filtri Effetti più precisi: «Sconfigge» non prende più le carte con {Defeated}, e il furto di Gig si divide in <b>Gig in più</b>, <b>Quando ruba</b> e <b>Difende i Gig</b>. Vendita da PC su tutta la colonna.",
+  "Dalla 1.9.19: scheda <b>Chat</b>, Regole nel Simulator, nuovi aspetti ed emblemi, deckbuilder diviso in «Nel mazzo» / «Non nel mazzo», conferme nello stile dell'app."
 ] };
 // chi usava già l'app prima che esistesse seenVer: ha dati salvati (letti prima che l'avvio scriva qualcosa)
 const HAD_DATA = (() => { try{ return ["settings", "decks", "coll", "record", "recent"].some(k => localStorage.getItem("ncd:" + k) != null); }catch(e){ return false; } })();

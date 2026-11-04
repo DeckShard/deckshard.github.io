@@ -2,9 +2,9 @@
    Rete prima, cache come ripiego: l'app si aggiorna da sola a ogni apertura
    online e continua a funzionare offline con l'ultima versione vista.
    Le immagini delle carte sono messe in cache man mano che le vedi.     */
-const CACHE = "ncd-v1";  // mano scorrevole sulla plancia ruotata: 1.9.21
+const CACHE = "ncd-v1";  // carte preferite, dadi da lanciare, plancia ruotata: 1.9.22
 const CORE = ["./", "./index.html", "./theme.css", "./sim.css", "./app.js", "./data.js", "./store.js", "./ui.js",
-  "./collection.js", "./deck.js", "./profile.js", "./sim.js", "./engine.js", "./bot.js", "./scanner.js", "./parser.js", "./rules.js", "./prerelease.js", "./tutorial.js", "./i18n.js", "./cloud.js", "./social.js", "./online.js", "./home.js", "./manifest.webmanifest", "./icon.svg"];
+  "./collection.js", "./deck.js", "./profile.js", "./sim.js", "./engine.js", "./bot.js", "./scanner.js", "./parser.js", "./rules.js", "./prerelease.js", "./tutorial.js", "./i18n.js", "./cloud.js", "./social.js", "./online.js", "./home.js", "./manifest.webmanifest", "./icon.svg", "./mark.svg", "./badge-96.png"];
 
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(CORE).catch(() => {}))); self.skipWaiting(); });
 self.addEventListener("activate", e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
@@ -51,7 +51,7 @@ self.addEventListener("push", e => {
   e.waitUntil((async () => {
     let icon = null; try{ icon = await avatarIcon(d.ava); }catch(err){ icon = null; }
     await self.registration.showNotification(d.title || "DeckShard", {
-      body: d.body || "", icon: icon || "icon-192.png", badge: "icon-192.png", tag: d.tag || undefined, renotify: !!d.tag,
+      body: d.body || "", icon: icon || "icon-192.png", badge: "badge-96.png", tag: d.tag || undefined, renotify: !!d.tag,
       data: { url: new URL(d.url || "./", self.registration.scope).href }
     });
   })());
