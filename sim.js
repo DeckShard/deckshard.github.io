@@ -94,7 +94,7 @@ function localRect(board, el){
 function snapBoard(board){
   if(!G || board.hidden || !animMs()) return null;
   const m = new Map();
-  for(const el of board.querySelectorAll("[data-uid]")){ const r = localRect(board, el); if(!r) continue; const img = el.querySelector(":scope > img"); m.set(+el.dataset.uid, { ...r, src: img ? img.getAttribute("src") : "", spent: el.classList.contains("spent"), back: el.classList.contains("back"), leg: !!el.dataset.legend, gear: !!el.dataset.gearOf, t: getComputedStyle(el).transform }); }
+  for(const el of board.querySelectorAll("[data-uid]")){ const r = localRect(board, el); if(!r) continue; const img = el.querySelector(":scope > img"); m.set(+el.dataset.uid, { ...r, src: img ? img.getAttribute("src") : "", spent: el.classList.contains("spent"), back: el.classList.contains("back"), leg: !!el.dataset.legend, gear: !!el.dataset.gearOf, hand: !!el.dataset.hand, t: getComputedStyle(el).transform }); }
   const g = new Map();
   for(const el of board.querySelectorAll(".die[data-gig]")){ const uid = +el.dataset.gig; if(!uid) continue; const r = localRect(board, el); const o = el.closest("[data-owner]"); if(r) g.set(uid, { ...r, owner: o ? +o.dataset.owner : null }); }
   return { m, g, eddies: (animBase || {}).eddies || G.players.map(P => P.eddies.length), trash: (animBase || {}).trash || G.players.map(P => P.trash.length) };
@@ -106,6 +106,7 @@ function rollDie(el, sides, finalValue, ms){
   const uid = +el.dataset.gig, dur = Math.max(320, ms * (sides === 20 ? 1.6 : 1.1));
   const vars = { "--gx1": (Math.random() * 6 - 3).toFixed(1) + "px", "--gx2": (Math.random() * 6 - 3).toFixed(1) + "px", "--gs1": (Math.random() * 16 - 8).toFixed(1) + "deg", "--gs2": (Math.random() * 16 - 8).toFixed(1) + "deg", "--gy": Math.round(20 + Math.random() * 55) + "%" };
   liveDice.set(uid, { until: performance.now() + dur, sides, final: finalValue, vars, next: 0 });
+  sfx("roll"); sfx("land", dur);
   applyDice(el.closest("#board") || $("#board"));
 }
 function applyDice(board){
@@ -172,6 +173,7 @@ function animateBoard(board, prev){
     const gearHost = fx && el.dataset.gearOf ? board.querySelector(`.bz .bc[data-uid="${el.dataset.gearOf}"]`) : null;
     const gearBadge = (c, delay) => { if(!gearHost || pid == null) return; const host = findInst(G.players[+pid], +el.dataset.gearOf); const plus = c.card.power ?? 0; if(host && plus) fxPower(board, gearHost, shownPower(host) - plus, plus, delay, ms); };
     if(was){
+      if(was.hand && !el.dataset.hand && !gearHost) sfx("play");   // carta giocata dalla mano (la tua: l'avversario passa dalla vetrina)
       if(gearHost && !was.gear && pid != null){ const c = findInst(G.players[+pid], uid); if(c) gearBadge(c, ms); }   // Gear appena equipaggiato dalla mano: somma della potenza
       if(fxOpp && was.leg && !el.dataset.legend && el.closest(`[data-field="${R.id}"]`)){   // Leggenda chiamata in campo
         const c = findInst(R, uid); fresh.add(uid); fxShowcase(board, { src: c && c.pid ? thumbUrl(c.pid) : "", label: `${oppName} chiama`, tag: "Leggenda", name: c ? c.card.dn : "", to: now, hideEl: el }, ms); continue; }
@@ -221,7 +223,7 @@ function animateBoard(board, prev){
   for(const [uid, was] of prev.m){
     if(seen.has(uid) || was.back) continue;
     const ePl = G.players.find(P => P.eddies.some(e => e.uid === uid)), tPl = G.players.find(P => P.trash.some(c => c.uid === uid));
-    if(ePl){ fly(was, anchor("eddies", ePl.id), was.src, "sell"); grown[ePl.id].e = grown[ePl.id].e.filter(e => e.uid !== uid); }
+    if(ePl){ fly(was, anchor("eddies", ePl.id), was.src, "sell"); if(was.hand) sfx("sell"); grown[ePl.id].e = grown[ePl.id].e.filter(e => e.uid !== uid); }
     else if(tPl){ const c = tPl.trash.find(c => c.uid === uid), prog = c && c.card && c.card.type === "Program";
       if(fx && prog && who === "mine" && tPl.id === me()) fxShowcase(board, { src: was.src, label: "Lanci un Programma", tag: "Programma", name: c.card.dn, bar: true, who: "mine", to: anchor("trash", tPl.id) }, ms);
       else if(hitUids.has(uid)) deferredFly.push({ uid, from: was, to: anchor("trash", tPl.id), src: was.src, kind: prog ? "program" : "trash" });
@@ -246,6 +248,29 @@ function animateBoard(board, prev){
    sopravvive ai ridisegni): la vetrina al centro per le carte dell'avversario, il Gig che gira al
    centro dentro un anello, la fascia di cambio turno e le zone di rilascio accese durante il
    trascinamento. Spenti con «Animazioni ridotte»; la durata segue i ritmi (tuo e dell'avversario). */
+/* suoni sintetizzati (WebAudio, nessun file): Impostazioni → Simulator → Suoni. L'AudioContext nasce al primo tocco. */
+let actx = null, noiseBuf = null;
+const sfxOn = () => !!S.settings.sfx;
+function ensureAudio(){ if(actx || !sfxOn()) return; try{ actx = new (window.AudioContext || window.webkitAudioContext)(); }catch(e){ actx = null; } }
+window.addEventListener("pointerdown", () => { ensureAudio(); if(actx && actx.state === "suspended") actx.resume().catch(() => {}); }, { passive: true });
+function sfx(kind, delay = 0){
+  if(!sfxOn()) return; ensureAudio(); if(!actx || actx.state !== "running") return;
+  const t0 = actx.currentTime + Math.max(0, delay) / 1000, out = actx.createGain(); out.gain.value = .12; out.connect(actx.destination);
+  const tone = (type, f0, f1, t, dur, g = 1) => { const o = actx.createOscillator(), v = actx.createGain(); o.type = type; o.frequency.setValueAtTime(f0, t); if(f1 !== f0) o.frequency.exponentialRampToValueAtTime(f1, t + dur); v.gain.setValueAtTime(g, t); v.gain.exponentialRampToValueAtTime(.001, t + dur); o.connect(v); v.connect(out); o.start(t); o.stop(t + dur + .02); };
+  const noise = (t, dur, fc, q = 1, g = 1) => { if(!noiseBuf){ noiseBuf = actx.createBuffer(1, actx.sampleRate, actx.sampleRate); const d = noiseBuf.getChannelData(0); for(let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; } const n = actx.createBufferSource(); n.buffer = noiseBuf; const f = actx.createBiquadFilter(); f.type = "bandpass"; f.frequency.value = fc; f.Q.value = q; const v = actx.createGain(); v.gain.setValueAtTime(g, t); v.gain.exponentialRampToValueAtTime(.001, t + dur); n.connect(f); f.connect(v); v.connect(out); n.start(t); n.stop(t + dur + .02); };
+  switch(kind){
+    case "play": noise(t0, .18, 700, .8, .7); tone("sine", 320, 180, t0, .18, .3); break;                       // carta che si posa
+    case "sell": tone("sine", 880, 880, t0, .07, .6); tone("sine", 1320, 1320, t0 + .07, .12, .6); break;      // moneta
+    case "roll": for(let i = 0; i < 7; i++) tone("square", 180 + Math.random() * 120, 120, t0 + i * .05, .03, .25); noise(t0, .35, 2500, .6, .25); break;
+    case "land": tone("sine", 660, 660, t0, .12, .6); tone("sine", 990, 990, t0 + .03, .18, .3); break;
+    case "shot": noise(t0, .11, 900, .5, 1); tone("sine", 140, 50, t0, .14, .9); break;
+    case "hit": tone("sine", 90, 40, t0, .22, 1); noise(t0, .06, 300, .7, .6); break;
+    case "pew": tone("square", 900, 280, t0, .13, .35); break;
+    case "steal": tone("sine", 300, 900, t0, .26, .5); tone("triangle", 450, 1350, t0 + .02, .24, .25); break;
+    case "turn": tone("sine", 523, 523, t0, .09, .5); tone("sine", 784, 784, t0 + .1, .16, .5); break;
+    case "equip": tone("triangle", 400, 800, t0, .1, .4); tone("sine", 1200, 1200, t0 + .1, .08, .3); break;
+  }
+}
 const fxOn = () => !!S.settings.fx && document.documentElement.dataset.motion !== "reduce";
 const fxCenter = board => { const main = board.querySelector(".bmain") || board; return localRect(board, main) || { x: 0, y: 0, w: board.clientWidth, h: board.clientHeight, cx: board.clientWidth / 2, cy: board.clientHeight / 2 }; };
 const fxEase = "cubic-bezier(.2,.7,.2,1)";
@@ -271,6 +296,7 @@ function fxShowcase(board, o, ms){
     { transform: "scale(1)", opacity: 1, offset: (enter + hold) / (enter + hold + exit) },
     { transform: `translate(${dx}px, ${dy}px) scale(${sc})`, opacity: to ? .95 : 0 }];
   const a = g.animate(kf, { duration: enter + hold + exit, delay, easing: fxEase, fill: "both" });
+  sfx(o.cls === "yel" ? "sell" : "play", delay);
   // etichette: sfumano prima dell'uscita
   for(const el of g.querySelectorAll(".kick, .nm, .tag, .ldr")) el.animate([{ opacity: 1, offset: (enter + hold) / (enter + hold + exit) }, { opacity: 0 }], { duration: enter + hold + exit, delay, fill: "both" });
   a.onfinish = () => g.remove(); setTimeout(() => g.remove(), total + 300);
@@ -294,7 +320,7 @@ function fxRollNow(board, el, gig, who, ms){
   const die = g.querySelector(".die"), b = die.querySelector("b"); g.style.setProperty("--c", getComputedStyle(die).getPropertyValue("--c") || "var(--acc2)");
   const roll = Math.max(500, ms * (gig.sides === 20 ? 2.2 : 1.6)), hold = Math.max(400, ms * 1.2), fly = ms * 1.1, total = roll + hold + fly;
   const vars = {}; const glitch = () => { for(const k of ["--gx1", "--gx2"]) vars[k] = (Math.random() * 7 - 3.5).toFixed(1) + "px"; for(const k of ["--gs1", "--gs2"]) vars[k] = (Math.random() * 18 - 9).toFixed(1) + "deg"; vars["--gy"] = Math.round(15 + Math.random() * 65) + "%"; for(const [k, v] of Object.entries(vars)) die.style.setProperty(k, v); };
-  glitch(); die.classList.add("rolling");
+  glitch(); die.classList.add("rolling"); sfx("roll"); sfx("land", roll);
   const t0 = performance.now(); let next = 0;
   const iv = setInterval(() => { const t = performance.now() - t0; if(t >= roll){ clearInterval(iv); die.classList.remove("rolling"); b.textContent = gig.value; die.classList.add("landed"); g.classList.add("done"); return; } if(t >= next){ next = t + 40 + Math.random() * 50; b.textContent = 1 + Math.floor(Math.random() * gig.sides); glitch(); } }, 30);
   liveDice.set(uid, { until: performance.now() + total, big: true }); el.style.visibility = "hidden";
@@ -308,8 +334,9 @@ function fxRollNow(board, el, gig, who, ms){
    scherno, olografico). Traccianti, vampa e impatto; chi è colpito vibra. Tutto disegno nostro.
    Restituisce il momento (ms da ora) in cui lo scontro è finito, per far partire dopo le carte sconfitte. */
 function fxShot(board, a, t, pa, pd, ms, targetEl, attackerEl){
-  const D = Math.max(1800, ms * 4.5), exchange = pd != null, total = exchange ? D * 1.6 : D, delay = fxSlot(total);
-  setTimeout(() => fxShotNow(board, a, t, pa, D, "#fcee0a", "gun", targetEl, true, pd), delay);
+  // durata: 1,3 s con le animazioni normali (o veloci), 2,3 s con quelle lente
+  const D = Math.max(1300, 1300 + (ms - 380) * 3.7), exchange = pd != null, total = exchange ? D * 1.6 : D, delay = fxSlot(total);
+  setTimeout(() => fxShotNow(board, a, t, pa, D, "#fcee0a", pa > 0 ? "gun" : "hand", targetEl, true, pd), delay);
   if(exchange) setTimeout(() => fxShotNow(board, t, a, pd, D, "#ff2e55", pd > 0 ? "gun" : "hand", attackerEl, false, null), delay + D * .6);
   return delay + total * .9;
 }
@@ -333,6 +360,7 @@ function fxShotNow(board, a, t, pw, dur, col, mode, targetEl, withBadge, pd){
     </g>
     ${hand ? "" : `<g class="im" transform="translate(${tx} ${ty})" filter="url(#fxgl)"><circle r="14" fill="none" stroke="${col}" stroke-width="2"/><circle r="24" fill="none" stroke="${col}" stroke-width="1" opacity=".5"/>${[0,45,90,135,180,225,270,315].map(d => `<line x1="0" y1="0" x2="${Math.cos(d * Math.PI / 180) * 30}" y2="${Math.sin(d * Math.PI / 180) * 30}" stroke="#fff" stroke-width="1.5" opacity=".8" transform="rotate(12)"/>`).join("")}</g>`}`;
   flyLayer.appendChild(sv);
+  if(hand) sfx("pew", dur * .34); else { sfx("shot", dur * .22); sfx("hit", dur * impactAt); }
   const E = "cubic-bezier(.2,.7,.2,1)";
   sv.querySelector(".gun").animate([{ opacity: 0, transform: `scale(${sc * .6})` }, { opacity: 1, transform: `scale(${sc})`, offset: .12 }, { opacity: 1, offset: .82 }, { opacity: 0 }], { duration: dur, easing: E, fill: "forwards" });
   if(hand){
@@ -361,7 +389,7 @@ function fxPower(board, hostEl, base, plus, delay, ms){
   const r = localRect(board, hostEl); if(!r) return;
   const b = document.createElement("div"); b.className = "fxpw"; b.style.cssText = `left:${Math.max(70, Math.min(board.clientWidth - 70, r.cx))}px;top:${Math.max(14, r.y - 12)}px`;
   b.innerHTML = `${base} <i>+</i><em>${plus}</em> <i>=</i> <em>${base + plus}</em>`; flyLayer.appendChild(b);
-  const dur = Math.max(1100, ms * 3.5);
+  const dur = Math.max(1100, ms * 3.5); sfx("equip", delay);
   b.animate([{ opacity: 0, transform: "translate(-50%,-50%) scale(.6)" }, { opacity: 1, transform: "translate(-50%,-50%) scale(1.08)", offset: .12 }, { opacity: 1, transform: "translate(-50%,-50%) scale(1)", offset: .2 }, { opacity: 1, offset: .85 }, { opacity: 0, transform: "translate(-50%,-60%)" }], { duration: dur, delay, fill: "both" });
   setTimeout(() => b.remove(), delay + dur + 100);
 }
@@ -374,7 +402,7 @@ function fxSteal(board, el, was, now, gig, who, ms){
     const g = document.createElement("div"); g.className = "fxdie steal"; g.style.cssText = `left:${main.cx - S_ / 2}px;top:${main.cy - S_ / 2}px;width:${S_}px;height:${S_}px`;
     g.innerHTML = `<i class="r2"></i><span class="die d${gig.sides}" style="--dw:${dw}px">${dieSVG(gig.sides)}<b>${gig.value}</b><small>d${gig.sides}</small></span><div class="kick">${esc(who)}</div>`;
     g.style.setProperty("--c", getComputedStyle(g.querySelector(".die")).getPropertyValue("--c") || "var(--acc2)");
-    flyLayer.appendChild(g);
+    flyLayer.appendChild(g); sfx("steal");
     const from = `translate(${was.cx - main.cx}px, ${was.cy - main.cy}px) scale(${was.w / dw})`, to = `translate(${now.cx - main.cx}px, ${now.cy - main.cy}px) scale(${now.w / dw})`;
     g.animate([{ transform: from, opacity: 1 }, { transform: "none", opacity: 1, offset: leg / total }, { transform: "none", opacity: 1, offset: (leg + hold) / total }, { transform: to, opacity: 1 }], { duration: total, easing: fxEase, fill: "forwards" });
     g.querySelector(".kick").animate([{ opacity: 0 }, { opacity: 1, offset: leg / total }, { opacity: 1, offset: (leg + hold) / total }, { opacity: 0 }], { duration: total, fill: "forwards" });
@@ -395,6 +423,7 @@ function fxBanner(board){
   g.innerHTML = `<small>T${G.turn}</small><b>${esc(who)}</b><small>${esc(G.players[G.active].name)}</small>`;
   flyLayer.appendChild(g);
   const d = fxSlot(1500); fxAskUntil = performance.now() + d + 1500;   // una scelta (es. il dado del fixer) compare dopo la fascia
+  sfx("turn", d);
   const a = g.animate([{ clipPath: "inset(0 100% 0 0)", opacity: 1 }, { clipPath: "inset(0 0 0 0)", opacity: 1, offset: .18 }, { clipPath: "inset(0 0 0 0)", opacity: 1, offset: .8 }, { clipPath: "inset(0 0 0 100%)", opacity: 1 }], { duration: 1500, delay: d, easing: "ease-in-out", fill: "both" });
   a.onfinish = () => g.remove(); setTimeout(() => g.remove(), d + 1700);
 }
@@ -932,7 +961,8 @@ function render(){
   board.classList.toggle("fx", fxOn());
   fxBanner(board);   // prima delle animazioni: vetrina e dado si mettono in fila dopo la fascia
   animateBoard(board, prevSnap);
-  const askEl = $("#simAsk"), askLeft = fxAskUntil - performance.now();
+  // una scelta compare dopo la fascia e dopo gli effetti in fila (es. l'abilità di una Leggenda che scatta a scontro finito)
+  const askEl = $("#simAsk"), askLeft = Math.max(fxAskUntil, fxBusyUntil) - performance.now();
   if(askEl && askLeft > 60 && fxOn()) askEl.animate([{ opacity: 0, visibility: "hidden" }, { opacity: 0, visibility: "hidden", offset: .97 }, { opacity: 1, visibility: "visible" }], { duration: askLeft, fill: "backwards" });
   const hl = tutorialHighlight(); if(hl) $$("#board " + hl.split(",").join(", #board ")).forEach(x => x.classList.add("tuthl"));
   if(showLog){ const l = $("#simLog"); l.scrollTop = l.scrollHeight; }
@@ -949,6 +979,13 @@ function askHTML(){
   // in due sullo stesso dispositivo: la decisione del difensore si apre solo dopo un tocco, così l'attaccante non vede le sue carte
   if(gmode === "hot" && p.player !== G.active && reactCover !== p) return `<div id="simAsk"><div class="box"><h3>Reazione di ${esc(P.name)}</h3><p>${esc(G.players[G.active].name)}, passa il dispositivo: le opzioni del rivale compaiono solo dopo il suo tocco.</p><div class="opts"><button class="btn yel" data-react="1">Sono ${esc(P.name)}, mostra le opzioni</button></div></div></div>`;
   if((p.kind === "pickcard" || p.kind === "discard") && p.options.some(o => o.c && o.c.pid)) return pickerHTML(p, P, titles[p.kind]);
+  // grafiche avanzate: la scelta del dado è un pannello in basso che lascia vedere la plancia, con il fixer del rivale e la Street Cred
+  if(p.kind === "die" && p.options.every(o => o.sides) && fxOn()){
+    const R = rival(G, P);
+    return `<div id="simAsk" class="fxsheet"><div class="box"><h3>Tira un dado dal fixer</h3><div class="row">${p.options.map((o, i) => `<button class="btn die-opt" data-ask="${i}"${o.disabled ? " disabled" : ""}><span class="die d${o.sides}">${dieSVG(o.sides)}<small>d${o.sides}</small></span><small class="avg">media ${(o.sides + 1) / 2}</small></button>`).join("")}
+      <div style="flex:1"></div><div class="side"><span>Fixer di ${esc(R.name)}</span>${R.fixer.length ? R.fixer.map(s => `<span class="die d${s} fx">${dieSVG(s)}<small>d${s}</small></span>`).join("") : "<span>—</span>"}</div></div>
+      <div class="side">Street Cred · <b>${P.id === me() ? "tu" : esc(P.name)} ${streetCred(P)}</b> · <b>${esc(R.name)} ${streetCred(R)}</b></div></div></div>`;
+  }
   const srcLine = p.ctx && p.ctx.src && p.kind !== "die" && p.kind !== "block" && p.kind !== "steal" ? `<div class="sub" style="margin:-4px 0 8px"><b>${esc(p.ctx.src)}</b>${p.ctx.text ? ` — ${esc(p.ctx.text)}` : ""}</div>` : "";
   return `<div id="simAsk"><div class="box"><h3>${titles[p.kind] || "Scegli"}</h3>${srcLine}${ctx}<div class="opts">${p.options.map((o, i) => {
     const pid = o.unit?.pid || o.c?.pid || o.g?.pid; return `<button class="btn${pid ? " card-opt" : ""}${p.kind === "die" && o.sides ? " die-opt" : ""}" data-ask="${i}"${o.disabled ? " disabled" : ""}>${pid ? `<img src="${thumbUrl(pid)}" alt="">` : ""}${p.kind === "die" && o.sides ? `<span class="die d${o.sides}">${dieSVG(o.sides)}<small>d${o.sides}</small></span>` : esc(o.label)}</button>`; }).join("")}</div></div></div>`;

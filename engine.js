@@ -477,6 +477,7 @@ function fight(G, A, au, D, du, blocked){
   };
   if(aWins && !dWins){ say(G, `${au.card.dn} vince ${pa}–${pd}: ${du.card.dn} sconfitta.`, "fight"); defeat(G, D, du, () => fireEvent(G, D, "loseFight", { unit: du, opponent: au }, () => fireEvent(G, A, "winFight", { unit: au, opponent: du, margin: pa - pd }, () => fireEvent(G, A, "firstWin", { unit: au, opponent: du }, () => bonus(A, au, D, du, pa - pd, after))))); }
   else if(dWins && !aWins){ say(G, `${du.card.dn} vince ${pd}–${pa}: ${au.card.dn} sconfitta.`, "fight"); defeat(G, A, au, () => fireEvent(G, A, "loseFight", { unit: au, opponent: du }, () => fireEvent(G, D, "winFight", { unit: du, opponent: au, margin: pd - pa }, () => fireEvent(G, D, "firstWin", { unit: du, opponent: au }, () => bonus(D, du, A, au, pd - pa, after))))); }   // «la prima volta che vince uno scontro ogni turno» (Johnny Silverhand), anche in difesa
+  else if(!aWins && !dWins && pa === pd && pa === 0){ say(G, `Pareggio 0–0: nessuna delle due viene sconfitta.`, "fight"); after(); }   // con potenza 0 non si sconfigge nessuno
   else if(!aWins && !dWins && pa === pd){ say(G, `Pareggio ${pa}–${pd}: entrambe sconfitte.`, "fight"); defeat(G, D, du, () => defeat(G, A, au, after)); }
   else { say(G, `Nessuna delle due viene sconfitta (${pa}–${pd}).`, "fight"); after(); }
 }

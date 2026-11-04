@@ -259,6 +259,12 @@ import { canPay, costOf, spendCost } from "./engine.js";
     cash(P); cash(R); for(const l of [...P.legends, ...R.legends]) l.spent = false;
     return { G, P, R, give, cash, unit, flush, playC };
   };
+  // scontro 0–0: nessuna delle due viene sconfitta (con potenza 0 non si sconfigge nessuno)
+  { const { G, P, R, unit, flush } = fresh();
+    const a = unit(P, "Delamain Cab"), b = unit(R, "Delamain Cab", { spent: true }); a.mod = -power(a); b.mod = -power(b);
+    ok(power(a) === 0 && power(b) === 0, "due Unità portate a potenza 0");
+    doAction(G, P.id, { t: "attack", uid: a.uid, target: { kind: "unit", uid: b.uid } }); flush();
+    ok(P.field.includes(a) && R.field.includes(b) && /Pareggio 0–0/.test(G.log.map(e => e.text).join("\n")), "scontro 0–0: entrambe sopravvivono"); }
   // Floor It: -1 potenza a un'Unità rivale
   { const { G, P, R, unit, flush, playC } = fresh();
     const w = unit(R, "Animals Wrecker"); const p0 = power(w);

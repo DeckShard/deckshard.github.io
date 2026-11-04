@@ -387,3 +387,15 @@ html[data-theme="light"] #flyLayer .fxshow .nm{background:rgba(255,255,255,.85)}
 #flyLayer .fxshow .ldr .bar i{display:block;height:100%;width:0;background:repeating-linear-gradient(90deg,var(--acc2) 0 8px,transparent 8px 10px);box-shadow:0 0 8px var(--acc2)}
 #flyLayer .fxshow .ldr .l2{margin-top:4px;font:500 10px var(--mono);color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis} #flyLayer .fxshow .ldr .l2 b{color:var(--ink);font-weight:500}
 html[data-theme="light"] #flyLayer .fxpw{background:#fff;color:#1a1012} html[data-theme="light"] #flyLayer .fxshow .ldr{background:rgba(255,255,255,.95)}
+
+/* pannello del fixer (grafiche avanzate): in basso, la plancia resta visibile */
+#simAsk.fxsheet{align-items:flex-end;justify-content:center;background:none;padding:0 0 6px;pointer-events:none}
+#simAsk.fxsheet .box{pointer-events:auto;width:min(96%,640px);max-width:none;background:rgba(10,6,7,.94);border:1px solid var(--line2);border-top:2px solid var(--acc2);border-radius:4px;padding:8px 12px 10px;display:flex;flex-direction:column;gap:6px;box-shadow:0 -10px 40px rgba(0,0,0,.7)}
+#simAsk.fxsheet h3{margin:0;font:700 13px var(--display);letter-spacing:.14em;text-transform:uppercase}
+#simAsk.fxsheet .row{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}
+#simAsk.fxsheet .btn.die-opt{display:grid;place-items:center;gap:2px;padding:6px 10px 8px}
+#simAsk.fxsheet .btn.die-opt .die{--dw:clamp(34px, calc(30px * var(--bz, 1)), 64px);margin-bottom:8px}
+#simAsk.fxsheet .btn.die-opt .avg{font:600 9px var(--font);letter-spacing:.06em;color:var(--mute);text-transform:uppercase}
+#simAsk.fxsheet .side{display:flex;gap:6px;align-items:center;flex-wrap:wrap;font:600 11px var(--font);letter-spacing:.1em;color:var(--mute);text-transform:uppercase}
+#simAsk.fxsheet .side .die{--dw:clamp(18px, calc(16px * var(--bz, 1)), 30px);margin-bottom:5px;opacity:.6;cursor:default} #simAsk.fxsheet .side b{color:var(--ink2);font-weight:600}
+html[data-theme="light"] #simAsk.fxsheet .box{background:rgba(255,255,255,.96)}
