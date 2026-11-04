@@ -97,7 +97,7 @@ function snapBoard(board){
   for(const el of board.querySelectorAll("[data-uid]")){ const r = localRect(board, el); if(!r) continue; const img = el.querySelector(":scope > img"); m.set(+el.dataset.uid, { ...r, src: img ? img.getAttribute("src") : "", spent: el.classList.contains("spent"), back: el.classList.contains("back"), leg: !!el.dataset.legend, gear: !!el.dataset.gearOf, hand: !!el.dataset.hand, t: getComputedStyle(el).transform }); }
   const g = new Map();
   for(const el of board.querySelectorAll(".die[data-gig]")){ const uid = +el.dataset.gig; if(!uid) continue; const r = localRect(board, el); const o = el.closest("[data-owner]"); if(r) g.set(uid, { ...r, owner: o ? +o.dataset.owner : null }); }
-  return { m, g, eddies: (animBase || {}).eddies || G.players.map(P => P.eddies.length), trash: (animBase || {}).trash || G.players.map(P => P.trash.length) };
+  return { m, g, hand: new Map(G.players[me()].hand.map(c => [c.uid, c])), eddies: (animBase || {}).eddies || G.players.map(P => P.eddies.length), trash: (animBase || {}).trash || G.players.map(P => P.trash.length) };
 }
 /* tiro di un dado: disturbo con parametri casuali e cifre che scorrono, poi il lampo; il d20 fa girare le facce
    e apre un anello. Lo stato sta in liveDice, così un ridisegno a metà tiro lo ritrova sull'elemento nuovo. */
@@ -144,9 +144,12 @@ function animateBoard(board, prev){
     const i = fxLastLog ? G.log.lastIndexOf(fxLastLog) : -1, freshLog = i >= 0 ? G.log.slice(i + 1) : (fxLastLog ? G.log.slice(-6) : []);
     // con una decisione in sospeso (quale Gig rubare, come bloccare: tua, del bot o dell'avversario online) lo scontro aspetta:
     // la finestra lo coprirebbe, e un Blocker può ancora deviarlo
+    // …ma se lo scontro è già risolto (riga «fight» o «steal» dopo l'attacco: la decisione in sospeso è un effetto successivo,
+    // es. River Ward a Unità sconfitta) si disegna subito, altrimenti le carte sconfitte sarebbero già sparite
+    const resolved = e => { const i = G.log.indexOf(e); return i >= 0 && G.log.slice(i + 1).some(x => x.kind === "fight" || x.kind === "steal"); };
     const humanWait = !!G.pending;
-    const list = humanWait ? [] : fxHeld.splice(0);
-    for(const e of freshLog){ if(e.kind !== "attack" || !e.d) continue; (humanWait ? fxHeld : list).push(e); }
+    const list = humanWait ? fxHeld.filter(resolved) : fxHeld.splice(0); if(humanWait) fxHeld = fxHeld.filter(e => !resolved(e));
+    for(const e of freshLog){ if(e.kind !== "attack" || !e.d) continue; (humanWait && !resolved(e) ? fxHeld : list).push(e); }
     for(const e of list){
       if(e.d.block != null){ const prevShot = shots.find(x => x.a === e.d.a && !x.done); if(prevShot){ prevShot.t = e.d.block; prevShot.pd = e.d.pb; } continue; }   // un Blocker devia lo scontro su di sé
       shots.push({ a: e.d.a, t: e.d.t, pa: e.d.pa, pd: e.d.pd, who: e.d.who });
@@ -214,10 +217,10 @@ function animateBoard(board, prev){
     if(kind === "sell"){ kf = [{ transform: "none", opacity: 1 }, { transform: `translate(${dx}px, ${dy}px) scale(${sc}) rotateY(0deg)`, opacity: 1, offset: .62 }, { transform: `translate(${dx}px, ${dy}px) scale(${sc}) rotateY(90deg)`, opacity: .9 }]; dur = ms * 1.6; }
     else if(kind === "program"){   // si mostra al centro della plancia, poi va nel Trash
       const cx = mainR.cx - from.cx, cy = mainR.cy - from.cy, big = Math.max(1.4, Math.min(2.2, (parseFloat(getComputedStyle(board).getPropertyValue("--cw")) * 2.2) / from.w));
-      kf = [{ transform: "none", opacity: 1 }, { transform: `translate(${cx}px, ${cy}px) scale(${big})`, opacity: 1, offset: .3 }, { transform: `translate(${cx}px, ${cy}px) scale(${big})`, opacity: 1, offset: .72 }, { transform: `translate(${dx}px, ${dy}px) scale(${sc * .8}) rotate(12deg)`, opacity: 0 }]; dur = ms * 3.2; }
+      kf = [{ transform: "none", opacity: 1, easing: ease }, { transform: `translate(${cx}px, ${cy}px) scale(${big})`, opacity: 1, offset: .3, easing: "linear" }, { transform: `translate(${cx}px, ${cy}px) scale(${big})`, opacity: 1, offset: .72, easing: ease }, { transform: `translate(${dx}px, ${dy}px) scale(${sc * .8}) rotate(12deg)`, opacity: 0 }]; dur = ms * 3.2; }
     else if(kind === "trash") kf = [{ transform: "none", opacity: 1 }, { transform: `translate(${dx}px, ${dy}px) scale(${sc * .8}) rotate(12deg)`, opacity: 0 }];
     else kf = [{ transform: "none", opacity: 1 }, { transform: "scale(.6)", opacity: 0 }];
-    const a = g.animate(kf, { duration: dur, delay, easing: ease, fill: "forwards" }); a.onfinish = () => g.remove(); setTimeout(() => g.remove(), delay + dur + 200);
+    const a = g.animate(kf, { duration: dur, delay, easing: kind === "program" ? "linear" : ease, fill: "forwards" }); a.onfinish = () => g.remove(); setTimeout(() => g.remove(), delay + dur + 200);
   };
   const grown = G.players.map((P, i) => ({ e: P.eddies.slice(prev.eddies[i]), t: P.trash.slice(prev.trash[i]) }));
   for(const [uid, was] of prev.m){
@@ -229,6 +232,7 @@ function animateBoard(board, prev){
       else if(hitUids.has(uid)) deferredFly.push({ uid, from: was, to: anchor("trash", tPl.id), src: was.src, kind: prog ? "program" : "trash" });
       else fly(was, anchor("trash", tPl.id), was.src, prog ? "program" : "trash");
       grown[tPl.id].t = grown[tPl.id].t.filter(c => c.uid !== uid); }
+    else if(fx && who === "mine" && was.hand && prev.hand.get(uid) && prev.hand.get(uid).card.type === "Program") fxShowcase(board, { src: was.src, label: "Lanci un Programma", tag: "Programma", name: prev.hand.get(uid).card.dn, bar: true, who: "mine", to: anchor("trash", me()) }, ms);   // Programma in attesa di una scelta: finirà nel Trash
     else fly(was, was, was.src, "fade");
   }
   // vendite e scarti dell'avversario (la sua mano non si vede): dalla mano alla pila
@@ -287,15 +291,17 @@ function fxShowcase(board, o, ms){
   g.style.cssText = `left:${main.cx - w / 2}px;top:${main.cy - h / 2}px;width:${w}px;height:${h}px`;
   g.innerHTML = `<div class="kick">${esc(o.label)}</div><div class="crd">${o.src ? `<img src="${o.src}" alt="">` : `<div class="n">${esc(o.name || "")}</div>`}</div>${o.tag ? `<span class="tag">${esc(o.tag)}</span>` : ""}${o.bar ? `<div class="ldr"><div class="l1"><span>▶ esecuzione</span><span class="pc">0%</span></div><div class="bar"><i></i></div><div class="l2">&gt; run <b>${esc((o.name || "").toUpperCase().replace(/[^A-Z0-9]+/g, "_"))}</b></div></div>` : o.name ? `<div class="nm">${esc(o.name)}</div>` : ""}`;
   flyLayer.appendChild(g);
-  const enter = ms * .8, exit = ms * 1.2, hold = Math.max(o.bar ? 900 : 300, Math.min(Math.max(ms * (o.bar ? 3 : 2.2), 500), (o.who === "mine" ? 1e9 : oppDelay(gOnline)) - enter - exit)), delay = fxSlot(enter + hold + exit), total = delay + enter + hold + exit;
-  if(o.bar){ const fill = g.querySelector(".bar i"), pc = g.querySelector(".pc"); fill.animate([{ width: "0%" }, { width: "0%", offset: enter / (enter + hold + exit) }, { width: "100%", offset: (enter + hold) / (enter + hold + exit) }, { width: "100%" }], { duration: enter + hold + exit, delay, fill: "both" }); const t0 = performance.now() + delay + enter; const iv = setInterval(() => { const k = Math.max(0, Math.min(1, (performance.now() - t0) / hold)); pc.textContent = Math.round(k * 100) + "%"; if(k >= 1) clearInterval(iv); }, 60); setTimeout(() => clearInterval(iv), total + 100); }
+  // un Programma resta di più: la barra si riempie nei primi 4/5 della sosta, poi «100 %» fermo, e solo dopo la carta va nel Trash
+  const enter = ms * .8, exit = ms * 1.2, hold = o.bar ? Math.max(1400, ms * 4.5) : Math.max(300, Math.min(Math.max(ms * 2.2, 500), (o.who === "mine" ? 1e9 : oppDelay(gOnline)) - enter - exit)), delay = fxSlot(enter + hold + exit), total = delay + enter + hold + exit;
+  if(o.bar){ const fill = g.querySelector(".bar i"), pc = g.querySelector(".pc"), span = enter + hold + exit, load = hold * .8; fill.animate([{ width: "0%" }, { width: "0%", offset: enter / span }, { width: "100%", offset: (enter + load) / span }, { width: "100%" }], { duration: span, delay, fill: "both" }); const t0 = performance.now() + delay + enter; const iv = setInterval(() => { const k = Math.max(0, Math.min(1, (performance.now() - t0) / load)); pc.textContent = k >= 1 ? "100% ✓" : Math.round(k * 100) + "%"; if(k >= 1) clearInterval(iv); }, 50); setTimeout(() => clearInterval(iv), total + 100); }
   const to = o.to, dx = to ? to.cx - main.cx : 0, dy = to ? to.cy - main.cy : 0, sc = to ? Math.min(1, to.w / w, to.h / h) : .6;
+  // l'andamento va dato tratto per tratto: un unico easing sull'intera animazione comprimerebbe la sosta e anticiperebbe l'uscita
   const kf = [
-    { transform: "scale(.5)", opacity: 0 },
-    { transform: "scale(1)", opacity: 1, offset: enter / (enter + hold + exit) },
-    { transform: "scale(1)", opacity: 1, offset: (enter + hold) / (enter + hold + exit) },
+    { transform: "scale(.5)", opacity: 0, easing: fxEase },
+    { transform: "scale(1)", opacity: 1, offset: enter / (enter + hold + exit), easing: "linear" },
+    { transform: "scale(1)", opacity: 1, offset: (enter + hold) / (enter + hold + exit), easing: fxEase },
     { transform: `translate(${dx}px, ${dy}px) scale(${sc})`, opacity: to ? .95 : 0 }];
-  const a = g.animate(kf, { duration: enter + hold + exit, delay, easing: fxEase, fill: "both" });
+  const a = g.animate(kf, { duration: enter + hold + exit, delay, fill: "both" });
   sfx(o.cls === "yel" ? "sell" : "play", delay);
   // etichette: sfumano prima dell'uscita
   for(const el of g.querySelectorAll(".kick, .nm, .tag, .ldr")) el.animate([{ opacity: 1, offset: (enter + hold) / (enter + hold + exit) }, { opacity: 0 }], { duration: enter + hold + exit, delay, fill: "both" });
@@ -325,7 +331,7 @@ function fxRollNow(board, el, gig, who, ms){
   const iv = setInterval(() => { const t = performance.now() - t0; if(t >= roll){ clearInterval(iv); die.classList.remove("rolling"); b.textContent = gig.value; die.classList.add("landed"); g.classList.add("done"); return; } if(t >= next){ next = t + 40 + Math.random() * 50; b.textContent = 1 + Math.floor(Math.random() * gig.sides); glitch(); } }, 30);
   liveDice.set(uid, { until: performance.now() + total, big: true }); el.style.visibility = "hidden";
   const to = localRect(board, el);
-  if(to){ const dx = to.cx - main.cx, dy = to.cy - main.cy, sc = to.w / dw; g.animate([{ transform: "none", offset: (roll + hold) / total }, { transform: `translate(${dx}px, ${dy}px) scale(${sc})` }], { duration: total, easing: fxEase, fill: "forwards" }); g.querySelector(".kick").animate([{ opacity: 1, offset: (roll + hold) / total }, { opacity: 0 }], { duration: total, fill: "forwards" }); }
+  if(to){ const dx = to.cx - main.cx, dy = to.cy - main.cy, sc = to.w / dw; g.animate([{ transform: "none", easing: "linear" }, { transform: "none", offset: (roll + hold) / total, easing: fxEase }, { transform: `translate(${dx}px, ${dy}px) scale(${sc})` }], { duration: total, fill: "forwards" }); g.querySelector(".kick").animate([{ opacity: 1, offset: (roll + hold) / total }, { opacity: 0 }], { duration: total, fill: "forwards" }); }
   setTimeout(() => { g.remove(); applyDice(board); }, total + 60);
   g.animate([{ opacity: 0, transform: "scale(.6)" }, { opacity: 1, transform: "none" }], { duration: Math.max(150, ms * .5), easing: fxEase });
 }
@@ -404,7 +410,7 @@ function fxSteal(board, el, was, now, gig, who, ms){
     g.style.setProperty("--c", getComputedStyle(g.querySelector(".die")).getPropertyValue("--c") || "var(--acc2)");
     flyLayer.appendChild(g); sfx("steal");
     const from = `translate(${was.cx - main.cx}px, ${was.cy - main.cy}px) scale(${was.w / dw})`, to = `translate(${now.cx - main.cx}px, ${now.cy - main.cy}px) scale(${now.w / dw})`;
-    g.animate([{ transform: from, opacity: 1 }, { transform: "none", opacity: 1, offset: leg / total }, { transform: "none", opacity: 1, offset: (leg + hold) / total }, { transform: to, opacity: 1 }], { duration: total, easing: fxEase, fill: "forwards" });
+    g.animate([{ transform: from, opacity: 1, easing: fxEase }, { transform: "none", opacity: 1, offset: leg / total, easing: "linear" }, { transform: "none", opacity: 1, offset: (leg + hold) / total, easing: fxEase }, { transform: to, opacity: 1 }], { duration: total, fill: "forwards" });
     g.querySelector(".kick").animate([{ opacity: 0 }, { opacity: 1, offset: leg / total }, { opacity: 1, offset: (leg + hold) / total }, { opacity: 0 }], { duration: total, fill: "forwards" });
     setTimeout(() => { g.remove(); applyDice($("#board")); }, total + 60);
   }, wait);
@@ -424,7 +430,7 @@ function fxBanner(board){
   flyLayer.appendChild(g);
   const d = fxSlot(1500); fxAskUntil = performance.now() + d + 1500;   // una scelta (es. il dado del fixer) compare dopo la fascia
   sfx("turn", d);
-  const a = g.animate([{ clipPath: "inset(0 100% 0 0)", opacity: 1 }, { clipPath: "inset(0 0 0 0)", opacity: 1, offset: .18 }, { clipPath: "inset(0 0 0 0)", opacity: 1, offset: .8 }, { clipPath: "inset(0 0 0 100%)", opacity: 1 }], { duration: 1500, delay: d, easing: "ease-in-out", fill: "both" });
+  const a = g.animate([{ clipPath: "inset(0 100% 0 0)", opacity: 1, easing: "ease-out" }, { clipPath: "inset(0 0 0 0)", opacity: 1, offset: .18, easing: "linear" }, { clipPath: "inset(0 0 0 0)", opacity: 1, offset: .8, easing: "ease-in" }, { clipPath: "inset(0 0 0 100%)", opacity: 1 }], { duration: 1500, delay: d, fill: "both" });
   a.onfinish = () => g.remove(); setTimeout(() => g.remove(), d + 1700);
 }
 
@@ -988,7 +994,10 @@ function askHTML(){
   }
   const srcLine = p.ctx && p.ctx.src && p.kind !== "die" && p.kind !== "block" && p.kind !== "steal" ? `<div class="sub" style="margin:-4px 0 8px"><b>${esc(p.ctx.src)}</b>${p.ctx.text ? ` — ${esc(p.ctx.text)}` : ""}</div>` : "";
   return `<div id="simAsk"><div class="box"><h3>${titles[p.kind] || "Scegli"}</h3>${srcLine}${ctx}<div class="opts">${p.options.map((o, i) => {
-    const pid = o.unit?.pid || o.c?.pid || o.g?.pid; return `<button class="btn${pid ? " card-opt" : ""}${p.kind === "die" && o.sides ? " die-opt" : ""}" data-ask="${i}"${o.disabled ? " disabled" : ""}>${pid ? `<img src="${thumbUrl(pid)}" alt="">` : ""}${p.kind === "die" && o.sides ? `<span class="die d${o.sides}">${dieSVG(o.sides)}<small>d${o.sides}</small></span>` : esc(o.label)}</button>`; }).join("")}</div></div></div>`;
+    const pid = o.unit?.pid || o.c?.pid || o.g?.pid, gig = o.gig && o.gig.sides ? o.gig : null;
+    // un Gig da scegliere (rubare, scambiare, copiare) si mostra come dado con il valore; resta il prefisso del testo («tuo», «rivale», «come»)
+    const gigCap = gig ? esc(o.label.replace(/d\d+\s*=\s*\d+/, "").trim()) : "";
+    return `<button class="btn${pid ? " card-opt" : ""}${(p.kind === "die" && o.sides) || gig ? " die-opt" : ""}" data-ask="${i}"${o.disabled ? " disabled" : ""}>${pid ? `<img src="${thumbUrl(pid)}" alt="">` : ""}${p.kind === "die" && o.sides ? `<span class="die d${o.sides}">${dieSVG(o.sides)}<small>d${o.sides}</small></span>` : gig ? `${gigCap ? `<small class="cap">${gigCap}</small>` : ""}<span class="die d${gig.sides}">${dieSVG(gig.sides)}<b>${gig.value}</b><small>d${gig.sides}</small></span>` : esc(o.label)}</button>`; }).join("")}</div></div></div>`;
 }
 /* scelta tra carte (ricerca nel mazzo, trash, recupero, scarto): le carte si vedono grandi, con il testo
    della carta che produce l'effetto e cosa si può fare. Tocca una carta per sceglierla (🔍 o pressione

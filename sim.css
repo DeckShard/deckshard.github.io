@@ -76,7 +76,7 @@ html[data-theme="light"] .die b{color:#1a1012;text-shadow:none} html[data-theme=
 .die.fx{opacity:.42;filter:none;cursor:default}.die.fx svg .out{stroke-dasharray:5 4}.die.fx svg .fill{display:none}.die.fx small{background:none;color:var(--c);border:1px solid var(--c);clip-path:none}
 .dice .cred{align-self:center;margin-bottom:calc(var(--dw,30px) * .18)}
 /* scelta del dado dal fixer: pulsanti con l'icona */
-#simAsk .btn.die-opt{padding:10px 16px 16px}#simAsk .btn.die-opt .die{--dw:clamp(38px, calc(40px * var(--bz, 1)), 96px);cursor:inherit}#simAsk .box:has(.die-opt){width:auto;min-width:min(92%,340px)} #simAsk .box:has(.die-opt) .opts{justify-content:center;gap:10px}
+#simAsk .btn.die-opt{padding:10px 16px 16px;display:inline-grid;place-items:center;gap:2px}#simAsk .btn.die-opt .cap{font:600 9px var(--font);letter-spacing:.08em;color:var(--mute);text-transform:uppercase}#simAsk .btn.die-opt .die{--dw:clamp(38px, calc(40px * var(--bz, 1)), 96px);cursor:inherit}#simAsk .box:has(.die-opt){width:auto;min-width:min(92%,340px)} #simAsk .box:has(.die-opt) .opts{justify-content:center;gap:10px}
 /* tiro: disturbo (parametri casuali impostati da JS), poi lampo con le staffe agli angoli; il d20 ruota le sue facce */
 .die.rolling{animation:dieGlitch .09s steps(2) infinite}
 .die.rolling b{font-family:var(--mono)}
