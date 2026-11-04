@@ -192,7 +192,7 @@ html[data-motion="reduce"] .die.rolling,html[data-motion="reduce"] .die.landed,h
 #board .brow.hand .bc{touch-action:pan-x}
 /* plancia ruotata (telefono in verticale): il browser legge touch-action sugli assi dello schermo, quindi lo
    scorrimento della mano (orizzontale nella plancia) è verticale sullo schermo; il gesto verso il campo resta al trascinamento */
-@media (orientation: portrait) and (max-width: 760px){ #board .brow.hand .bc{touch-action:pan-y} }
+@media (orientation: portrait) and (max-width: 760px){ #board .brow.hand, #board .brow.hand .bc{touch-action:none} }
 #peek[hidden]{display:none}
 /* scelta tra carte: ricerca nel mazzo, trash, recupero, scarto */
 #simAsk.picker .box{max-width:min(860px,100%);display:flex;flex-direction:column;gap:8px;padding:10px 12px}

@@ -1394,6 +1394,23 @@ function wire(){
     const zone = el.closest(".bz.mine"); if(zone && !el.closest("[data-handrow], .rs")) return { kind: "field", el: zone.querySelector(`[data-field="${M.id}"]`) };
     return null;
   };
+  // plancia ruotata (telefono in verticale): il browser non fa scorrere da solo la mano ruotata, quindi la si scorre a mano.
+  // Il primo tratto del dito decide: lungo la mano (su/giù sullo schermo) scorre, verso il campo trascina la carta.
+  let hs = null;
+  board.addEventListener("pointerdown", e => {
+    hs = null; if(!e.isPrimary || !rotated()) return;
+    const row = e.target.closest("[data-handrow]"); if(row && row.scrollWidth > row.clientWidth + 2) hs = { row, sl: row.scrollLeft, x: e.clientX, y: e.clientY, id: e.pointerId, mode: null };
+  }, true);
+  board.addEventListener("pointermove", e => {
+    if(!hs || e.pointerId !== hs.id) return;
+    const lx = e.clientY - hs.y, ly = -(e.clientX - hs.x);   // spostamento negli assi della plancia (ruotata di 90°)
+    if(!hs.mode){ if(Math.hypot(lx, ly) < 10) return; hs.mode = Math.abs(lx) > Math.abs(ly) ? "scroll" : "drag"; if(hs.mode === "drag"){ hs = null; return; } lpCancel(); if(drag && !drag.active) drag = null; }
+    hs.row.scrollLeft = hs.sl - lx; e.preventDefault();
+  }, true);
+  let hsDone = 0;   // dopo uno scorrimento il rilascio non vale come tocco sulla carta
+  const hsEnd = e => { if(hs && e.pointerId === hs.id){ if(hs.mode === "scroll") hsDone = Date.now(); hs = null; } };
+  board.addEventListener("pointerup", hsEnd, true); board.addEventListener("pointercancel", hsEnd, true);
+  board.addEventListener("click", e => { if(Date.now() - hsDone < 350){ e.preventDefault(); e.stopPropagation(); } }, true);
   board.addEventListener("pointerdown", e => {
     if(drag) return;                                   // un secondo dito non avvia un altro trascinamento
     if(!e.isPrimary || !G || G.winner != null) return;

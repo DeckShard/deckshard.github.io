@@ -14,7 +14,7 @@ import { renderChatTab, openChatWith } from "./social.js";
 import { initI18n } from "./i18n.js";
 import { bootCloud, state as cloudState } from "./cloud.js";
 
-export const APP_VERSION = "1.9.20";
+export const APP_VERSION = "1.9.21";
 /* novità mostrate alla prima apertura dopo un aggiornamento (solo l'ultima versione; chi installa da zero non le vede) */
 const NEWS = { v: "1.9.19", items: [
   "Nuova scheda <b>Chat</b> nella barra in basso; le <b>Regole</b> sono la terza scheda del Simulator. Una notifica di messaggio apre la conversazione, e in partita puoi rispondere al tuo amico.",
