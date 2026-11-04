@@ -3,8 +3,8 @@
    backup dei dati.                                                       */
 
 import { DATA, imgUrl, thumbUrl, RARITY_IT, TYPE_IT } from "./data.js";
-import { S, DEFAULT_PROFILE, exportAll, importAll, wipe, storageOk } from "./store.js";
-import { $, $$, esc, toast, pickMatters } from "./ui.js";
+import { S, DEFAULT_PROFILE, exportAll, importAll, wipe, storageOk, rawGet } from "./store.js";
+import { $, $$, esc, toast, pickMatters, askConfirm } from "./ui.js";
 import { applyTheme, APP_VERSION } from "./app.js";
 import { accountHTML, friendsHTML, wireSocial, feedbackHTML, wireFeedback, safeWipe } from "./social.js";
 import { state as cloudState, pushSupported, pushNeedsInstall, enablePush, disablePush } from "./cloud.js";
@@ -156,6 +156,8 @@ export function renderSettings(){
     <div class="card">
       <h3>Notifiche</h3>
       ${(() => { const P = S.settings.push || {}, seg = (id, cur, opts) => `<span class="seg" id="${id}">${opts.map(([v, t]) => `<button data-v="${v}" aria-pressed="${cur === v}">${t}</button>`).join("")}</span>`;
+        // dopo un refresh l'account si ricollega qualche istante dopo il disegno: intanto lo si dice (poi la scheda si ridisegna da sola)
+        if(!cloudState.user && rawGet("auth", null)) return `<p class="sub" style="margin:4px 0 0">Collegamento all'account in corso…</p>`;
         if(!cloudState.user) return `<p class="sub" style="margin:4px 0 0">Accedi dal Social per ricevere sul telefono un avviso quando arriva un messaggio, una sfida o una richiesta d'amicizia.</p>`;
         if(pushNeedsInstall()) return `<p class="sub" style="margin:4px 0 0">Su iPhone e iPad le notifiche funzionano solo con DeckShard sulla schermata Home: in Safari tocca Condividi → «Aggiungi alla schermata Home», apri l'app da lì e attivale qui (serve iOS 16.4 o successivo).</p>`;
         if(!pushSupported()) return `<p class="sub" style="margin:4px 0 0">Questo browser non supporta le notifiche.</p>`;
@@ -194,9 +196,9 @@ export function renderSettings(){
 
     <div class="card">
       <h3>Collection</h3>
-      <div class="field"><label>Voci della collezione<small>Una per carta (151), una per illustrazione (ogni arte diversa conta a sé) o una per edizione (ogni stampa: set, lingua, variante). Il completamento segue la stessa scelta.</small></label>
+      <div class="field"><label>Voci della collezione<small>Una per carta (${n}), una per illustrazione (ogni arte diversa conta a sé) o una per edizione (ogni stampa: set, lingua, variante). Il completamento segue la stessa scelta.</small></label>
         <span class="seg" id="pfCollView">${[["card", "Per carta"], ["art", "Per illustrazione"], ["print", "Per edizione"]].map(([v, t]) => `<button data-v="${v}" aria-pressed="${(S.settings.collView || "card") === v}">${t}</button>`).join("")}</span></div>
-      ${(S.settings.collView || "card") === "card" ? `<div class="field"><label>Illustrazione mostrata<small>Tra le stampe che possiedi di ogni carta. Nella scheda di una carta puoi fissarne una con «☆ Mostra in Collection»: vince su questa regola.</small></label>
+      ${(S.settings.collView || "card") === "card" ? `<div class="field"><label>Illustrazione mostrata<small>Tra le stampe che possiedi di ogni carta. Con la stellina «☆ Artwork preferito» (sulla carta o nella sua scheda) ne fissi una: vince su questa regola.</small></label>
         <span class="seg" id="pfCollPick">${[["rarest", "La più rara"], ["common", "La meno rara"], ["newest", "La più recente"]].map(([v, t]) => `<button data-v="${v}" aria-pressed="${(S.settings.collPick || "rarest") === v}">${t}</button>`).join("")}</span></div>
       ${(n => `<div class="sub" style="margin-top:6px">${n ? `Cambia l'illustrazione di <b>${n} ${n === 1 ? "carta" : "carte"}</b>: le altre le possiedi in una sola stampa (o le hai fissate).` : "Per ora non cambia nulla: di ogni carta possiedi una sola stampa (o l'hai fissata). Conta quando ne hai più versioni, ad esempio la Rara e la Secret."}</div>`)(pickMatters())}
       ${Object.keys(S.settings.favPrints || {}).length ? `<div class="sub" style="margin-top:6px">${Object.keys(S.settings.favPrints).length} carte con illustrazione fissata · <a href="#" id="pfFavClear">togli tutte</a></div>` : ""}` : ""}
@@ -238,12 +240,25 @@ export function renderSettings(){
       <details class="fold" style="margin-top:12px"><summary>Privacy</summary><div class="sub" style="margin-top:6px">Senza account tutto resta su questo dispositivo. Con l'account vengono salvati su Supabase (server nell'Unione Europea, Francoforte): email di accesso, nick e profilo pubblico (avatar, fazione, record), collezione, mazzi e impostazioni per la sincronizzazione, amicizie, blocchi e messaggi. L'email non è mai visibile agli altri giocatori; la collezione la vedono gli amici solo se lo scegli. «Elimina account» cancella tutto in modo definitivo. Il feedback arriva in una casella privata e contiene solo ciò che scrivi, la versione dell'app e il tipo di dispositivo.
         <div style="margin-top:8px;display:flex;gap:12px;flex-wrap:wrap"><a href="privacy.html" target="_blank" rel="noopener">Informativa completa</a><a href="delete-account.html" target="_blank" rel="noopener">Eliminare l'account dal web</a></div></div></details>
     </div>`;
+  infoFold(root);
 }
 
 function setP(k, v){ S.profile[k] = v; S.save("profile"); document.dispatchEvent(new CustomEvent("ncd:profile")); }
 
 let cropOpen = false;
+/* su telefono le spiegazioni lunghe delle Impostazioni stanno dietro un pulsante (i): la riga resta bassa.
+   Su PC restano sempre visibili. */
+function infoFold(root){
+  for(const sm of root.querySelectorAll(".field > label > small")){
+    if(sm.textContent.trim().length < 70) continue;
+    const f = sm.closest(".field"), lab = sm.parentElement; f.classList.add("long");
+    const b = document.createElement("button"); b.type = "button"; b.className = "infob"; b.textContent = "i";
+    b.setAttribute("aria-label", "Spiegazione"); b.setAttribute("aria-expanded", "false"); b.title = "Spiegazione";
+    lab.insertBefore(b, sm);
+  }
+}
 function wire(root){
+  root.addEventListener("click", e => { const b = e.target.closest(".infob"); if(!b) return; e.preventDefault(); const f = b.closest(".field"); const on = f.classList.toggle("iopen"); b.setAttribute("aria-expanded", String(on)); }, true);
   // la regolazione dell'avatar resta aperta finché non si tocca il suo titolo, anche se la pagina si ridisegna
   root.addEventListener("toggle", e => { if(e.target.id === "pfCrop") cropOpen = e.target.open; }, true);
   root.addEventListener("input", e => {
@@ -307,7 +322,7 @@ function wire(root){
       setTimeout(() => URL.revokeObjectURL(a.href), 2000); return;
     }
     if(e.target.closest("#pfImport")){ $("#pfFile").click(); return; }
-    if(e.target.closest("#pfWipe")){ if(confirm(cloudState.user ? "Cancellare collezione, mazzi, profilo e record da questo dispositivo? Esci anche dall'account: i dati nel cloud restano." : "Cancellare collezione, mazzi, profilo e record da questo dispositivo?")){ safeWipe().then(() => { applyTheme(); renderSettings(); toast("Memoria formattata: si riparte da zero"); document.dispatchEvent(new CustomEvent("ncd:collection")); }); } }
+    if(e.target.closest("#pfWipe")){ askConfirm(cloudState.user ? "Cancellare collezione, mazzi, profilo e record da questo dispositivo? Esci anche dall'account: i dati nel cloud restano." : "Cancellare collezione, mazzi, profilo e record da questo dispositivo?", { ok: "Cancella tutto", danger: true }).then(ok => { if(ok) safeWipe().then(() => { applyTheme(); renderSettings(); toast("Memoria formattata: si riparte da zero"); document.dispatchEvent(new CustomEvent("ncd:collection")); }); }); }
   });
   root.addEventListener("change", async e => {
     if(e.target.id !== "pfFile" || !e.target.files[0]) return;

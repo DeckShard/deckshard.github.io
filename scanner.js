@@ -6,7 +6,7 @@
 
 import { DATA, thumbUrl } from "./data.js";
 import { S, qtyOf, setQty } from "./store.js";
-import { $, $$, esc, toast, openCard } from "./ui.js";
+import { $, $$, esc, toast, openCard, askConfirm } from "./ui.js";
 
 const TESS_URL = "https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";
 const AUTO_MIN = 0.7;        // punteggio minimo per l'aggiunta automatica
@@ -282,7 +282,7 @@ function wire(){
     }
     if(e.target.closest("#scanPick")){ $("#scanFile").click(); return; }
     if(e.target.closest("#scanCommit")){ commitStage(); return; }
-    if(e.target.closest("#scanClear")){ if(confirm("Svuotare la lista di scansione?")){ STAGE = []; saveStage(); renderStage(); } return; }
+    if(e.target.closest("#scanClear")){ askConfirm("Svuotare la lista di scansione?", { ok: "Svuota", danger: true }).then(ok => { if(ok){ STAGE = []; saveStage(); renderStage(); } }); return; }
     const hit = e.target.closest("[data-hit]"); if(hit){
       const h = lastHits[+hit.dataset.hit], c = h.card, pid = h.variant ? h.variant.pid : c.def.id;
       if(e.target.closest("img")){ openCard(c.id, pid, { pick: p2 => stageAdd(c, p2, 1) }); return; }

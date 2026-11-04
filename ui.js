@@ -14,6 +14,29 @@ export function toast(msg, ms = 2400){
   clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove("on"), ms);
 }
 
+/* finestre di conferma e di testo nello stile dell'app (al posto di confirm/prompt del telefono).
+   Promettono true/false o il testo (null se si annulla). Esc chiude, Invio conferma (non nelle aree di testo). */
+function dialog(msg, o, withText){
+  return new Promise(done => {
+    const el = document.createElement("div"); el.id = "appAsk"; el.setAttribute("role", "dialog"); el.setAttribute("aria-modal", "true");
+    const field = !withText ? "" : o.multiline
+      ? `<textarea class="inp" id="appAskIn" rows="${o.rows || 6}" ${o.readonly ? "readonly" : ""} placeholder="${esc(o.placeholder || "")}">${esc(o.value || "")}</textarea>`
+      : `<input class="inp" id="appAskIn" maxlength="${o.max || 300}" placeholder="${esc(o.placeholder || "")}" value="${esc(o.value || "")}" autocomplete="off">`;
+    el.innerHTML = `<div class="box${o.danger ? " danger" : ""}">${o.title ? `<div class="kick">${esc(o.title)}</div>` : ""}<p class="amsg">${esc(msg)}</p>${field}
+      <div class="opts">${o.cancel === false ? "" : `<button class="btn" data-a="no">${esc(o.cancel || "Annulla")}</button>`}<button class="btn ${o.danger ? "bad" : "yel"}" data-a="ok">${esc(o.ok || "Conferma")}</button></div></div>`;
+    const prev = document.activeElement; document.body.appendChild(el);
+    const inp = el.querySelector("#appAskIn");
+    const close = v => { el.remove(); document.removeEventListener("keydown", key, true); try{ prev?.focus?.(); }catch(e){} done(v); };
+    const ok = () => close(withText ? (inp ? inp.value : "") : true), no = () => close(withText ? null : false);
+    const key = e => { if(e.key === "Escape"){ e.preventDefault(); no(); } else if(e.key === "Enter" && !(e.target && e.target.tagName === "TEXTAREA")){ e.preventDefault(); ok(); } };
+    document.addEventListener("keydown", key, true);
+    el.addEventListener("click", e => { const b = e.target.closest("[data-a]"); if(b) (b.dataset.a === "ok" ? ok : no)(); else if(e.target === el) no(); });
+    if(inp){ inp.focus(); if(o.readonly) inp.select(); } else el.querySelector('[data-a="ok"]').focus();
+  });
+}
+export const askConfirm = (msg, o = {}) => dialog(msg, o, false);
+export const askText = (msg, o = {}) => dialog(msg, o, true);
+
 export const statsHTML = c => `
   ${c.cost != null ? `<span class="stat cost" title="Costo">€$ ${c.cost}</span>` : ""}
   ${c.power != null ? `<span class="stat pow" title="Potenza">⚡ ${c.power}</span>` : ""}

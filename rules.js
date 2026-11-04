@@ -92,8 +92,11 @@ export function renderRules(){
   const root = $("#p-rules");
   if(fullMode && !RULES && !rulesErr){ loadRules().then(renderRules); }
   root.innerHTML = `
-    <div class="card">${simKindHTML("rules")}
-      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:space-between"><h2>${fullMode ? "Regole complete" : "Regole in breve"}</h2>
+    <div class="card">
+      <h2>Simulator</h2>
+      <div class="sub">Sfida un'IA uscita dal Blackwall, oppure i tuoi choom.</div>
+      ${simKindHTML("rules")}
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:space-between"><h3 style="margin:0">${fullMode ? "Regole complete" : "Regole in breve"}</h3>
         <span class="seg" id="rulesMode"><button data-v="0" aria-pressed="${!fullMode}">In breve</button><button data-v="1" aria-pressed="${fullMode}">Complete (ufficiali)</button></span></div>
       <div class="sub">${fullMode ? "Il regolamento ufficiale completo, per risolvere ogni dubbio o conflitto in partita: tocca una sezione per aprirla, cerca una parola, segui i rimandi tra le regole." : "Quello che serve per giocare la prima partita, in italiano. Per i casi particolari e le dispute ci sono le regole complete ufficiali."}</div>
       ${fullMode ? "" : `<div class="rulesnav">${SECTIONS.map(([t], i) => `<a href="#rules-${i}" class="chip">${esc(t)}</a>`).join("")}</div>`}

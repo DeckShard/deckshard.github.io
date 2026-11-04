@@ -74,8 +74,9 @@ ok((await page.locator("#tOwned").textContent()) === "9", "aggiorna: 3 già poss
 await page.click("#collImportBtn");
 await page.fill("#collImportText", "1 Detonate");
 await page.click('#collImportMode [data-v="replace"]');
-page.once("dialog", d => d.accept());
 await page.click("#collImportGo");
+ok(await page.locator("#appAsk .btn.bad").count() === 1, "conferma nello stile dell'app (non quella del telefono)");
+await page.click('#appAsk [data-a="ok"]');
 await page.waitForFunction(() => document.querySelector("#collImport").hidden);
 ok((await page.locator("#tOwned").textContent()) === "1", "sostituisci: la collezione contiene solo la lista nuova");
 // ripristina 3 copie di Mantis Blades per i controlli successivi
@@ -153,8 +154,9 @@ await page.screenshot({ path: "/tmp/ncd-shot-deck.png", fullPage: true });
 await page.click("#deckBack");
 ok((await page.locator("#deckList [data-deck]").count()) === 1, "mazzo in elenco");
 // import testo
-await page.evaluate(() => { window.prompt = () => "# Test import\nLegend: V: Streetkid\nLegend: Royce: Psycho on the Edge\nLegend: Rogue Amendiares: Preem Solo\n3 Mantis Blades\n2x Japantown Jonin\n2 WNC-025\n1 MS01 030\nSD01-004 x2\nNon esiste"; });
 await page.click("#deckImport");
+await page.fill("#appAsk #appAskIn", "# Test import\nLegend: V: Streetkid\nLegend: Royce: Psycho on the Edge\nLegend: Rogue Amendiares: Preem Solo\n3 Mantis Blades\n2x Japantown Jonin\n2 WNC-025\n1 MS01 030\nSD01-004 x2\nNon esiste");
+await page.click('#appAsk [data-a="ok"]');
 await page.waitForSelector("#deckEdit:not([hidden])");
 ok((await page.locator("#deckName").inputValue()) === "Test import", "nome importato");
 const importedRows = await page.locator("#deckEdit .dlist .row").count();
@@ -165,8 +167,8 @@ await page.click("#deckErrorsOk"); ok(await page.locator("#deckErrors").count() 
 await page.click("#deckBack");
 // elimina dall'elenco con conferma
 const nDecks = await page.locator("#deckList [data-deck]").count();
-page.once("dialog", d => d.accept());
 await page.click("#deckList [data-ddel] >> nth=0");
+await page.click('#appAsk [data-a="ok"]'); await page.waitForTimeout(200);
 ok((await page.locator("#deckList [data-deck]").count()) === nDecks - 1, "mazzo eliminato dall'elenco");
 
 /* profilo */

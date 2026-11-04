@@ -14,9 +14,9 @@ import { renderChatTab, openChatWith } from "./social.js";
 import { initI18n } from "./i18n.js";
 import { bootCloud, state as cloudState } from "./cloud.js";
 
-export const APP_VERSION = "1.9.18";
+export const APP_VERSION = "1.9.19";
 /* novità mostrate alla prima apertura dopo un aggiornamento (solo l'ultima versione; chi installa da zero non le vede) */
-const NEWS = { v: "1.9.18", items: [
+const NEWS = { v: "1.9.19", items: [
   "Nuova scheda <b>Chat</b> nella barra in basso; le <b>Regole</b> sono la terza scheda del Simulator. Una notifica di messaggio apre la conversazione, e in partita puoi rispondere al tuo amico.",
   "Partita offline sullo stesso telefono: dopo il mulligan c'è la schermata di passaggio, e chi prende il telefono vede cosa ha fatto l'altro nel suo turno.",
   "Collection: <b>★ Artwork preferito</b> direttamente sulla carta, filtro delle preferite e scorrimento a destra e sinistra tra le carte aperte.",
@@ -24,10 +24,13 @@ const NEWS = { v: "1.9.18", items: [
   "Deckbuilder: l'elenco si divide in <b>Nel mazzo</b> e <b>Non nel mazzo</b>, a scomparsa.",
   "Nuovo aspetto scuro <b>NetWatch</b> e sette nuovi aspetti chiari; Girlypop diventa <b>Us Cracks</b>; nuovi emblemi per Holophone, Samurai, Us Cracks e Voodoo Boys.",
   "Nell'app installata la plancia non chiede più lo schermo intero (niente avviso del telefono); nel browser si può spegnere dalle Impostazioni.",
-  "Nel feedback puoi indicare se scrivi da telefono, tablet o PC."
+  "Nel feedback puoi indicare se scrivi da telefono, tablet o PC.",
+  "Ritocchi: conferme e finestre nello stile dell'app (non più quelle del telefono), niente lampo dell'aspetto scuro quando ricarichi, le spiegazioni lunghe delle Impostazioni dietro il pulsante <b>i</b>."
 ] };
+// chi usava già l'app prima che esistesse seenVer: ha dati salvati (letti prima che l'avvio scriva qualcosa)
+const HAD_DATA = (() => { try{ return ["settings", "decks", "coll", "record", "recent"].some(k => localStorage.getItem("ncd:" + k) != null); }catch(e){ return false; } })();
 function showNews(){
-  const seen = S.settings.seenVer; S.settings.seenVer = APP_VERSION; S.save("settings");
+  const seen = S.settings.seenVer || (HAD_DATA ? "old" : null); S.settings.seenVer = APP_VERSION; S.save("settings");
   if(!seen || seen === APP_VERSION || NEWS.v !== APP_VERSION) return;   // prima installazione o nessuna novità per questa versione
   const el = document.createElement("div"); el.id = "newsAsk"; el.setAttribute("role", "dialog"); el.setAttribute("aria-modal", "true"); el.setAttribute("aria-labelledby", "newsT");
   el.innerHTML = `<div class="box"><div class="kick">Aggiornamento · v${APP_VERSION}</div><h3 id="newsT">Novità in DeckShard</h3><ul>${NEWS.items.map(t => `<li>${t}</li>`).join("")}</ul><div class="opts"><button class="btn yel" id="newsOk">Ricevuto, choom</button></div></div>`;
@@ -63,6 +66,7 @@ export function showTab(name, push = true){
   $$(".panel").forEach(p => p.classList.toggle("on", p.dataset.tab === name));
   $("#btnSettings").classList.toggle("on", name === "settings");
   if(push && location.hash !== "#" + name) history.replaceState(null, "", "#" + name);
+  if(name === "home") $("#p-home").dataset.enter = "1";   // ingresso nella Home: l'emblema fa il suo glitch
   TABS[name]();
   window.scrollTo({ top: 0 });
 }
@@ -101,6 +105,11 @@ async function boot(){
 
   // account: dati arrivati da un altro dispositivo → si ridisegna la scheda aperta; badge di messaggi e richieste
   const current = () => ($(".panel.on") || {}).dataset?.tab || "home";
+  // Impostazioni aperte durante il ricollegamento dell'account (es. dopo un refresh): si ridisegnano quando cambia l'utente,
+  // così compaiono le notifiche (non mentre si scrive in un campo)
+  let lastUser = cloudState.user ? cloudState.user.id : null;
+  document.addEventListener("ncd:cloud", () => { const u = cloudState.user ? cloudState.user.id : null; if(u === lastUser) return; lastUser = u;
+    if(current() === "settings" && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || "")) TABS.settings(); });
   document.addEventListener("ncd:synced", () => { applyTheme(); TABS[current()](); });
   const chatBadge = () => { const n = cloudState.unread || 0, b = $('nav.tabs button[data-tab="chat"]'); if(!b) return; let s = b.querySelector(".nbadge"); if(n){ if(!s){ s = document.createElement("span"); s.className = "nbadge"; b.appendChild(s); } s.textContent = n > 9 ? "9+" : n; } else if(s) s.remove(); };
   const badge = () => { chatBadge(); const n = (cloudState.requests || 0) + invitesForMe().length; const b = $('nav.tabs button[data-tab="home"]'); if(!b) return; let s = b.querySelector(".nbadge"); if(n){ if(!s){ s = document.createElement("span"); s.className = "nbadge"; b.appendChild(s); } s.textContent = n > 9 ? "9+" : n; } else if(s) s.remove(); };

@@ -7,7 +7,7 @@ import { $, $$, esc, toast, filtersHTML, setFilters, passes, bindFilters, sortCa
 import { cardQty } from "./store.js";
 import * as cloud from "./cloud.js";
 import { DATA, thumbUrl } from "./data.js";
-import { openCard } from "./ui.js";
+import { openCard, askConfirm, askText } from "./ui.js";
 import { openSharedDeck } from "./deck.js";
 
 /* l'avatar degli altri arriva dal database: solo immagini delle carte di questo sito e numeri veri */
@@ -144,7 +144,7 @@ document.addEventListener("click", async e => {
   if(e.target.closest("#chClose") || e.target.id === "chat"){ closeChat(); rerender(); if($("#p-chat")?.classList.contains("on")) renderChatTab(); document.dispatchEvent(new Event("ncd:chatclosed")); return; }
   const dk = e.target.closest("[data-deck]"); if(dk){ closeChat(); openSharedDeck(dk.dataset.deck); return; }
   const m = e.target.closest(".msg:not(.me)");
-  if(m && chatWith && confirm("Segnalare questo messaggio?")){ try{ await cloud.reportUser(chatWith.id, +m.dataset.mid, "messaggio in chat"); toast("Segnalazione inviata"); }catch(err){ toast(err.message, 4000); } }
+  if(m && chatWith && await askConfirm("Segnalare questo messaggio?", { ok: "Segnala", danger: true })){ try{ await cloud.reportUser(chatWith.id, +m.dataset.mid, "messaggio in chat"); toast("Segnalazione inviata"); }catch(err){ toast(err.message, 4000); } }
 });
 document.addEventListener("submit", async e => {
   if(e.target.id !== "chForm") return;
@@ -184,8 +184,8 @@ export function wireSocial(root, redraw){
       if(id("#acNickSave")){ await cloud.setNick($("#acNick").value.trim()); toast("Nuovo handle registrato"); redraw(); return; }
       const sh = id("#acShow button"); if(sh){ await cloud.setProfileFlags({ show_collection: sh.dataset.v === "1" }); return; }
       if(id("#acSync")){ await cloud.syncNow(); toast("Sincronizzato"); return; }
-      if(id("#acOut")){ if(confirm("Uscire dall'account su questo dispositivo? Collezione e mazzi restano qui; gli altri dispositivi restano collegati.")){ await cloud.signOut(); } return; }
-      if(id("#acDelete")){ if(confirm("Eliminare l'account? Profilo, amici, messaggi e dati salvati nel cloud vengono cancellati per sempre. Quello che c'è su questo dispositivo resta.")){ await cloud.deleteAccount(); toast("Account eliminato"); } return; }
+      if(id("#acOut")){ if(await askConfirm("Uscire dall'account su questo dispositivo? Collezione e mazzi restano qui; gli altri dispositivi restano collegati.", { ok: "Esci" })){ await cloud.signOut(); } return; }
+      if(id("#acDelete")){ if(await askConfirm("Eliminare l'account? Profilo, amici, messaggi e dati salvati nel cloud vengono cancellati per sempre. Quello che c'è su questo dispositivo resta.", { ok: "Elimina l'account", danger: true })){ await cloud.deleteAccount(); toast("Account eliminato"); } return; }
       if(id("#frSearch")){ searchQ = $("#frQ").value.trim(); if(searchQ.length < 2){ toast("Scrivi almeno 2 lettere"); return; } searchRes = await cloud.searchPlayers(searchQ); redraw(); return; }
       const add = id("[data-fadd]"); if(add){ const r = await cloud.friendRequest(add.dataset.fadd); toast({ sent: "Richiesta inviata", accepted: "Siete amici!", already: "Siete già amici", not_found: "Giocatore non trovato", self: "Sei tu!" }[r] || r); redraw(); return; }
       const ac = id("[data-facc]"); if(ac){ await cloud.friendRespond(ac.dataset.facc, true); toast("Un nuovo choom nella tua crew"); return; }
@@ -206,9 +206,9 @@ async function friendMenu(id){
   const f = cloud.friends.find(x => x.id === id); if(!f) return;
   const acts = [];
   if(f.show_collection) acts.push(["Guarda la collezione", async () => { const coll = await cloud.friendCollection(id); document.dispatchEvent(new CustomEvent("ncd:friendcoll", { detail: { nick: f.nick, coll: coll || {} } })); }]);
-  acts.push(["Rimuovi dagli amici", async () => { if(confirm(`Rimuovere ${f.nick} dagli amici?`)) await cloud.friendRemove(id); }, "Non sarete più amici: potrete richiedere l'amicizia in futuro."]);
-  acts.push(["Blocca", async () => { if(confirm(`Bloccare ${f.nick}? Non potrà più trovarti, scriverti né chiederti l'amicizia.`)){ await cloud.blockUser(id); toast("Bloccato: per te è fuori dalla Rete"); } }, "Toglie l'amicizia; non potrà più trovarti nella ricerca, scriverti, sfidarti né chiederti l'amicizia."]);
-  acts.push(["Segnala", async () => { const why = prompt(`Perché segnali ${f.nick}?`); if(why != null){ await cloud.reportUser(id, null, why); toast("Segnalazione inviata"); } }, "Manda una segnalazione privata a chi gestisce l'app (per comportamenti scorretti): lui non lo saprà."]);
+  acts.push(["Rimuovi dagli amici", async () => { if(await askConfirm(`Rimuovere ${f.nick} dagli amici?`, { ok: "Rimuovi", danger: true })) await cloud.friendRemove(id); }, "Non sarete più amici: potrete richiedere l'amicizia in futuro."]);
+  acts.push(["Blocca", async () => { if(await askConfirm(`Bloccare ${f.nick}? Non potrà più trovarti, scriverti né chiederti l'amicizia.`, { ok: "Blocca", danger: true })){ await cloud.blockUser(id); toast("Bloccato: per te è fuori dalla Rete"); } }, "Toglie l'amicizia; non potrà più trovarti nella ricerca, scriverti, sfidarti né chiederti l'amicizia."]);
+  acts.push(["Segnala", async () => { const why = await askText(`Perché segnali ${f.nick}?`, { title: "Segnalazione", multiline: true, rows: 4, placeholder: "Cosa è successo (facoltativo)", ok: "Invia segnalazione" }); if(why != null){ await cloud.reportUser(id, null, why); toast("Segnalazione inviata"); } }, "Manda una segnalazione privata a chi gestisce l'app (per comportamenti scorretti): lui non lo saprà."]);
   const el = document.createElement("div"); el.id = "mergeAsk";
   // si chiude toccando fuori dal riquadro
   el.innerHTML = `<div class="box fmenu"><h3>${esc(f.nick)}</h3><div class="opts">${acts.map(([l, , d], i) => `<button class="btn" data-a="${i}"><span>${esc(l)}</span>${d ? `<small>${esc(d)}</small>` : ""}</button>`).join("")}</div></div>`;

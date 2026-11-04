@@ -2,7 +2,7 @@
 
 import { DATA, priceOf, cardPrice, eur, COLORS, COLOR_IT } from "./data.js";
 import { S, qtyOf, setQty, cardQty } from "./store.js";
-import { $, $$, esc, toast, tileHTML, rowHTML, shownPrint, printLabel, makeFilters, filtersHTML, setFilters, fitFilters, passes, bindFilters, sortCards, openCard } from "./ui.js";
+import { $, $$, esc, toast, tileHTML, rowHTML, shownPrint, printLabel, makeFilters, filtersHTML, setFilters, fitFilters, passes, bindFilters, sortCards, openCard, askConfirm } from "./ui.js";
 import { openScanner } from "./scanner.js";
 import { parseCardLines, collectionText, jsonToLines } from "./deck.js";
 
@@ -134,10 +134,10 @@ function wireImport(){
       ta.value = txt + (directEntries.length ? `\n# + ${directEntries.length} stampe riconosciute dall'id` : ""); preview();
     }catch(err){ toast("Impossibile leggere il file: " + err.message, 4000); }
   });
-  $("#collImportGo").addEventListener("click", () => {
+  $("#collImportGo").addEventListener("click", async () => {
     const entries = [...(impParsed ? impParsed.entries : []), ...directEntries];
     if(!entries.length) return;
-    if(impMode === "replace" && !confirm("Sostituire tutta la collezione con questa lista?")) return;
+    if(impMode === "replace" && !(await askConfirm("Sostituire tutta la collezione con questa lista?", { ok: "Sostituisci", danger: true }))) return;
     if(impMode === "replace"){ for(const pid of Object.keys(S.coll)) setQty(pid, 0); }
     let n = 0; for(const e of entries){ setQty(e.pid, qtyOf(e.pid) + e.n); n += e.n; }
     directEntries = [];

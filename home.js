@@ -67,7 +67,10 @@ export function renderHome(){
     inv ? `<button class="hshort" data-h="online"><b>${inv === 1 ? "1 sfida ricevuta" : inv + " sfide ricevute"}</b><span>Accetta dal Simulator → Online</span></button>` : "",
     social ? `<button class="hshort" data-h="social"><b>${[cloud.unread ? (cloud.unread === 1 ? "1 messaggio" : cloud.unread + " messaggi") : "", cloud.requests ? (cloud.requests === 1 ? "1 richiesta di amicizia" : cloud.requests + " richieste di amicizia") : ""].filter(Boolean).join(" · ")}</b><span>Apri il Social</span></button>` : ""
   ].filter(Boolean).slice(0, 2);
-  root.innerHTML = `<div class="home">
+  // l'emblema entra con un glitch solo quando si apre la Home; i ridisegni dovuti al cloud (presenza, messaggi)
+  // non rifanno l'animazione e, se non è cambiato niente, non toccano la pagina
+  const enter = root.dataset.enter === "1"; delete root.dataset.enter;
+  const html = `<div class="home">
     <button class="hav" id="homeSocial" aria-label="Social e profilo" title="Social e profilo">
       <span class="hid"><b>${esc(nick || "Choom senza nome")}</b><span>${esc([p.lifepath, p.faction].filter(Boolean).join(" · ") || (cloud.user ? "Nessuna affiliazione" : "Ospite · entra nel Social"))}</span></span>
       <span class="havw">${avatarHTML(p, "havatar")}${social ? `<span class="nbadge">${social > 9 ? "9+" : social}</span>` : ""}</span></button>
@@ -79,6 +82,9 @@ export function renderHome(){
       ${shortcuts.length ? `<div class="hshorts">${shortcuts.join("")}</div>` : ""}
     </div>
   </div>`;
+  if(!enter && root.__html === html) return;
+  root.__html = html; root.innerHTML = html;
+  const em = root.querySelector(".emblem"); if(em) em.classList.add(enter ? "enter" : "calm");
 }
 
 export function wireHome(go){

@@ -3,7 +3,7 @@
 
 import { DATA, COLORS, COLOR_IT, TYPES, TYPE_IT, thumbUrl, imgUrl, priceOf, cardPrice, eur, setName } from "./data.js";
 import { S, qtyOf, cardQty, newId, saveDeck, deleteDeck } from "./store.js";
-import { $, $$, esc, toast, rowHTML, statsHTML, makeFilters, filtersHTML, setFilters, fitFilters, filterClick, passes, bindFilters, sortCards, openCard } from "./ui.js";
+import { $, $$, esc, toast, rowHTML, statsHTML, makeFilters, filtersHTML, setFilters, fitFilters, filterClick, passes, bindFilters, sortCards, openCard, askConfirm, askText } from "./ui.js";
 import * as cloud from "./cloud.js";
 
 export const DECK_MIN = 40, DECK_MAX = 50, MAX_COPIES = 3;
@@ -441,16 +441,16 @@ function wire(){
     if(e.target.closest("#deckNew")){ const d = { id: newId(), name: "Nuovo mazzo", legends: [null, null, null], cards: [], notes: "" }; saveDeck(d); CUR = d; browse = "legends"; renderDeck(); return; }
     if(e.target.closest("#deckImport")){ promptImport(); return; }
     const st = e.target.closest("[data-starter]"); if(st){ const d = starterDeck(st.dataset.starter, st.dataset.name); saveDeck(d); CUR = d; browse = "cards"; renderDeck(); toast("Bozza creata: controlla le quantità"); return; }
-    const del = e.target.closest("[data-ddel]"); if(del){ e.stopPropagation(); const d = S.decks.find(x => x.id === del.dataset.ddel); if(d && confirm(`Eliminare «${d.name}»?`)){ deleteDeck(d.id); renderDeck(); toast("Mazzo mandato al trash"); } return; }
+    const del = e.target.closest("[data-ddel]"); if(del){ e.stopPropagation(); const d = S.decks.find(x => x.id === del.dataset.ddel); if(d) askConfirm(`Eliminare «${d.name}»?`, { ok: "Elimina", danger: true }).then(ok => { if(ok){ deleteDeck(d.id); renderDeck(); toast("Mazzo mandato al trash"); } }); return; }
     const r = e.target.closest("[data-deck]"); if(r){ browse = "cards"; openDeck(r.dataset.deck); }
   });
   ed.addEventListener("click", e => {
     if(e.target.closest("#deckBack")){ closeEditor(); return; }
     if(e.target.closest("#deckErrorsOk")){ delete CUR.importErrors; save(); renderEditor(); return; }
-    if(e.target.closest("#deckCopy")){ const t = exportText(CUR); (navigator.clipboard?.writeText(t) || Promise.reject()).then(() => toast("Lista copiata negli appunti")).catch(() => prompt("Copia la lista:", t)); return; }
+    if(e.target.closest("#deckCopy")){ const t = exportText(CUR); (navigator.clipboard?.writeText(t) || Promise.reject()).then(() => toast("Lista copiata negli appunti")).catch(() => askText("Copia la lista:", { value: t, multiline: true, rows: 10, readonly: true, ok: "Fatto", cancel: false })); return; }
     if(e.target.closest("#deckShare")){ shareDeck(CUR); return; }
     if(e.target.closest("#deckDup")){ const d = JSON.parse(JSON.stringify(CUR)); d.id = newId(); d.name += " (copia)"; saveDeck(d); CUR = d; renderEditor(); toast("Mazzo clonato"); return; }
-    if(e.target.closest("#deckDel")){ if(confirm(`Eliminare «${CUR.name}»?`)){ deleteDeck(CUR.id); closeEditor(); } return; }
+    if(e.target.closest("#deckDel")){ const d = CUR; askConfirm(`Eliminare «${d.name}»?`, { ok: "Elimina", danger: true }).then(ok => { if(ok){ deleteDeck(d.id); closeEditor(); } }); return; }
     if(e.target.closest("#deckPlay")){ location.hash = "#sim"; document.dispatchEvent(new CustomEvent("ncd:playdeck", { detail: CUR.id })); return; }
     const rm = e.target.closest("[data-lrm]"); if(rm){ e.stopPropagation(); CUR.legends[+rm.dataset.lrm] = null; save(); renderEditor(); return; }
     const ls = e.target.closest("[data-lslot]"); if(ls){
@@ -494,8 +494,8 @@ function wire(){
   document.addEventListener("ncd:collection", () => { if(CUR && $("#p-deck").classList.contains("on")) renderEditor(); });
 }
 
-function promptImport(){
-  let t = prompt("Incolla la lista (una carta per riga: «3 Nome carta», Leggende come «Legend: Nome») oppure il JSON esportato da un'altra app (Deckrunners…):");
+async function promptImport(){
+  let t = await askText("Incolla la lista (una carta per riga: «3 Nome carta», Leggende come «Legend: Nome») oppure il JSON esportato da un'altra app (Deckrunners…):", { title: "Importa testo", multiline: true, rows: 9, placeholder: "3 Mantis Blades\nLegend: Johnny Silverhand", ok: "Importa" });
   if(!t) return;
   let direct = [];
   if(/^\s*[\[{]/.test(t)){   // JSON (Deckrunners e simili): stesse regole dell'import della collezione

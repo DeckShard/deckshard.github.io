@@ -557,7 +557,7 @@ nav.tabs button.homebtn{justify-content:center}
 .havatar{width:52px;height:52px;border-radius:4px;clip-path:polygon(0 0,100% 0,100% 80%,80% 100%,0 100%);border:2px solid var(--acc);background-size:cover;background-color:var(--surf2);box-shadow:var(--glow)}
 .hav .nbadge{position:absolute;top:-8px;right:-8px}
 .hcenter{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;max-width:420px;width:100%}
-.emblem{width:min(46vmin,210px);height:auto;color:var(--acc);fill:none;stroke:currentColor;stroke-width:3.2;stroke-linejoin:round;stroke-linecap:round;filter:drop-shadow(0 0 14px color-mix(in srgb,var(--accFill) 45%,transparent));margin-bottom:10px;animation:hfade .9s ease-out both}
+.emblem{width:min(46vmin,210px);height:auto;color:var(--acc);fill:none;stroke:currentColor;stroke-width:3.2;stroke-linejoin:round;stroke-linecap:round;filter:drop-shadow(0 0 14px color-mix(in srgb,var(--accFill) 45%,transparent));margin-bottom:10px}
 .emblem .thin{stroke-width:1.6;opacity:.75}
 .emblem .slash{stroke-width:6}
 .emblem .fill{fill:currentColor;stroke:none}
@@ -569,8 +569,20 @@ nav.tabs button.homebtn{justify-content:center}
 .hshorts{display:flex;flex-direction:column;gap:8px;width:100%;margin-top:26px}
 .hshort{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;width:100%;padding:11px 14px;background:color-mix(in srgb,var(--surf2) 80%,transparent);border:1px solid var(--line2);border-left:3px solid var(--accFill);border-radius:2px;color:var(--ink);font:inherit;cursor:pointer}
 .hshort b{font-size:15px;letter-spacing:.03em}.hshort span{font-size:12.5px;color:var(--mute)}
-@keyframes hfade{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:none}}
-@media(prefers-reduced-motion:reduce){ .emblem{animation:none} }
+/* ingresso dell'emblema: un glitch digitale voluto e breve (scatti orizzontali, fasce tagliate, colori sdoppiati),
+   poi resta fermo. Solo all'apertura della Home; con «Animazioni ridotte» compare e basta. */
+.emblem.enter{animation:eglitch .62s steps(1, end) both}
+@keyframes eglitch{
+  0%{opacity:0}
+  8%{opacity:1;transform:translateX(-6px);clip-path:inset(12% 0 58% 0);filter:drop-shadow(-4px 0 0 var(--accFill)) drop-shadow(4px 0 0 var(--acc2Fill))}
+  16%{transform:translateX(5px);clip-path:inset(54% 0 14% 0);filter:drop-shadow(4px 0 0 var(--accFill)) drop-shadow(-4px 0 0 var(--acc2Fill))}
+  24%{transform:none;clip-path:none;filter:drop-shadow(-2px 0 0 var(--acc2Fill)) drop-shadow(0 0 14px color-mix(in srgb,var(--accFill) 45%,transparent))}
+  40%{transform:translateX(3px);clip-path:inset(34% 0 40% 0);filter:drop-shadow(-3px 0 0 var(--acc2Fill))}
+  48%{transform:none;clip-path:none;filter:drop-shadow(0 0 14px color-mix(in srgb,var(--accFill) 45%,transparent))}
+  70%{transform:translateX(-2px);clip-path:inset(70% 0 8% 0)}
+  76%,100%{opacity:1;transform:none;clip-path:none;filter:drop-shadow(0 0 14px color-mix(in srgb,var(--accFill) 45%,transparent))}
+}
+@media(prefers-reduced-motion:reduce){ .emblem.enter{animation:none} }
 
 /* pulsante Home a colori invertiti: risalta al centro della barra */
 nav.tabs button.homebtn svg{background:var(--navAcc);color:var(--navBg);width:46px;height:46px;padding:9px;border-radius:3px;clip-path:polygon(0 0,100% 0,100% 78%,78% 100%,0 100%);stroke-width:2.1;margin-top:-6px}
@@ -581,8 +593,8 @@ nav.tabs button.homebtn:not([aria-selected="true"]) svg{opacity:.85}
 @media(min-width:900px){ nav.tabs button .nbadge{position:static;margin-left:-2px} nav.tabs button.homebtn .nbadge{order:-1} }
 
 /* ------------------------------------------------------------ accessibilità (Impostazioni) */
-:root[data-text="l"] :is(header.top, main, nav.tabs, footer, #sheetBox, #collImport .box, #collExport .box, #mergeAsk .box, #chat .box, .toast){zoom:1.12}
-:root[data-text="xl"] :is(header.top, main, nav.tabs, footer, #sheetBox, #collImport .box, #collExport .box, #mergeAsk .box, #chat .box, .toast){zoom:1.25}
+:root[data-text="l"] :is(header.top, main, nav.tabs, footer, #sheetBox, #collImport .box, #collExport .box, #mergeAsk .box, #chat .box, #appAsk .box, #newsAsk .box, .toast){zoom:1.12}
+:root[data-text="xl"] :is(header.top, main, nav.tabs, footer, #sheetBox, #collImport .box, #collExport .box, #mergeAsk .box, #chat .box, #appAsk .box, #newsAsk .box, .toast){zoom:1.25}
 /* lo zoom moltiplica anche le misure in dvh: le finestre (chat, scheda carta, unione account) restano entro lo schermo dividendo per lo stesso fattore */
 :root[data-text="l"]{--tz:1.12} :root[data-text="xl"]{--tz:1.25}
 :root[data-contrast="high"]{--mute:var(--ink2)!important;--line:color-mix(in srgb,var(--ink) 32%,transparent)!important;--line2:color-mix(in srgb,var(--ink) 58%,transparent)!important}
@@ -625,3 +637,22 @@ nav.tabs button.homebtn:not([aria-selected="true"]) svg{opacity:.85}
 #newsAsk ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:7px;font-size:14px;line-height:1.4;color:var(--ink2)}
 #newsAsk ul b{color:var(--ink)}
 #newsAsk .opts{display:flex;justify-content:flex-end;margin-top:14px}
+/* conferme e richieste di testo dell'app (al posto di quelle del telefono) */
+#appAsk{position:fixed;inset:0;z-index:95;background:rgba(0,0,0,.62);display:flex;align-items:center;justify-content:center;padding:16px}
+#appAsk .box{background:var(--bg2);border:1px solid var(--line);border-top:2px solid var(--acc);border-radius:4px;max-width:440px;width:100%;padding:16px 18px;max-height:calc(88dvh / var(--tz,1));overflow-y:auto;box-shadow:var(--glow)}
+#appAsk .box.danger{border-top-color:var(--bad,#ff3b3b)}
+#appAsk .kick{font:700 11px var(--display);letter-spacing:.16em;text-transform:uppercase;color:var(--acc);margin-bottom:4px}
+#appAsk .amsg{margin:0 0 12px;font-size:15px;line-height:1.45;color:var(--ink);white-space:pre-line}
+#appAsk .inp{width:100%;box-sizing:border-box;margin-bottom:12px}
+#appAsk textarea.inp{font:13px/1.4 ui-monospace,Menlo,Consolas,monospace;resize:vertical}
+#appAsk .opts{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+#appAsk .btn.bad{background:var(--bad,#ff3b3b);border-color:transparent;color:#fff;clip-path:polygon(0 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%)}
+/* Impostazioni: spiegazioni lunghe dietro (i) su telefono */
+.infob{display:none}
+@media(max-width:700px){
+  .field.long label small{display:none}
+  .field.long.iopen label small{display:block;margin-top:4px}
+  .field.long{grid-template-columns:1fr;gap:7px}
+  .infob{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;margin-left:7px;vertical-align:1px;border-radius:50%;border:1px solid var(--line2);background:none;color:var(--acc);font:700 11px/1 var(--display);padding:0;cursor:pointer}
+  .field.iopen .infob{background:var(--accFill);color:var(--accInk);border-color:transparent}
+}

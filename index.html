@@ -18,10 +18,13 @@
 <link rel="stylesheet" href="./theme.css">
 <link rel="stylesheet" href="./sim.css">
 <script>
-  // tema applicato prima del primo paint, per evitare il lampo (scuro se non è stato scelto altro)
-  try{ const p = JSON.parse(localStorage.getItem("ncd:profile") || "{}");
-    const t = p.theme === "light" || (p.theme === "auto" && !matchMedia("(prefers-color-scheme: dark)").matches) ? "light" : "dark";
-    document.documentElement.dataset.theme = t; if(p.accent) document.documentElement.dataset.accent = p.accent; }catch(e){}
+  // aspetto applicato prima del primo paint, per evitare il lampo: gli aspetti chiari hanno l'id «l-…»
+  // (stessa regola di applyTheme in app.js); anche testo, contrasto e animazioni dalle Impostazioni
+  try{ const d = document.documentElement, p = JSON.parse(localStorage.getItem("ncd:profile") || "{}"), a = typeof p.accent === "string" ? p.accent : "";
+    d.dataset.theme = a.startsWith("l-") ? "light" : "dark"; if(a && a !== "holophone" && /^[\w-]{2,24}$/.test(a)) d.dataset.accent = a;
+    const x = (JSON.parse(localStorage.getItem("ncd:settings") || "{}") || {}).a11y || {};
+    d.dataset.text = /^(m|l|xl)$/.test(x.text) ? x.text : "m"; d.dataset.contrast = x.contrast ? "high" : "normal";
+    d.dataset.motion = x.motion === "reduce" || (x.motion !== "never" && matchMedia("(prefers-reduced-motion: reduce)").matches) ? "reduce" : "full"; }catch(e){}
 </script>
 </head>
 <body>
