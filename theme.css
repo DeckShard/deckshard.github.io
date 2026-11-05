@@ -683,14 +683,14 @@ body::before,body::after{content:none;position:fixed;inset:0;pointer-events:none
 :root[data-accent="l-ash"] body::before{opacity:0.143}
 :root[data-accent="arasaka"] body::before,:root[data-accent="l-washi"] body::before{content:"";inset:0;opacity:0.1;background:var(--accFill);-webkit-mask:url(bg-arasaka.svg) 0 0/228px 264px repeat;mask:url(bg-arasaka.svg) 0 0/228px 264px repeat}
 :root[data-accent="l-washi"] body::before{opacity:0.11}
+:root[data-accent="samurai"] body::before,:root[data-accent="l-samurai"] body::before{content:"";inset:0;opacity:.12;background:var(--accFill);-webkit-mask:url(bg-samurai.svg) 0 0/720px 720px repeat;mask:url(bg-samurai.svg) 0 0/720px 720px repeat}
+:root[data-accent="l-samurai"] body::before{opacity:.132}
+:root[data-accent="girlypop"] body::after,:root[data-accent="l-mox"] body::after{content:"";inset:0;opacity:.24;background:linear-gradient(180deg,var(--acc2Fill),var(--accFill) 70%);-webkit-mask:url(bg-girlypop.webp) center bottom/cover no-repeat;mask:url(bg-girlypop.webp) center bottom/cover no-repeat}
+:root[data-accent="l-mox"] body::after{opacity:.26}
 :root[data-accent="voodoo"] body::before,:root[data-accent="l-lavender"] body::before{content:"";inset:0;opacity:0.16;background:linear-gradient(0deg,var(--accFill),var(--acc2Fill));-webkit-mask:url(bg-voodoo.svg) 0 0/260px 420px repeat;mask:url(bg-voodoo.svg) 0 0/260px 420px repeat}
 :root[data-accent="l-lavender"] body::before{opacity:0.176}
 :root[data-accent="netrunner"] body::after,:root[data-accent="l-ice"] body::after{content:"";left:0;right:0;top:auto;bottom:0;height:88vh;opacity:0.2;background:linear-gradient(0deg,var(--accFill),var(--acc2Fill));-webkit-mask:url(bg-netrunner-2.svg) center bottom/cover no-repeat;mask:url(bg-netrunner-2.svg) center bottom/cover no-repeat}
 :root[data-accent="l-ice"] body::after{opacity:0.22}
-:root[data-accent="samurai"] body::after,:root[data-accent="l-samurai"] body::after{content:"";left:0;right:0;top:auto;bottom:0;height:94vh;opacity:0.17;background:linear-gradient(180deg,var(--accFill),var(--accFill) 60%,var(--acc2Fill));-webkit-mask:url(bg-samurai-2.svg) center bottom/cover no-repeat;mask:url(bg-samurai-2.svg) center bottom/cover no-repeat}
-:root[data-accent="l-samurai"] body::after{opacity:0.187}
-:root[data-accent="girlypop"] body::after,:root[data-accent="l-mox"] body::after{content:"";inset:0;opacity:0.15;background:linear-gradient(180deg,var(--acc2Fill),var(--accFill) 70%);-webkit-mask:url(bg-girlypop-2.svg) center bottom/cover no-repeat;mask:url(bg-girlypop-2.svg) center bottom/cover no-repeat}
-:root[data-accent="l-mox"] body::after{opacity:0.165}
 :root[data-accent="nomad"] body::before,:root[data-accent="l-badlands"] body::before{content:"";inset:0;opacity:0.07;background:var(--accFill);-webkit-mask:url(bg-nomad.svg) 0 0/640px 640px repeat;mask:url(bg-nomad.svg) 0 0/640px 640px repeat}
 :root[data-accent="l-badlands"] body::before{opacity:0.077}
 :root[data-accent="nomad"] body::after,:root[data-accent="l-badlands"] body::after{content:"";left:0;right:0;top:auto;bottom:0;height:56vh;opacity:0.2;background:linear-gradient(180deg,var(--accFill),var(--acc2Fill));-webkit-mask:url(bg-nomad-2.svg) center bottom/cover no-repeat;mask:url(bg-nomad-2.svg) center bottom/cover no-repeat}

@@ -19,7 +19,7 @@ export const APP_VERSION = "1.9.27";
 export const PLAYMATS = [["skyline", "Night City"], ["corpo", "Torre corporativa"], ["badlands", "Badlands"], ["pacifica", "Lungomare"], ["wall", "Il Muro"]];
 /* novità mostrate alla prima apertura dopo un aggiornamento (solo l'ultima versione; chi installa da zero non le vede) */
 const NEWS = { v: "1.9.27", items: [
-  "Ogni aspetto ha il suo <b>sfondo</b> al posto dei quadretti: circuiti per Holophone, skyline in rete per Netrunner, il fungo atomico per Samurai, un concerto per Us Cracks, pale eoliche per i Nomad e così via, anche negli aspetti chiari.",
+  "Ogni aspetto ha il suo <b>sfondo</b> al posto dei quadretti: circuiti per Holophone, skyline in rete per Netrunner, spray e stencil per Samurai, un concerto per Us Cracks, pale eoliche per i Nomad e così via, anche negli aspetti chiari.",
   "<b>Tappetini per il Simulator</b>: in Impostazioni → Aspetto scegli Night City, Torre corporativa, Badlands, Lungomare o Il Muro. L'immagine resta velata sotto la plancia, così le carte si leggono come prima.",
   "Nuovo emblema per <b>Maelstrom</b> (l'ottica) e crepa più netta nel muro di <b>Blackwall</b>.",
   "Accesso con Google: ora si fa <b>Jack in</b>. Nelle impostazioni le scelte Sì/No funzionano come interruttori: basta toccarle.",
