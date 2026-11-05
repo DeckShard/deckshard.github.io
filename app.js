@@ -14,16 +14,17 @@ import { renderChatTab, openChatWith } from "./social.js";
 import { initI18n } from "./i18n.js";
 import { bootCloud, state as cloudState } from "./cloud.js";
 
-export const APP_VERSION = "1.9.25";
+export const APP_VERSION = "1.9.27";
+// tappetini del Simulator: id → nome (le immagini sono mat-<id>.webp e la miniatura mat-<id>-t.webp)
+export const PLAYMATS = [["skyline", "Night City"], ["corpo", "Torre corporativa"], ["badlands", "Badlands"], ["pacifica", "Lungomare"], ["wall", "Il Muro"]];
 /* novità mostrate alla prima apertura dopo un aggiornamento (solo l'ultima versione; chi installa da zero non le vede) */
-const NEWS = { v: "1.9.22", items: [
-  "Nuovo <b>tutorial a lezioni</b> nel Simulator: le basi, un turno passo per passo, come si vince, i casi particolari e una partita libera. Alla prima apertura ti chiede se è la tua prima notte a Night City.",
-  "Nuovo logo: lo <b>shard con la D</b>, anche nelle notifiche (dove prima compariva un quadrato).",
-  "<b>Carte preferite</b> e <b>artwork preferito</b> ora sono due cose diverse: la stellina ☆ segna la carta (con qualsiasi stampa), «◇ Artwork preferito» nella scheda sceglie quale stampa mostrare. Il filtro Preferite c'è anche nel deckbuilder.",
-  "I <b>dadi del fixer si lanciano</b>: trascina un dado e lascialo andare (un tocco va ancora bene). Numeri ed etichette dei dadi più leggibili.",
-  "Plancia su telefono: torna di serie lo schermo intero in orizzontale (si spegne dalle Impostazioni); sistemati trascinamento, scorrimento della mano e ingrandimento delle carte quando la plancia è ruotata.",
-  "Filtri Effetti più precisi: «Sconfigge» non prende più le carte con {Defeated}, e il furto di Gig si divide in <b>Gig in più</b>, <b>Quando ruba</b> e <b>Difende i Gig</b>. Vendita da PC su tutta la colonna.",
-  "Dalla 1.9.19: scheda <b>Chat</b>, Regole nel Simulator, nuovi aspetti ed emblemi, deckbuilder diviso in «Nel mazzo» / «Non nel mazzo», conferme nello stile dell'app."
+const NEWS = { v: "1.9.27", items: [
+  "Ogni aspetto ha il suo <b>sfondo</b> al posto dei quadretti: circuiti per Holophone, skyline in rete per Netrunner, il fungo atomico per Samurai, un concerto per Us Cracks, pale eoliche per i Nomad e così via, anche negli aspetti chiari.",
+  "<b>Tappetini per il Simulator</b>: in Impostazioni → Aspetto scegli Night City, Torre corporativa, Badlands, Lungomare o Il Muro. L'immagine resta velata sotto la plancia, così le carte si leggono come prima.",
+  "Nuovo emblema per <b>Maelstrom</b> (l'ottica) e crepa più netta nel muro di <b>Blackwall</b>.",
+  "Accesso con Google: ora si fa <b>Jack in</b>. Nelle impostazioni le scelte Sì/No funzionano come interruttori: basta toccarle.",
+  "Testo «Grande» e «Molto grande» sistemati sul telefono; lo scanner riconosce meglio la versione base delle carte.",
+  "Dalla 1.9.22: tutorial a lezioni, nuovo logo, carte preferite separate dall'artwork preferito, dadi da lanciare."
 ] };
 // chi usava già l'app prima che esistesse seenVer: ha dati salvati (letti prima che l'avvio scriva qualcosa)
 const HAD_DATA = (() => { try{ return ["settings", "decks", "coll", "record", "recent"].some(k => localStorage.getItem("ncd:" + k) != null); }catch(e){ return false; } })();
@@ -53,6 +54,7 @@ export function applyTheme(){
   // accessibilità: dimensione del testo, contrasto, animazioni
   const a = S.settings.a11y || {}, root = document.documentElement;
   root.dataset.text = a.text || "m"; root.dataset.contrast = a.contrast ? "high" : "normal";
+  const mat = S.settings.playmat; if(PLAYMATS.some(m => m[0] === mat)) root.dataset.mat = mat; else delete root.dataset.mat;
   root.dataset.motion = a.motion === "reduce" || (a.motion !== "never" && matchMedia("(prefers-reduced-motion: reduce)").matches) ? "reduce" : "full";
   const nav = getComputedStyle(document.documentElement).getPropertyValue("--navBg").trim() || "#0b0b0e";
   const meta = $("#themeColor"); if(meta) meta.content = nav;

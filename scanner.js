@@ -103,6 +103,10 @@ async function bestVariant(card, camSig){
   // stesso artwork della predefinita? allora è la predefinita
   const di = prints.indexOf(card.def);
   if(di >= 0 && sigs[di] && corr(sigs[di], sigs[best.i]) > 0.93) return { pid: card.def.id, alt: false, score: best.sc };
+  // una variante solo se somiglia chiaramente di più: con una foto storta, riflessi o un'inquadratura imprecisa
+  // le somiglianze si avvicinano tutte e vincerebbe una variante a caso. Nel dubbio, la stampa base.
+  const defSc = di >= 0 && sigs[di] ? corr(camSig, sigs[di]) : -1;
+  if(best.sc < 0.4 || best.sc - defSc < 0.06) return { pid: card.def.id, alt: false, score: defSc };
   return { pid: best.p.id, alt: true, score: best.sc };
 }
 
@@ -303,3 +307,4 @@ function wire(){
   });
   document.addEventListener("visibilitychange", () => { if($("#scan").hidden) return; if(document.hidden){ stopLoop(); stopCamera(); } else startCamera(); });
 }
+export const _scanTest = { signature: (...a) => signature(...a), bestVariant: (...a) => bestVariant(...a) };   // per i collaudi

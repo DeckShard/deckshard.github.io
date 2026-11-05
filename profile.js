@@ -5,7 +5,7 @@
 import { DATA, imgUrl, thumbUrl, RARITY_IT, TYPE_IT } from "./data.js";
 import { S, DEFAULT_PROFILE, exportAll, importAll, wipe, storageOk, rawGet } from "./store.js";
 import { $, $$, esc, toast, pickMatters, askConfirm } from "./ui.js";
-import { applyTheme, APP_VERSION } from "./app.js";
+import { applyTheme, APP_VERSION, PLAYMATS } from "./app.js";
 import { accountHTML, friendsHTML, wireSocial, feedbackHTML, wireFeedback, safeWipe } from "./social.js";
 import { state as cloudState, pushSupported, pushNeedsInstall, enablePush, disablePush } from "./cloud.js";
 
@@ -150,7 +150,8 @@ export function renderSettings(){
       ${(() => { const cur = ACCENTS.find(a => a.id === (p.accent || "holophone")) || ACCENTS[0];
         const sw = a => `<button class="sw${cur.id === a.id ? " sel" : ""}${a.light ? " lt" : ""}" data-v="${a.id}" title="${a.n}" aria-label="${a.n}" style="--a:${a.a};--b:${a.b}${a.bg ? `;--bgc:${a.bg}` : ""}"></button>`;
         return `<div class="field fcol"><label>Aspetti scuri<small>${cur.light ? "" : esc(cur.n)}</small></label><span class="swatches" id="pfAccent">${ACCENTS.filter(a => !a.light).map(sw).join("")}</span></div>
-      <div class="field fcol"><label>Aspetti chiari<small>${cur.light ? esc(cur.n) : "Basi tenui ispirate alle fazioni, mai bianco pieno"}</small></label><span class="swatches" id="pfAccentL">${ACCENTS.filter(a => a.light).map(sw).join("")}</span></div>`; })()}
+      <div class="field fcol"><label>Aspetti chiari<small>${cur.light ? esc(cur.n) : "Basi tenui ispirate alle fazioni, mai bianco pieno"}</small></label><span class="swatches" id="pfAccentL">${ACCENTS.filter(a => a.light).map(sw).join("")}</span></div>
+      <div class="field fcol"><label>Tappetino del Simulator<small>Un'immagine sotto la plancia, velata perché carte e numeri restino leggibili</small></label><span class="mats" id="pfMat">${[["", "Nessuno"], ...PLAYMATS].map(([v, t]) => `<button data-v="${v}" aria-pressed="${(PLAYMATS.some(m => m[0] === S.settings.playmat) ? S.settings.playmat : "") === v}"><span class="th"${v ? ` style="background-image:url(mat-${v}-t.webp)"` : ""}></span><small>${t}</small></button>`).join("")}</span></div>`; })()}
     </div>
 
     <div class="card">
@@ -258,6 +259,20 @@ function infoFold(root){
     lab.insertBefore(b, sm);
   }
 }
+/* Impostazioni: le scelte a due voci (Sì/No, Attive/Spente…) funzionano come interruttori. Toccare la voce già
+   scelta, o il titolo dell'impostazione, passa all'altra: non serve mirare al «No». La grafica resta quella dei segmenti. */
+document.addEventListener("click", e => {
+  const root = e.target.closest("#p-settings"); if(!root) return;
+  if(e.target.closest(".infob, a, input, select, textarea, label small")) return;
+  const f = e.target.closest(".field"); if(!f) return;
+  const segs = f.querySelectorAll(".seg"); if(segs.length !== 1) return;
+  const bs = [...segs[0].querySelectorAll(":scope > button")]; if(bs.length !== 2 || f.querySelector("input, select, textarea, .swatches")) return;
+  const onSeg = e.target.closest(".seg"), btn = e.target.closest(".seg > button"), onLabel = e.target.closest(".field > label");
+  if(onSeg && btn && btn.getAttribute("aria-pressed") !== "true") return;   // tocco sull'altra voce: ci pensa il suo gestore
+  if(!onSeg && !onLabel) return;
+  const other = bs.find(b => b.getAttribute("aria-pressed") !== "true"); if(!other || other.disabled) return;
+  e.preventDefault(); e.stopPropagation(); other.click();
+}, true);
 function wire(root){
   root.addEventListener("click", e => { const b = e.target.closest(".infob"); if(!b) return; e.preventDefault(); const f = b.closest(".field"); const on = f.classList.toggle("iopen"); b.setAttribute("aria-expanded", String(on)); }, true);
   // la regolazione dell'avatar resta aperta finché non si tocca il suo titolo, anche se la pagina si ridisegna
@@ -288,6 +303,7 @@ function wire(root){
       return;
     }
     const os = e.target.closest("#pfOppSpeed button"); if(os){ S.settings.oppSpeed = os.dataset.v; S.save("settings"); rerender(); return; }
+    const mt = e.target.closest("#pfMat button"); if(mt){ S.settings.playmat = mt.dataset.v; S.save("settings"); applyTheme(); rerender(); return; }
     const ly = e.target.closest("#pfLayout button"); if(ly){ S.settings.boardLayout = ly.dataset.v; S.save("settings"); rerender(); return; }
     const am = e.target.closest("#pfAnimMine button"); if(am){ S.settings.animMine = am.dataset.v; S.save("settings"); rerender(); return; }
     const fu = e.target.closest("#pfFull button"); if(fu){ S.settings.fullscreen = fu.dataset.v === "1"; S.save("settings"); rerender(); return; }

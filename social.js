@@ -31,7 +31,7 @@ export function accountHTML(){
     return `<div class="card acct" id="acct">
       <h3>Account</h3>
       <div class="sub">Accedi per avere collezione e mazzi su tutti i tuoi dispositivi, aggiungere amici e chattare. Senza account l'app continua a funzionare come ora, tutto resta su questo dispositivo.</div>
-      <div style="margin-top:10px"><button class="btn acc2" id="acGoogle">Continua con Google</button></div>
+      <div style="margin-top:10px"><button class="btn acc2" id="acGoogle">Jack in con Google</button></div>
       <div class="sub" style="margin-top:6px">L'email del tuo account Google non è mai visibile agli altri giocatori: vedono solo il nick che scegli.</div>
       ${st.error ? `<div class="sub bad" style="margin-top:6px">${esc(st.error)}</div>` : ""}
     </div>`;

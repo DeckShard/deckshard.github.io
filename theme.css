@@ -116,14 +116,14 @@ html,body{margin:0;height:100%}
 body{background:var(--bg);color:var(--ink);font-family:var(--font);font-size:16px;line-height:1.4;
   -webkit-text-size-adjust:100%;overscroll-behavior-y:none;
   background-image:
-    linear-gradient(color-mix(in srgb,var(--ink) 3%,transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in srgb,var(--ink) 3%,transparent) 1px, transparent 1px),
     radial-gradient(1100px 500px at 50% -20%, color-mix(in srgb,var(--accFill) 14%,transparent), transparent 70%),
     radial-gradient(800px 500px at 100% 110%, color-mix(in srgb,var(--acc2Fill) 7%,transparent), transparent 70%);
-  background-size:32px 32px, 32px 32px, auto, auto;background-attachment:fixed}
-/* scanline sottile, solo sul tema scuro */
-:root[data-theme="dark"] body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
-  background:repeating-linear-gradient(0deg, rgba(0,0,0,.14) 0 1px, transparent 1px 3px);opacity:.5}
+  background-attachment:fixed}
+/* scanline sottile, solo sul tema scuro (il disegno dell'aspetto sta in body::before/::after, in fondo al file) */
+:root[data-theme="dark"] body{background-image:
+    repeating-linear-gradient(0deg, rgba(0,0,0,.07) 0 1px, transparent 1px 3px),
+    radial-gradient(1100px 500px at 50% -20%, color-mix(in srgb,var(--accFill) 14%,transparent), transparent 70%),
+    radial-gradient(800px 500px at 100% 110%, color-mix(in srgb,var(--acc2Fill) 7%,transparent), transparent 70%)}
 /* spigolo tagliato, alla Holophone */
 .cut{clip-path:polygon(0 0,100% 0,100% calc(100% - var(--cut)),calc(100% - var(--cut)) 100%,0 100%)}
 button,input,select,textarea{font:inherit;color:inherit}
@@ -561,6 +561,7 @@ nav.tabs button.homebtn{justify-content:center}
 .emblem .slash{stroke-width:6}
 .emblem .fill{fill:currentColor;stroke:none}
 .emblem .soft{opacity:.25}
+.emblem .gap{stroke:var(--bg);stroke-width:9;stroke-linecap:butt} .emblem .hole{fill:var(--bg);stroke:none}
 .emblem .b2{color:var(--acc2Fill);stroke:var(--acc2Fill)} .emblem .fill.b2{fill:var(--acc2Fill)}
 .hname{font-family:var(--display);font-size:26px;letter-spacing:.32em;text-transform:uppercase;color:var(--acc);text-shadow:var(--neon);padding-left:.32em}
 .hhello{font-size:18px;color:var(--ink);margin-top:10px}
@@ -659,3 +660,68 @@ nav.tabs button.homebtn:not([aria-selected="true"]) svg{opacity:.85}
 .tutask{display:flex;flex-direction:column;gap:6px;margin-top:12px;padding:14px;border:1px solid var(--line2);border-left:3px solid var(--accFill);background:var(--surf2)}
 .tutask b{font-size:16px}.tutask span{font-size:13.5px;color:var(--ink2)}.tutask .opts{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
 .tutitem.locked{opacity:.55}.tutitem b i{font-style:normal;color:var(--acc)}.tutitem b .tt{font-size:inherit;color:inherit}.tutitem .chip{font-size:10px;vertical-align:2px;margin-left:4px}
+/* Impostazioni: le scelte a due voci si comportano da interruttore (si tocca ovunque sulla riga) */
+#p-settings .field:has(> .seg > button:nth-child(2):last-child) > label{cursor:pointer}
+#p-settings .seg:has(> button:nth-child(2):last-child) > button[aria-pressed="true"]{cursor:pointer}
+/* testo grande / molto grande su telefono: niente che esca dai riquadri */
+.tile{min-width:0}.tile .v{overflow-wrap:anywhere}
+:root[data-text="l"] .tile .v,:root[data-text="xl"] .tile .v{font-size:clamp(15px, 5vw, 22px)}
+:root[data-text="l"] #tPrices,:root[data-text="xl"] #tPrices{font-size:15px!important}
+/* scheda carta su schermi stretti: i pulsanti ‹ › ✕ su una riga loro, così il testo accanto all'immagine ha tutta la larghezza */
+@media(max-width:560px){
+  .shd{flex-wrap:wrap}
+  .shd .shnav{order:-1;flex:1 0 100%;justify-content:flex-end;margin-bottom:-4px}
+  .shd>div:not(.art):not(.shnav){flex:1 1 150px;min-width:0}
+}
+:root[data-text="xl"] .shd .art{flex-basis:100px} :root[data-text="xl"] .shd .art img{width:100px}
+
+/* ---------------------------------------------------------------- sfondi per aspetto
+   Maschere SVG (bg-*.svg, si scaricano solo per l'aspetto in uso) colorate con l'accento; i quadretti non ci sono più. */
+body::before,body::after{content:none;position:fixed;inset:0;pointer-events:none;z-index:-1}
+:root[data-contrast="high"] body::before,:root[data-contrast="high"] body::after{display:none}
+:root:not([data-accent]) body::before,:root[data-accent="l-ash"] body::before{content:"";inset:0;opacity:0.13;background:var(--accFill);-webkit-mask:url(bg-holophone.svg) 0 0/480px 480px repeat;mask:url(bg-holophone.svg) 0 0/480px 480px repeat}
+:root[data-accent="l-ash"] body::before{opacity:0.143}
+:root[data-accent="arasaka"] body::before,:root[data-accent="l-washi"] body::before{content:"";inset:0;opacity:0.1;background:var(--accFill);-webkit-mask:url(bg-arasaka.svg) 0 0/228px 264px repeat;mask:url(bg-arasaka.svg) 0 0/228px 264px repeat}
+:root[data-accent="l-washi"] body::before{opacity:0.11}
+:root[data-accent="voodoo"] body::before,:root[data-accent="l-lavender"] body::before{content:"";inset:0;opacity:0.16;background:linear-gradient(0deg,var(--accFill),var(--acc2Fill));-webkit-mask:url(bg-voodoo.svg) 0 0/260px 420px repeat;mask:url(bg-voodoo.svg) 0 0/260px 420px repeat}
+:root[data-accent="l-lavender"] body::before{opacity:0.176}
+:root[data-accent="netrunner"] body::after,:root[data-accent="l-ice"] body::after{content:"";left:0;right:0;top:auto;bottom:0;height:88vh;opacity:0.2;background:linear-gradient(0deg,var(--accFill),var(--acc2Fill));-webkit-mask:url(bg-netrunner-2.svg) center bottom/cover no-repeat;mask:url(bg-netrunner-2.svg) center bottom/cover no-repeat}
+:root[data-accent="l-ice"] body::after{opacity:0.22}
+:root[data-accent="samurai"] body::after,:root[data-accent="l-samurai"] body::after{content:"";left:0;right:0;top:auto;bottom:0;height:94vh;opacity:0.17;background:linear-gradient(180deg,var(--accFill),var(--accFill) 60%,var(--acc2Fill));-webkit-mask:url(bg-samurai-2.svg) center bottom/cover no-repeat;mask:url(bg-samurai-2.svg) center bottom/cover no-repeat}
+:root[data-accent="l-samurai"] body::after{opacity:0.187}
+:root[data-accent="girlypop"] body::after,:root[data-accent="l-mox"] body::after{content:"";inset:0;opacity:0.15;background:linear-gradient(180deg,var(--acc2Fill),var(--accFill) 70%);-webkit-mask:url(bg-girlypop-2.svg) center bottom/cover no-repeat;mask:url(bg-girlypop-2.svg) center bottom/cover no-repeat}
+:root[data-accent="l-mox"] body::after{opacity:0.165}
+:root[data-accent="nomad"] body::before,:root[data-accent="l-badlands"] body::before{content:"";inset:0;opacity:0.07;background:var(--accFill);-webkit-mask:url(bg-nomad.svg) 0 0/640px 640px repeat;mask:url(bg-nomad.svg) 0 0/640px 640px repeat}
+:root[data-accent="l-badlands"] body::before{opacity:0.077}
+:root[data-accent="nomad"] body::after,:root[data-accent="l-badlands"] body::after{content:"";left:0;right:0;top:auto;bottom:0;height:56vh;opacity:0.2;background:linear-gradient(180deg,var(--accFill),var(--acc2Fill));-webkit-mask:url(bg-nomad-2.svg) center bottom/cover no-repeat;mask:url(bg-nomad-2.svg) center bottom/cover no-repeat}
+:root[data-accent="l-badlands"] body::after{opacity:0.22}
+@media (orientation:portrait){:root[data-accent="nomad"] body::after,:root[data-accent="l-badlands"] body::after{-webkit-mask-position:90% bottom;mask-position:90% bottom}}
+:root[data-accent="militech"] body::before,:root[data-accent="l-militech"] body::before{content:"";inset:0;opacity:0.045;background:var(--accFill);-webkit-mask:url(bg-militech.svg) 0 0/288px 288px repeat;mask:url(bg-militech.svg) 0 0/288px 288px repeat}
+:root[data-accent="l-militech"] body::before{opacity:0.05}
+:root[data-accent="militech"] body::after,:root[data-accent="l-militech"] body::after{content:"";inset:0;opacity:0.2;background:var(--acc2Fill);-webkit-mask:url(bg-militech-2.svg) center bottom/cover no-repeat;mask:url(bg-militech-2.svg) center bottom/cover no-repeat}
+:root[data-accent="l-militech"] body::after{opacity:0.22}
+:root[data-accent="maelstrom"] body::after,:root[data-accent="l-chrome"] body::after{content:"";inset:0;opacity:0.17;background:var(--accFill);-webkit-mask:url(bg-maelstrom-2.svg) center/cover no-repeat;mask:url(bg-maelstrom-2.svg) center/cover no-repeat}
+:root[data-accent="l-chrome"] body::after{opacity:0.187}
+:root[data-accent="tyger"] body::before,:root[data-accent="l-petals"] body::before{content:"";inset:0;opacity:0.12;background:linear-gradient(135deg,var(--accFill),var(--acc2Fill));-webkit-mask:url(bg-tyger.svg) 0 0/640px 640px repeat;mask:url(bg-tyger.svg) 0 0/640px 640px repeat}
+:root[data-accent="l-petals"] body::before{opacity:0.132}
+:root[data-accent="trauma"] body::before,:root[data-accent="l-trauma"] body::before{content:"";inset:0;opacity:0.14;background:var(--acc2Fill);-webkit-mask:url(bg-trauma.svg) 0 0/96px 96px repeat;mask:url(bg-trauma.svg) 0 0/96px 96px repeat}
+:root[data-accent="l-trauma"] body::before{opacity:0.154}
+:root[data-accent="trauma"] body::after,:root[data-accent="l-trauma"] body::after{content:"";left:0;right:0;top:52%;height:200px;opacity:0.3;background:var(--accFill);-webkit-mask:url(bg-trauma-2.svg) 0 0/800px 100% repeat-x;mask:url(bg-trauma-2.svg) 0 0/800px 100% repeat-x}
+:root[data-accent="l-trauma"] body::after{opacity:0.33}
+:root[data-accent="afterlife"] body::before,:root[data-accent="l-absinthe"] body::before{content:"";inset:0;opacity:0.13;background:linear-gradient(90deg,var(--accFill),var(--acc2Fill));-webkit-mask:url(bg-afterlife.svg) 0 0/760px 760px repeat;mask:url(bg-afterlife.svg) 0 0/760px 760px repeat}
+:root[data-accent="l-absinthe"] body::before{opacity:0.143}
+:root[data-accent="kangtao"] body::before,:root[data-accent="l-kangtao"] body::before{content:"";inset:0;opacity:0.07;background:var(--accFill);-webkit-mask:url(bg-kangtao.svg) 0 0/72px 72px repeat;mask:url(bg-kangtao.svg) 0 0/72px 72px repeat}
+:root[data-accent="l-kangtao"] body::before{opacity:0.077}
+:root[data-accent="blackwall"] body::before,:root[data-accent="l-redfog"] body::before{content:"";inset:0;opacity:0.11;background:linear-gradient(90deg,var(--accFill),var(--acc2Fill));-webkit-mask:url(bg-blackwall.svg) 0 0/640px 480px repeat;mask:url(bg-blackwall.svg) 0 0/640px 480px repeat}
+:root[data-accent="l-redfog"] body::before{opacity:0.121}
+:root[data-accent="netwatch"] body::after,:root[data-accent="l-netwatch"] body::after{content:"";inset:0;opacity:0.16;background:var(--accFill);-webkit-mask:url(bg-netwatch-2.svg) 78% 70%/cover no-repeat;mask:url(bg-netwatch-2.svg) 78% 70%/cover no-repeat}
+:root[data-accent="l-netwatch"] body::after{opacity:0.176}
+
+/* scelta del tappetino nelle Impostazioni */
+.mats{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:8px;width:100%}
+.mats button{display:flex;flex-direction:column;gap:5px;padding:5px;border:1px solid var(--line2);background:var(--surf2);color:var(--ink2);cursor:pointer;text-align:left;font:inherit}
+.mats button .th{display:block;aspect-ratio:16/9;background:var(--bg) center/cover no-repeat;border:1px solid var(--line)}
+.mats button:not([data-v=""]) .th{} .mats button[data-v=""] .th{background-image:repeating-linear-gradient(135deg,transparent 0 8px,var(--line) 8px 9px)}
+.mats button small{font-size:11.5px;letter-spacing:.04em}
+.mats button[aria-pressed="true"]{border-color:var(--acc);color:var(--ink);box-shadow:var(--glow)}
+.mats button[aria-pressed="true"] small{color:var(--acc)}

@@ -502,3 +502,9 @@ html[data-theme="light"] .die:has(b:not(:empty)) small{background:none;color:col
 .die.d10 svg .in{display:block;stroke-width:1;opacity:.35}
 .die.d10 b{top:calc(var(--dw) * .5)}
 .die.d10.fx small,.die.d10:not(:has(b)) small,.die.d10:has(b:empty) small{top:calc(var(--dw) * .5)}
+
+/* tappetino: immagine sotto la plancia con un velo del colore di fondo (60%, 75% col contrasto elevato) */
+:root[data-mat] #board{--veil:color-mix(in srgb,var(--bg) 60%,transparent);background-color:var(--bg);background-image:linear-gradient(var(--veil),var(--veil)),var(--mat);background-size:cover;background-position:center;background-repeat:no-repeat}
+:root[data-mat][data-contrast="high"] #board{--veil:color-mix(in srgb,var(--bg) 75%,transparent)}
+:root[data-mat="skyline"]{--mat:url(mat-skyline.webp)} :root[data-mat="corpo"]{--mat:url(mat-corpo.webp)} :root[data-mat="badlands"]{--mat:url(mat-badlands.webp)}
+:root[data-mat="pacifica"]{--mat:url(mat-pacifica.webp)} :root[data-mat="wall"]{--mat:url(mat-wall.webp)}
