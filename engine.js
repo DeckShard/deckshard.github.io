@@ -58,7 +58,12 @@ export function createGame(decks, cardsById, opts = {}){
     const F = G.players[first]; F.legends[0].spent = true; F.legends[1].spent = true; F.skipReadyLegends = true;
     G.phase = "mulligan";
   };
-  if(opts.chooseFirst){
+  if(opts.pickFirst){
+    // partita offline sullo stesso dispositivo: niente tiro, decidono i giocatori chi inizia
+    G.phase = "roll";
+    say(G, "Partita offline: decidete chi inizia.");
+    ask(G, 0, "choice", [{ label: `Inizia ${G.players[0].name}`, v: 0 }, { label: `Inizia ${G.players[1].name}`, v: 1 }], o => { const f = o ? o.v : 0; say(G, `Inizia ${G.players[f].name}.`); begin(f); }, { pickFirst: true });
+  } else if(opts.chooseFirst){
     // come dal vivo: chi vince il tiro sceglie se iniziare o far iniziare l'avversario
     G.phase = "roll";
     say(G, `Tiro iniziale: ${G.players[0].name} ${a} – ${G.players[1].name} ${b}. ${G.players[winner].name} vince il tiro e sceglie chi inizia.`);

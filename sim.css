@@ -480,3 +480,25 @@ html[data-theme="light"] .die.fx small,html[data-theme="light"] .die:not(:has(b)
 .die.dieghost.tumbling b{font-family:var(--mono, monospace)}
 .die.dieghost.glitch{filter:drop-shadow(var(--gx,2px) 0 0 #ff2e55) drop-shadow(calc(var(--gx,2px) * -1) 0 0 #00e5f2)}
 .die.dieghost.glitch svg{transform:translateX(var(--gx,2px)) skewX(-6deg)}
+/* dadi: il numero sta al centro della forma (non della casella) e l'etichetta sotto il dado, senza coprirlo.
+   La casella è alta quanto il dado più lo spazio per l'etichetta; la forma occupa il quadrato in alto. */
+.die{height:calc(var(--dw) * 1.36);margin-bottom:0}
+.die svg{inset:auto;top:0;left:0;width:100%;height:var(--dw)}
+.die b,.die.d10 b,.die.d4 b{position:absolute;left:0;right:0;top:calc(var(--dw) * .5);transform:translateY(-50%);margin:0;text-align:center;line-height:1;font-size:calc(var(--dw) * .4)}
+.die.d4 b{top:calc(var(--dw) * .64);font-size:calc(var(--dw) * .32)}
+.die.d10 b,.die.d12 b,.die.d20 b{font-size:calc(var(--dw) * .36)}
+.die small{bottom:0}
+/* sigla dentro (fixer, pannello): stessa posizione del numero */
+.die.fx small,.die:not(:has(b)) small,.die:has(b:empty) small{position:absolute;left:50%;top:calc(var(--dw) * .5);bottom:auto;transform:translate(-50%,-50%);margin:0;line-height:1;white-space:nowrap}
+.die.d4.fx small,.die.d4:not(:has(b)) small,.die.d4:has(b:empty) small{top:calc(var(--dw) * .64);margin:0}
+#simAsk .btn.die-opt .die{height:var(--dw)}
+/* etichetta dei Gig: piccola, senza riquadro, sotto la forma (il numero resta grande e libero) */
+.die:has(b:not(:empty)) small{background:none;box-shadow:none;padding:0;color:var(--c);font-size:max(7px, calc(var(--dw) * .26));font-weight:800;letter-spacing:.02em;line-height:1;text-shadow:0 0 2px #000;opacity:.9}
+html[data-theme="light"] .die:has(b:not(:empty)) small{background:none;color:color-mix(in srgb,var(--c) 78%,#000);text-shadow:none}
+.die b,.die.d10 b{font-size:calc(var(--dw) * .46)}
+.die.d12 b,.die.d20 b{font-size:calc(var(--dw) * .42)}
+.die.d4 b{font-size:calc(var(--dw) * .36)}
+/* d10: sagoma ad aquilone e facce interne leggere, per distinguerlo a colpo d'occhio dal rombo del d8 */
+.die.d10 svg .in{display:block;stroke-width:1;opacity:.35}
+.die.d10 b{top:calc(var(--dw) * .5)}
+.die.d10.fx small,.die.d10:not(:has(b)) small,.die.d10:has(b:empty) small{top:calc(var(--dw) * .5)}

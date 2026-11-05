@@ -705,7 +705,7 @@ function start(opts = {}){
   human = mode === "bot" ? [true, false] : [true, true];
   const nm = names();
   const ls = tutorialActive() ? opts.lesson : null; if(!ls && tutorialActive()) stopTutorial();
-  G = createGame([{ ...d0, name: nm[0] }, { ...d1, name: nm[1] }], DATA.byId, { bot0: !human[0], bot1: !human[1], autoPay: [!!S.profile.autoPay, !!S.profile.autoPay], seed: ls ? ls.seed : undefined, first: ls ? ls.first : undefined, chooseFirst: !ls });
+  G = createGame([{ ...d0, name: nm[0] }, { ...d1, name: nm[1] }], DATA.byId, { bot0: !human[0], bot1: !human[1], autoPay: [!!S.profile.autoPay, !!S.profile.autoPay], seed: ls ? ls.seed : undefined, first: ls ? ls.first : undefined, chooseFirst: !ls && mode !== "hot", pickFirst: !ls && mode === "hot" });
   if(ls){ G.lesson = true; if(ls.ensure) ensureHand(G, 0); if(ls.staged) lessonStage(G); }
   G.decide = botDecide; G.mulliganAsked = [false, false];
   sel = null; targeting = null; pop = null; handoff = false; holder = mode === "hot" ? 0 : null; seenLog = [null, null]; lastSeen = { turn: 0, seen: 0 }; fxTurnKey = null; fxBusyUntil = 0; fxAskUntil = 0; fxLastLog = null; fxHeld = []; fxHeldSteals = [];
@@ -1039,7 +1039,7 @@ const DIE_SHAPES = {
   4: ["M50 6 L94 90 L6 90 Z", "M50 6 L50 90 M6 90 L50 40 L94 90"],
   6: ["M14 14 H86 V86 H14 Z", "M26 26 H74 V74 H26 Z"],
   8: ["M50 4 L96 50 L50 96 L4 50 Z", "M4 50 H96 M50 4 L50 96"],
-  10: ["M50 2 L98 50 L50 98 L2 50 Z", "M2 50 L24 48 L50 2 L76 48 L98 50 M24 48 L50 60 L76 48 M50 60 L50 98"],
+  10: ["M50 3 L96 40 L50 97 L4 40 Z", "M4 40 L28 52 L50 3 M96 40 L72 52 L50 3 M28 52 L50 97 M72 52 L50 97"],   // aquilone: si distingue dal rombo del d8
   12: ["M50 4 L94 36 L78 92 H22 L6 36 Z", "M50 4 L50 24 M94 36 L72 42 M78 92 L64 76 M22 92 L36 76 M6 36 L28 42 M50 24 L72 42 L64 76 L36 76 L28 42 Z"],
   20: ["M50 4 L92 27 L92 73 L50 96 L8 73 L8 27 Z", "M50 4 L28 60 L72 60 Z M28 60 L8 73 M72 60 L92 73 M28 60 L8 27 M72 60 L92 27 M50 4 L8 27 M50 4 L92 27 M50 96 L28 60 M50 96 L72 60"]
 };
@@ -1059,7 +1059,7 @@ function render(){
   const pendingTxt = pm ? "" : G.pending ? (human[G.pending.player] ? `${G.players[G.pending.player].name} deve scegliere…` : gmode === "online" ? `${G.players[G.pending.player].name} sta decidendo…` : "l'IA decide…") : "";
   const payTxt = pm ? `<b style="color:var(--acc2)">Paga ${pm.ctx.cost} €$ (${pm.ctx.paid}/${pm.ctx.cost}): tocca un Eddie o una Leggenda</b>` : "";
   const waitMull = G.phase === "mulligan" && gmode === "online" && G.players[me()].mulliganed;
-  const status = G.winner != null ? `Fine: ${esc(G.reason)}` : G.phase === "roll" ? (G.pending && human[G.pending.player] ? "Hai vinto il tiro: scegli chi inizia" : `${esc(G.players[G.pending ? G.pending.player : 0].name)} ha vinto il tiro e sceglie…`) : waitMull ? `Mulligan: in attesa di ${esc(R.name)}` : myTurn ? "Il tuo turno" : human[G.active] || gmode === "online" ? `Turno di ${esc(G.players[G.active].name)}` : "Turno dell'IA…";
+  const status = G.winner != null ? `Fine: ${esc(G.reason)}` : G.phase === "roll" ? (G.pending && G.pending.ctx && G.pending.ctx.pickFirst ? "Chi inizia?" : G.pending && human[G.pending.player] ? "Hai vinto il tiro: scegli chi inizia" : `${esc(G.players[G.pending ? G.pending.player : 0].name)} ha vinto il tiro e sceglie…`) : waitMull ? `Mulligan: in attesa di ${esc(R.name)}` : myTurn ? "Il tuo turno" : human[G.active] || gmode === "online" ? `Turno di ${esc(G.players[G.active].name)}` : "Turno dell'IA…";
   const last = G.log.slice(-1)[0];
   if(gmode === "hot"){ const need = hotNeeded(); handoff = need != null && need !== holder ? need : false; }
   const ob = handoff !== false ? null : onBoardAsk();   // reazione o bersaglio da scegliere toccando la plancia
@@ -1211,7 +1211,7 @@ function askHTML(){
   }
   // da dove viene la richiesta (anche per un furto di Gig dovuto a un Gear o a un Programma, es. Gorilla Arms: il furto dell'attacco non ha fonte)
   const srcLine = p.ctx && p.ctx.src && p.kind !== "die" && p.kind !== "block" ? `<div class="sub" style="margin:-4px 0 8px">${p.ctx.srcPid ? `<img src="${thumbUrl(p.ctx.srcPid)}" alt="" style="width:28px;vertical-align:middle;border-radius:2px;margin-right:6px">` : ""}<b>${esc(p.ctx.src)}</b>${p.ctx.text ? ` — ${esc(p.ctx.text)}` : ""}</div>` : "";
-  return `<div id="simAsk"><div class="box"><h3>${titles[p.kind] || "Scegli"}</h3>${srcLine}${ctx}<div class="opts">${p.options.map((o, i) => {
+  return `<div id="simAsk"><div class="box"><h3>${p.ctx && p.ctx.pickFirst ? "Chi inizia?" : titles[p.kind] || "Scegli"}</h3>${srcLine}${ctx}<div class="opts">${p.options.map((o, i) => {
     const pid = o.unit?.pid || o.c?.pid || o.g?.pid, gig = o.gig && o.gig.sides ? o.gig : null;
     // un Gig da scegliere (rubare, scambiare, copiare) si mostra come dado con il valore; resta il prefisso del testo («tuo», «rivale», «come»)
     const gigCap = gig ? esc(o.label.replace(/d\d+\s*=\s*\d+/, "").trim()) : "";

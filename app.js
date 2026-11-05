@@ -14,7 +14,7 @@ import { renderChatTab, openChatWith } from "./social.js";
 import { initI18n } from "./i18n.js";
 import { bootCloud, state as cloudState } from "./cloud.js";
 
-export const APP_VERSION = "1.9.24";
+export const APP_VERSION = "1.9.25";
 /* novità mostrate alla prima apertura dopo un aggiornamento (solo l'ultima versione; chi installa da zero non le vede) */
 const NEWS = { v: "1.9.22", items: [
   "Nuovo <b>tutorial a lezioni</b> nel Simulator: le basi, un turno passo per passo, come si vince, i casi particolari e una partita libera. Alla prima apertura ti chiede se è la tua prima notte a Night City.",
