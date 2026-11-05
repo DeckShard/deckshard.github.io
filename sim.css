@@ -506,5 +506,5 @@ html[data-theme="light"] .die:has(b:not(:empty)) small{background:none;color:col
 /* tappetino: immagine sotto la plancia con un velo del colore di fondo (60%, 75% col contrasto elevato) */
 :root[data-mat] #board{--veil:color-mix(in srgb,var(--bg) 60%,transparent);background-color:var(--bg);background-image:linear-gradient(var(--veil),var(--veil)),var(--mat);background-size:cover;background-position:center;background-repeat:no-repeat}
 :root[data-mat][data-contrast="high"] #board{--veil:color-mix(in srgb,var(--bg) 75%,transparent)}
-:root[data-mat="skyline"]{--mat:url(mat-skyline.jpg)} :root[data-mat="corpo"]{--mat:url(mat-corpo.jpg)} :root[data-mat="badlands"]{--mat:url(mat-badlands.jpg)}
-:root[data-mat="pacifica"]{--mat:url(mat-pacifica.jpg)} :root[data-mat="wall"]{--mat:url(mat-wall.jpg)}
+:root[data-mat="skyline"]{--mat:url(mat-skyline.svg)} :root[data-mat="corpo"]{--mat:url(mat-corpo.svg)} :root[data-mat="badlands"]{--mat:url(mat-badlands.svg)}
+:root[data-mat="pacifica"]{--mat:url(mat-pacifica.svg)} :root[data-mat="wall"]{--mat:url(mat-wall.svg)}

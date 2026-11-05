@@ -151,7 +151,7 @@ export function renderSettings(){
         const sw = a => `<button class="sw${cur.id === a.id ? " sel" : ""}${a.light ? " lt" : ""}" data-v="${a.id}" title="${a.n}" aria-label="${a.n}" style="--a:${a.a};--b:${a.b}${a.bg ? `;--bgc:${a.bg}` : ""}"></button>`;
         return `<div class="field fcol"><label>Aspetti scuri<small>${cur.light ? "" : esc(cur.n)}</small></label><span class="swatches" id="pfAccent">${ACCENTS.filter(a => !a.light).map(sw).join("")}</span></div>
       <div class="field fcol"><label>Aspetti chiari<small>${cur.light ? esc(cur.n) : "Basi tenui ispirate alle fazioni, mai bianco pieno"}</small></label><span class="swatches" id="pfAccentL">${ACCENTS.filter(a => a.light).map(sw).join("")}</span></div>
-      <div class="field fcol"><label>Tappetino del Simulator<small>Un'immagine sotto la plancia, velata perché carte e numeri restino leggibili</small></label><span class="mats" id="pfMat">${[["", "Nessuno"], ...PLAYMATS].map(([v, t]) => `<button data-v="${v}" aria-pressed="${(PLAYMATS.some(m => m[0] === S.settings.playmat) ? S.settings.playmat : "") === v}"><span class="th"${v ? ` style="background-image:url(mat-${v}-t.jpg)"` : ""}></span><small>${t}</small></button>`).join("")}</span></div>`; })()}
+      <div class="field fcol"><label>Tappetino del Simulator<small>Un'immagine sotto la plancia, velata perché carte e numeri restino leggibili</small></label><span class="mats" id="pfMat">${[["", "Nessuno"], ...PLAYMATS].map(([v, t]) => `<button data-v="${v}" aria-pressed="${(PLAYMATS.some(m => m[0] === S.settings.playmat) ? S.settings.playmat : "") === v}"><span class="th"${v ? ` style="background-image:url(mat-${v}-t.svg)"` : ""}></span><small>${t}</small></button>`).join("")}</span></div>`; })()}
     </div>
 
     <div class="card">
