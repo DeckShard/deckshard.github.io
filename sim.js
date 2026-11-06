@@ -249,6 +249,8 @@ function animateBoard(board, prev){
   for(const [uid, was] of prev.m){
     if(seen.has(uid) || was.back) continue;
     if(G.players.some(P => P.hand.some(c => c.uid === uid))) continue;   // ancora in mano (nascosta: es. passaggio del dispositivo), non giocata
+    const dPl = G.players.find(P => P.deck.some(c => c.uid === uid));   // tornata nel mazzo (mulligan, effetti che rimescolano): vola al mazzo, non è stata giocata
+    if(dPl){ fly(was, anchor("deck", dPl.id), was.src, "trash"); continue; }
     const ePl = G.players.find(P => P.eddies.some(e => e.uid === uid)), tPl = G.players.find(P => P.trash.some(c => c.uid === uid));
     if(ePl){ fly(was, anchor("eddies", ePl.id), was.src, "sell"); if(was.hand) sfx("sell"); grown[ePl.id].e = grown[ePl.id].e.filter(e => e.uid !== uid); }
     else if(tPl){ const c = tPl.trash.find(c => c.uid === uid), prog = c && c.card && c.card.type === "Program";

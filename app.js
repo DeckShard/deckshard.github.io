@@ -14,7 +14,7 @@ import { renderChatTab, openChatWith } from "./social.js";
 import { initI18n } from "./i18n.js";
 import { bootCloud, state as cloudState } from "./cloud.js";
 
-export const APP_VERSION = "1.9.29";
+export const APP_VERSION = "1.9.30";
 // tappetini del Simulator: id → nome (le immagini sono mat-<id>.svg e la miniatura mat-<id>-t.svg (immagini dentro un svg: jpg e webp non arrivano sul sito))
 export const PLAYMATS = [["skyline", "Night City"], ["corpo", "Torre corporativa"], ["badlands", "Badlands"], ["pacifica", "Lungomare"], ["wall", "Il Muro"]];
 /* novità mostrate alla prima apertura dopo un aggiornamento (solo l'ultima versione; chi installa da zero non le vede) */
