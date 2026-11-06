@@ -264,7 +264,7 @@ function deckRowHTML(d){
     <span class="ci" style="background:${legs[0] ? `var(--c${legs[0].color})` : "var(--line2)"}"></span>
     <div style="display:flex;gap:2px;flex:0 0 auto">${legs.map(c => `<img class="thumb" src="${thumbUrl(c.def.id)}" alt="" style="width:30px">`).join("") || `<span class="thumb"></span>`}</div>
     <div class="nm"><b>${esc(d.name)}</b><span>${n} carte · ${legs.map(c => esc(c.name)).join(", ") || "senza Leggende"}${miss.copies ? ` · mancano ${miss.copies} copie` : " · completo in collezione"}</span></div>
-    ${d.format === "sealed" ? `<span class="chip">Sealed</span>` : ""}<span class="chip ${ok ? "good" : "bad"}">${ok ? "Legale" : "Non valido"}</span>
+    ${d.format === "sealed" ? `<span class="chip">${d.draft ? "Draft" : "Sealed"}</span>` : ""}<span class="chip ${ok ? "good" : "bad"}">${ok ? "Legale" : "Non valido"}</span>
     <button class="btn sm icon" data-ddel="${d.id}" title="Elimina" aria-label="Elimina ${esc(d.name)}" style="color:var(--bad)">✕</button>
   </div>`;
 }

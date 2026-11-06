@@ -7,7 +7,7 @@ import { $, $$, esc, toast, openLens, openCard } from "./ui.js";
 import { createGame, mulligan, resolve, legalActions, doAction, applyMoveAs, moveOf, power, powerIn, ready, readyEddies, streetCred, canAttack, canPay, manual, rival, hasKw, hasSpend } from "./engine.js";
 import { botDecide, botStep } from "./bot.js";
 import { starterDeck, isLegal, validate, deckSize, openDeck } from "./deck.js";
-import { prereleaseSetupHTML, wirePrerelease, verifySealed } from "./prerelease.js";
+import { prereleaseSetupHTML, wirePrerelease, verifySealed, sealedOpponents } from "./prerelease.js";
 import * as ON from "./online.js";
 import { state as cloudState, friends as cloudFriends } from "./cloud.js";
 import { tutorialStep, tutorialBarHTML, tutorialActive, stopTutorial, tutorialAllows, tutorialAllowsOption, ensureHand, tutorialTour, tutorialHighlight, tutorialSlow, LESSONS, startLesson, lessonSetup, lessonStage, lessonScripted, lessonBotAction, nextPart, lesson, lessonPart, tutProgress, unlocked, markDone } from "./tutorial.js";
@@ -606,6 +606,7 @@ function clockCheck(){
    nel Prerelease solo Sfida IA e Online, sempre contro mazzi Prerelease. */
 let kind = null;   // "built" | "sealed"
 let oppWarn = false;   // online: testo del problema se il mazzo dell'avversario non è regolare (o non viene da un kit Prerelease)
+let draftGame = null;   // partita contro un bot del tavolo di draft: { id del mazzo, indice dell'avversario }
 /* il mazzo dell'avversario arriva dal suo telefono: lo si ricontrolla qui con le stesse regole del deckbuilder
    (le carte non legali nei tornei restano ammesse in amichevole) */
 function oppDeckIssue(opp){
@@ -631,7 +632,7 @@ function tutListHTML(){
 const MODES = { built: [["bot", "Sfida IA"], ["hot", "Offline"], ["online", "Online"], ["tutorial", "Tutorial"]], sealed: [["bot", "Sfida IA"], ["online", "Online"]] };
 export function simKind(){ return kind || S.settings.simKind || "built"; }
 /* le tre schede del Simulator: Costruito · Prerelease · Regole (le Regole hanno una pagina a sé, #rules) */
-export const simKindHTML = k => `<div class="simkind" id="simKind"><button data-v="built" aria-pressed="${k === "built"}">Costruito</button><button data-v="sealed" aria-pressed="${k === "sealed"}">Prerelease</button><button data-v="rules" aria-pressed="${k === "rules"}">Regole</button></div>`;
+export const simKindHTML = k => `<div class="simkind" id="simKind"><button data-v="built" aria-pressed="${k === "built"}">Costruito</button><button data-v="sealed" aria-pressed="${k === "sealed"}">Prerelease e draft</button><button data-v="rules" aria-pressed="${k === "rules"}">Regole</button></div>`;
 document.addEventListener("click", e => { const b = e.target.closest("#p-rules #simKind button"); if(!b) return; if(b.dataset.v !== "rules"){ kind = b.dataset.v; S.settings.simKind = kind; S.save("settings"); location.hash = "#sim"; } });
 export function renderSim(){
   const root = $("#simSetup");
@@ -649,7 +650,7 @@ export function renderSim(){
   const sel = kind === "sealed" ? (sealed.some(d => d.id === S.settings.simSealed) ? S.settings.simSealed : sealed[0]?.id) : S.settings.simDeck0;
   const lbl = t => `<label style="font-size:12px;font-weight:700;color:var(--mute)">${t}</label>`;
   const deck0 = kind === "sealed"
-    ? (sealed.length ? `<div>${lbl("Il tuo mazzo Prerelease")}<select class="inp" id="simDeck0">${sealed.map(d => opt(d, sel)).join("")}</select></div>` : `<div class="note" style="margin:0">Non hai ancora un mazzo Prerelease completo: apri un kit qui sotto e costruiscilo nel deckbuilder.</div>`)
+    ? (sealed.length ? `<div>${lbl("Il tuo mazzo Prerelease o draft")}<select class="inp" id="simDeck0">${sealed.map(d => opt(d, sel)).join("")}</select></div>` : `<div class="note" style="margin:0">Non hai ancora un mazzo Prerelease completo: apri un kit o fai un draft qui sotto e costruiscilo nel deckbuilder.</div>`)
     : `<div>${lbl(mode === "hot" ? "Mazzo del giocatore 1" : "Il tuo mazzo")}<select class="inp" id="simDeck0">${builtOpts(sel)}</select></div>`;
   const deck1 = kind === "sealed" || mode === "online" || mode === "tutorial" ? ""
     : `<div>${lbl(mode === "bot" ? "Mazzo dell'IA" : "Mazzo del giocatore 2")}<select class="inp" id="simDeck1">${builtOpts(S.settings.simDeck1 || "starter:embracingpowerretailstarterdeck")}</select></div>`;
@@ -658,10 +659,11 @@ export function renderSim(){
   if(mode === "tutorial") body = tutListHTML() + (resume ? `<div style="margin-top:10px">${resume}</div>` : "");
   else if(mode === "online") body = `<div class="simdecks" style="margin-top:10px">${deck0}</div>${kind === "sealed" && !sealed.length ? "" : onlineLobbyHTML()}`;
   else body = `<div class="simdecks" style="margin-top:10px">${deck0}${deck1}</div>
+      ${kind === "sealed" && sealed.length ? oppPickHTML(sealed.find(d => d.id === sel)) : ""}
       ${kind === "sealed" && !sealed.length ? "" : `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;align-items:center">
         <button class="btn acc2" id="simStart">▶ Inizia la partita</button>${resume}
         <span class="chip">${S.record.wins || 0} vittorie · ${S.record.losses || 0} sconfitte contro l'IA</span></div>`}
-      ${kind === "sealed" && sealed.length ? `<p class="sub" style="margin:8px 0 0">L'IA gioca con il kit che ha aperto lei, abbinato al tuo mazzo.</p>` : ""}`;
+`;
   root.innerHTML = `
     <div class="card">
       <h2>Simulator</h2>
@@ -676,6 +678,16 @@ export function renderSim(){
         <p style="margin:0">Il pagamento degli Eddies (manuale o automatico) si sceglie nelle Impostazioni.</p></div></details>
     </div>
     ${kind === "sealed" ? prereleaseSetupHTML() : ""}`;
+}
+/* sealed: contro chi si gioca. Kit → l'IA che ha aperto il suo kit; draft → uno dei 3 bot del tavolo (con i risultati) */
+const RES = { W: "vinta", L: "persa" };
+function nextOpp(d){ const r = (d.draft && d.draft.res) || "---"; const i = r.indexOf("-"); return i < 0 ? 0 : i; }
+function oppPickHTML(d){
+  if(!d || !d.draft) return `<p class="sub" style="margin:8px 0 0">L'IA gioca con il kit che ha aperto lei, abbinato al tuo mazzo.</p>`;
+  const opps = sealedOpponents(d), r = d.draft.res || "---", cur = nextOpp(d);
+  return `<div style="margin-top:10px;max-width:420px"><label style="font-size:12px;font-weight:700;color:var(--mute)">Avversario del tuo tavolo di draft</label>
+    <select class="inp" id="simOpp">${opps.map((o, i) => `<option value="${i}"${i === cur ? " selected" : ""}>${esc(o.name)}${RES[r[i]] ? " · " + RES[r[i]] : ""}</option>`).join("")}</select>
+    <p class="sub" style="margin:6px 0 0">Risultato del draft: ${[...r].filter(x => x === "W").length} vinte · ${[...r].filter(x => x === "L").length} perse su 3.</p></div>`;
 }
 function deckFrom(v){
   if(v.startsWith("starter:")){ const code = v.slice(8); return starterDeck(code, code.includes("heist") ? "Starter The Heist" : "Starter Embracing Power"); }
@@ -697,7 +709,11 @@ function start(opts = {}){
   let d0 = opts.deck0 || (v0 && deckFrom(v0)), d1 = opts.deck1 || (v1 && deckFrom(v1));
   if(gOnline && G && G.winner == null){ toast("Hai una partita online in corso: finiscila o abbandonala prima", 3500); return; }
   if(mode === "online" || mode === "tutorial") mode = "bot";
-  if(d0 && d0.format === "sealed" && d0.botDeck && !opts.deck1){ d1 = d0.botDeck; mode = "bot"; }
+  let oppName = null; draftGame = null;
+  if(d0 && d0.format === "sealed" && !opts.deck1){
+    const opps = sealedOpponents(d0), sv = $("#simOpp")?.value, i = d0.draft ? (sv != null ? +sv : nextOpp(d0)) : 0;
+    if(opps[i]){ d1 = opps[i].deck; mode = "bot"; if(d0.draft){ oppName = opps[i].name; draftGame = { id: d0.id, i }; } }
+  }
   else if(d1 && d1.format === "sealed" && d1.botDeck && !opts.deck1){ /* mazzo sealed scelto come avversario: va bene, lo gioca il bot o il secondo giocatore */ }
   if(!d0 || !d1){ toast("Scegli due mazzi"); return; }
   for(const d of [d0, d1]) if(d.legends.filter(Boolean).length < 3 || deckSize(d) < 10){ toast(`«${d.name}»: servono 3 Leggende e un mazzo con carte`); return; }
@@ -705,7 +721,7 @@ function start(opts = {}){
   if(gOnline) ON.detach();
   gmode = mode; gOnline = false;
   human = mode === "bot" ? [true, false] : [true, true];
-  const nm = names();
+  const nm = names(); if(oppName) nm[1] = oppName;
   const ls = tutorialActive() ? opts.lesson : null; if(!ls && tutorialActive()) stopTutorial();
   G = createGame([{ ...d0, name: nm[0] }, { ...d1, name: nm[1] }], DATA.byId, { bot0: !human[0], bot1: !human[1], autoPay: [!!S.profile.autoPay, !!S.profile.autoPay], seed: ls ? ls.seed : undefined, first: ls ? ls.first : undefined, chooseFirst: !ls && mode !== "hot", pickFirst: !ls && mode === "hot" });
   if(ls){ G.lesson = true; if(ls.ensure) ensureHand(G, 0); if(ls.staged) lessonStage(G); }
@@ -803,6 +819,7 @@ function finish(){
   if(G.lesson){ render(); return; }   // le lezioni non contano nel record
   if(gmode === "online"){ finishOnline(); return; }
   if(gmode === "bot"){ if(G.winner === 0) S.record.wins = (S.record.wins || 0) + 1; else S.record.losses = (S.record.losses || 0) + 1; }
+  if(gmode === "bot" && draftGame){ const d = S.decks.find(x => x.id === draftGame.id); if(d && d.draft){ const r = [...(d.draft.res || "---").padEnd(3, "-")]; r[draftGame.i] = G.winner === 0 ? "W" : "L"; d.draft.res = r.join("").slice(0, 3); saveDeck(d); } draftGame = null; }
   S.record.games = [{ when: Date.now(), mode, winner: G.players[G.winner].name, reason: G.reason, turns: G.turn }, ...(S.record.games || [])].slice(0, 50);
   S.save("record"); render();
 }
@@ -1375,7 +1392,8 @@ function wire(){
     if(kind === "sealed" && !verifySealed(d)){ toast("Questo mazzo non corrisponde a un kit Prerelease aperto nell'app"); renderSim(); return; }
     if(mode === "tutorial") mode = "bot"; renderSim(); if(d.format === "sealed"){ mode = "bot"; start(); } });
   root.addEventListener("click", e => { const z = e.target.closest(".pkg [data-zoom]"); if(z) openLens(imgUrl(z.dataset.zoom)); });
-  wirePrerelease(root, id => { location.hash = "#deck"; openDeck(id); toast("Scegli 3 Leggende e almeno 30 carte, poi «Gioca»", 4000); });
+  wirePrerelease(root, (id, how) => { location.hash = "#deck"; openDeck(id); toast(how === "draft" ? "Draft completo! Scegli 3 Leggende e almeno 30 carte, poi «Gioca»" : "Scegli 3 Leggende e almeno 30 carte, poi «Gioca»", 4000); });
+  document.addEventListener("ncd:draft", () => { if($("#p-sim")?.classList.contains("on") && $("#board").hidden) renderSim(); });
   root.addEventListener("click", e => {
     const f = e.target.closest("[data-tutfirst]"); if(f){ const t = tutProgress(S); t.asked = true; t.vet = f.dataset.tutfirst === "0"; S.settings.tut = t; S.save("settings"); renderSim(); return; }
     const r = e.target.closest("[data-tutreset]"); if(r){ e.preventDefault(); const t = tutProgress(S); t.vet = !t.vet; if(!t.vet) t.done = []; S.settings.tut = t; S.save("settings"); renderSim(); return; }

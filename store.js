@@ -32,6 +32,7 @@ function cleanDeck(d){
     out.format = "sealed";
     if(Array.isArray(d.pool)) out.pool = d.pool.slice(0, 600).map(e => entry(e, 99)).filter(e => e && e.n > 0);
     if(obj(d.kit) && isId(String(d.kit.set))) out.kit = { set: String(d.kit.set), seed: fin(d.kit.seed, -9e15, 9e15, 0) };
+    if(obj(d.draft) && isId(String(d.draft.set)) && Array.isArray(d.draft.picks)) out.draft = { set: String(d.draft.set), seed: int(d.draft.seed, 0, 4294967295), picks: d.draft.picks.slice(0, 60).map(x => int(x, 0, 11)), res: /^[WL-]{3}$/.test(d.draft.res) ? d.draft.res : "---" };
   }
   if(Array.isArray(d.importErrors)) out.importErrors = d.importErrors.slice(0, 50).map(x => str(x, 200));
   return out;
@@ -137,7 +138,7 @@ export function importAll(b){
   if (b.record) { S.record = Object.assign({ wins: 0, losses: 0, games: [] }, clean("record", b.record)); S.save("record"); }
 }
 export function wipe(){
-  for (const k of ["coll", "decks", "profile", "settings", "record", "recent", "stamps", "synced", "syncUser"]) { try { localStorage.removeItem("ncd:" + k); } catch (e) {} delete MEM[k]; }
+  for (const k of ["coll", "decks", "profile", "settings", "record", "recent", "stamps", "synced", "syncUser", "draft"]) { try { localStorage.removeItem("ncd:" + k); } catch (e) {} delete MEM[k]; }
   S.coll = {}; S.decks = []; S.profile = Object.assign({}, DEFAULT_PROFILE); S.settings = DEF_SETTINGS();
   S.record = { wins: 0, losses: 0, games: [] }; S.recent = [];
 }

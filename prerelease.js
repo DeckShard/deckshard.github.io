@@ -6,6 +6,8 @@
 import { DATA, COLORS, thumbUrl, setName } from "./data.js";
 import { S, newId, saveDeck } from "./store.js";
 import { mulberry32 } from "./engine.js";
+import { askConfirm } from "./ui.js";
+import { draftPool, draftOpponents, startDraft, openDraft, savedDraft, discardDraft } from "./draft.js";
 
 /* espansioni apribili: i set principali in inglese, con le rarità da busta */
 export function expansions(){
@@ -67,18 +69,35 @@ export function kitOf(d){
 }
 export function verifySealed(d){
   if(!d || d.format !== "sealed") return false;
-  const k = kitOf(d); const kit = k && openKit(k.set, k.seed); if(!kit) return false;
-  const cnt = new Map(), add = p => { const c = DATA.byPrint.get(p.id); if(c) cnt.set(c.card.id, (cnt.get(c.card.id) || 0) + 1); };
-  for(const pk of kit.packs) for(const p of pk) add(p); for(const p of kit.legendPack) add(p); if(kit.promo) add(kit.promo);
+  // le carte aperte: dal kit (riaperto identico) oppure dal draft (rigiocato identico con le tue scelte)
+  let opened;
+  if(d.draft){ opened = draftPool(d.draft); if(!opened) return false; }
+  else { const k = kitOf(d); const kit = k && openKit(k.set, k.seed); if(!kit) return false; opened = [...kit.packs.flat(), ...kit.legendPack, ...(kit.promo ? [kit.promo] : [])]; }
+  const cnt = new Map(), byPrint = new Map();
+  for(const p of opened){ const c = DATA.byPrint.get(p.id); if(c) cnt.set(c.card.id, (cnt.get(c.card.id) || 0) + 1); byPrint.set(p.id, (byPrint.get(p.id) || 0) + 1); }
   const legs = (d.legends || []).filter(Boolean), n = (d.cards || []).reduce((a, e) => a + e.n, 0);
   if(legs.length !== 3 || n < 30) return false;
   if(legs.some(l => !cnt.get(l.cid)) || new Set(legs.map(l => l.cid)).size !== 3) return false;
   if(d.cards.some(e => e.n > (cnt.get(e.cid) || 0))) return false;
-  // le stampe dichiarate per ogni copia devono essere uscite dal kit, ognuna al massimo quante volte è uscita
-  const byPrint = new Map(), addP = p => byPrint.set(p.id, (byPrint.get(p.id) || 0) + 1);
-  for(const pk of kit.packs) for(const p of pk) addP(p); for(const p of kit.legendPack) addP(p); if(kit.promo) addP(kit.promo);
+  // le stampe dichiarate per ogni copia devono essere uscite, ognuna al massimo quante volte è uscita
   for(const e of d.cards) for(const pid of (Array.isArray(e.prints) ? e.prints : [])){ const k = byPrint.get(pid) || 0; if(k <= 0) return false; byPrint.set(pid, k - 1); }
   return new Set(d.cards.map(e => DATA.byId.get(e.cid)?.color).filter(Boolean)).size <= 3;
+}
+
+/* un pool di stampe (dal draft) diventa un mazzo sealed da completare */
+export function poolToDeck(prints, name){
+  const pool = new Map(); for(const p of prints) pool.set(p.id, (pool.get(p.id) || 0) + 1);
+  return { id: newId(), name, format: "sealed", legends: [null, null, null], cards: [], notes: "",
+    pool: [...pool.entries()].map(([pid, n]) => ({ pid, cid: DATA.byPrint.get(pid).card.id, n })) };
+}
+/* gli avversari di un mazzo sealed: il bot che ha aperto un kit, oppure i 3 bot del tavolo del draft */
+export function sealedOpponents(d){
+  if(!d || d.format !== "sealed") return [];
+  if(d.draft) return draftOpponents(d.draft);
+  if(d.botDeck) return [{ name: "IA", deck: d.botDeck }];
+  const k = kitOf(d); if(!k) return [];
+  d.botDeck = botSealedDeck(openKit(k.set, k.seed + 7));   // dopo un riavvio dell'app il mazzo dell'IA si ricostruisce dal kit
+  return [{ name: "IA", deck: d.botDeck }];
 }
 
 /* mazzo dell'IA. Regole tarate facendo giocare migliaia di partite IA contro IA con mazzi dallo
@@ -87,11 +106,11 @@ export function verifySealed(d){
    - colori: i 2 più forti se bastano, altrimenti 3;
    - 38 carte, con almeno 14 carte da 3 €$ in giù e al massimo 4 da 6 €$ in su;
    - Leggende: Go Solo, potenza, effetti e colore in comune con il mazzo.                          */
-const cardScore = c => (c.power || 0) + (c.type === "Program" ? 2 : 0) + (c.type === "Gear" ? (c.power || 0) : 0) - (c.cost || 0) * 0.3
+export const cardScore = c => (c.power || 0) + (c.type === "Program" ? 2 : 0) + (c.type === "Gear" ? (c.power || 0) : 0) - (c.cost || 0) * 0.3
   + ((c.kw || []).includes("Blocker") ? 1 : 0) + ((c.kw || []).includes("Adrenaline") ? 1 : 0);
 const SIZE = 38, CHEAP = 14, BIG = 4;
-export function botSealedDeck(kit){
-  const deck = sealedDeckFromKit(kit, "IA (Prerelease)");
+export function botSealedDeck(kit){ return botFromDeck(sealedDeckFromKit(kit, "IA (Prerelease)")); }
+export function botFromDeck(deck){
   const others = deck.pool.filter(e => DATA.byId.get(e.cid).type !== "Legend");
   const copies = []; for(const e of others){ const c = DATA.byId.get(e.cid); for(let k = 0; k < e.n; k++) copies.push({ e, c, s: cardScore(c) }); }
   copies.sort((a, b) => b.s - a.s);
@@ -131,13 +150,23 @@ export function kitHTML(k){
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
 export function prereleaseSetupHTML(){
-  const exps = expansions();
+  const exps = expansions(), dr = savedDraft();
+  const setSel = id => `<select class="inp" id="${id}">${exps.map(e => `<option value="${e.code}">${esc(e.name)}</option>`).join("")}</select>`;
   return `<div class="card">
     <h3>Prerelease</h3>
     <div class="sub">Apri un kit come quello del negozio (6 buste, 3 Leggende, promo) e costruisci un mazzo sealed da almeno 30 carte di massimo 3 colori; poi allenati contro l'IA, che apre un kit a sua volta.</div>
-    <div class="field" style="margin-top:6px"><label>Espansione</label><select class="inp" id="prSet">${exps.map(e => `<option value="${e.code}">${esc(e.name)}</option>`).join("")}</select></div>
+    <div class="field" style="margin-top:6px"><label>Espansione</label>${setSel("prSet")}</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button class="btn acc2" id="prOpen">Apri il kit</button>${S.decks.some(d => d.format === "sealed") ? `<span class="chip">${S.decks.filter(d => d.format === "sealed").length} mazzi sealed nel deckbuilder</span>` : ""}</div>
     <div id="prKit"></div>
+  </div>
+  <div class="card">
+    <h3>Draft contro l'IA <b class="dAlpha">ALPHA</b></h3>
+    <div class="sub">Siedi a un tavolo da 8 con 7 bot. Prima il giro delle Leggende (buste da 4 con uno slot Epic+), poi 4 buste da 12 carte: prendi una carta e passi le altre. Con quello che scegli costruisci un mazzo sealed e sfidi 3 bot del tavolo. Le carte del draft non entrano nella collezione.</div>
+    <div class="note" style="margin-top:8px">Modalità in alpha: possono esserci errori e le regole dei bot cambieranno. Se qualcosa non va, scrivici dal Feedback.</div>
+    ${dr ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center"><button class="btn yel" id="drResume">Riprendi il draft</button><button class="btn sm" id="drDiscard">Abbandona</button><span class="chip">${esc(setName(dr.set))} · ${dr.picks.length} scelte su 52</span></div>`
+      : `<div class="field" style="margin-top:6px"><label>Espansione</label>${setSel("drSet")}</div>
+    <label class="chk" style="display:flex;gap:8px;align-items:center;margin-top:8px"><input type="checkbox" id="drTimer"${S.settings.draftTimer ? " checked" : ""}> Con il tempo per ogni scelta, come al tavolo</label>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button class="btn yel" id="drStart">Inizia il draft</button></div>`}
   </div>`;
 }
 export function wirePrerelease(root, onBuild){
@@ -154,5 +183,11 @@ export function wirePrerelease(root, onBuild){
       deck.botDeck = botSealedDeck(openKit(kit.set, kit.seed + 7));
       saveDeck(deck); onBuild(deck.id); return;
     }
+    if(e.target.closest("#drStart")){
+      const timer = !!root.querySelector("#drTimer")?.checked; S.settings.draftTimer = timer; S.save("settings");
+      startDraft(root.querySelector("#drSet").value, { timer, onBuild: id => onBuild(id, "draft") }); return;
+    }
+    if(e.target.closest("#drResume")){ openDraft(id => onBuild(id, "draft")); return; }
+    if(e.target.closest("#drDiscard")){ askConfirm("Abbandonare il draft in corso? Le scelte fatte vanno perse.").then(ok => { if(ok){ discardDraft(); document.dispatchEvent(new CustomEvent("ncd:draft")); } }); return; }
   });
 }

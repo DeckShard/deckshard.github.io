@@ -14,17 +14,15 @@ import { renderChatTab, openChatWith } from "./social.js";
 import { initI18n } from "./i18n.js";
 import { bootCloud, state as cloudState } from "./cloud.js";
 
-export const APP_VERSION = "1.9.31";
+export const APP_VERSION = "1.9.32";
 // tappetini del Simulator: id → nome (le immagini sono mat-<id>.svg e la miniatura mat-<id>-t.svg (immagini dentro un svg: jpg e webp non arrivano sul sito))
 export const PLAYMATS = [["skyline", "Night City"], ["corpo", "Torre corporativa"], ["badlands", "Badlands"], ["pacifica", "Lungomare"], ["wall", "Il Muro"]];
 /* novità mostrate alla prima apertura dopo un aggiornamento (solo l'ultima versione; chi installa da zero non le vede) */
-const NEWS = { v: "1.9.27", items: [
-  "Ogni aspetto ha il suo <b>sfondo</b> al posto dei quadretti: circuiti per Holophone, skyline in rete per Netrunner, spray e stencil per Samurai, un concerto per Us Cracks, pale eoliche per i Nomad e così via, anche negli aspetti chiari.",
-  "<b>Tappetini per il Simulator</b>: in Impostazioni → Aspetto scegli Night City, Torre corporativa, Badlands, Lungomare o Il Muro. L'immagine resta velata sotto la plancia, così le carte si leggono come prima.",
-  "Nuovo emblema per <b>Maelstrom</b> (l'ottica) e crepa più netta nel muro di <b>Blackwall</b>.",
-  "Accesso con Google: ora si fa <b>Jack in</b>. Nelle impostazioni le scelte Sì/No funzionano come interruttori: basta toccarle.",
-  "Testo «Grande» e «Molto grande» sistemati sul telefono; lo scanner riconosce meglio la versione base delle carte.",
-  "Dalla 1.9.22: tutorial a lezioni, nuovo logo, carte preferite separate dall'artwork preferito, dadi da lanciare."
+const NEWS = { v: "1.9.32", items: [
+  "<b>Draft contro l'IA</b> (alpha): nel Simulator, scheda Prerelease e draft. Siedi a un tavolo da 8 con 7 bot: giro delle Leggende, 4 buste da 12 carte, poi costruisci il mazzo e sfidi 3 bot del tavolo. Le carte del draft non entrano nella collezione.",
+  "Nel draft ogni carta si legge: tieni premuto (o passa il mouse) per il testo e le parole chiave spiegate. Trascina la carta nel pool per prenderla e ricontrolla il pool quando vuoi, per costo o per colore.",
+  "<b>Scanner</b>: il riquadro corrisponde a ciò che viene letto e puoi indicare l'edizione (Retail, Beta, Starter…) per riconoscere meglio le varianti.",
+  "Mulligan: i Programmi rimessi nel mazzo non sembrano più giocati. I mazzi Prerelease si giocano contro l'IA anche dopo aver riaperto l'app."
 ] };
 // chi usava già l'app prima che esistesse seenVer: ha dati salvati (letti prima che l'avvio scriva qualcosa)
 const HAD_DATA = (() => { try{ return ["settings", "decks", "coll", "record", "recent"].some(k => localStorage.getItem("ncd:" + k) != null); }catch(e){ return false; } })();
