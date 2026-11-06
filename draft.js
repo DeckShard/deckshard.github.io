@@ -6,6 +6,7 @@
    dei bot non vanno salvate. Le carte del draft non entrano nella collezione.                                         */
 
 import { DATA, COLOR_IT, TYPE_IT, thumbUrl, imgUrl, setName, rulesHTML } from "./data.js";
+import { openLens } from "./ui.js";
 import { S, saveDeck, rawGet, rawSet, rawDel } from "./store.js";
 import { mulberry32 } from "./engine.js";
 import { expansions, cardScore, botFromDeck, poolToDeck } from "./prerelease.js";
@@ -124,21 +125,23 @@ export function draftOpponents(dr){
 }
 
 /* ------------------------------------------------------------ stato salvato */
-let D = null;          // { set, seed, picks, timer }
-let sel = null, poolOpen = false, ins = null, onBuildCb = null, hoverI = null;
+let D = null;          // { set, seed, picks, timer, side: [indici del pool messi in sideboard] }
+let sel = null, poolSt = 0, ins = null, onBuildCb = null, hoverI = null;
 let timerId = null, deadline = 0, perPick = 0;
 const save = () => rawSet("draft", D);
-export const savedDraft = () => { const d = rawGet("draft", null); return d && typeof d === "object" && Array.isArray(d.picks) && replay(d) ? d : null; };
+const fixSide = d => { const st = replay(d), n = st ? st.pools[0].length : 0; d.side = [...new Set((Array.isArray(d.side) ? d.side : []).filter(x => Number.isInteger(x) && x >= 0 && x < n))]; return d; };
+export const savedDraft = () => { const d = rawGet("draft", null); return d && typeof d === "object" && Array.isArray(d.picks) && replay(d) ? fixSide(d) : null; };
 export function discardDraft(){ rawDel("draft"); D = null; }
+const inSide = i => D.side.includes(i);
 
 export function startDraft(set, opts = {}){
-  D = { set, seed: (Date.now() ^ Math.floor(Math.random() * 1e9)) >>> 0, picks: [], timer: !!opts.timer };
+  D = { set, seed: (Date.now() ^ Math.floor(Math.random() * 1e9)) >>> 0, picks: [], timer: !!opts.timer, side: [] };
   save(); openDraft(opts.onBuild);
 }
 export function openDraft(onBuild){
   if(!D) D = savedDraft(); if(!D) return;
   if(onBuild) onBuildCb = onBuild;
-  sel = null; ins = null; poolOpen = false;
+  sel = null; ins = null; poolSt = 0;
   const root = document.getElementById("draft"); root.hidden = false; document.body.style.overflow = "hidden";
   if(!root.dataset.wired){ wire(root); root.dataset.wired = "1"; }
   render(true);
@@ -159,27 +162,41 @@ function ringHTML(seats, dir){
     ${seats.map((x, s) => { const [l, t] = pos(s); return `<span class="seat${x.me ? " me" : ""}" style="left:${l.toFixed(1)}%;top:${t.toFixed(1)}%;${x.me ? avatarStyle() : `background-image:url(${x.img})`}" title="${esc(x.name)}">${x.me && !S.profile.favImg ? esc(S.profile.nick ? initials(S.profile.nick) : "TU") : ""}</span>`; }).join("")}
     <span class="dRingC">Passa a<b>${dir > 0 ? "sinistra" : "destra"}</b></span></div>`;
 }
-const strip = (p, i, n = 1) => { const c = cardOf(p); return `<button class="dStrip" data-pool="${i}" style="--c:var(--c${c.color || "Red"});background-image:linear-gradient(90deg,var(--surf) 38%,color-mix(in srgb,var(--surf) 35%,transparent)),url(${thumbUrl(p.id)})"><b>${c.cost ?? "–"}</b><span>${esc(c.name)}</span>${n > 1 ? `<em>×${n}</em>` : ""}</button>`; };
+const strip = (p, i, n = 1) => { const c = cardOf(p); return `<button class="dStrip" data-pool="${i}" style="--c:var(--c${c.color || "Red"});background-image:linear-gradient(90deg,var(--surf) 38%,color-mix(in srgb,var(--surf) 35%,transparent)),url(${thumbUrl(p.id)})"><b>${c.type === "Legend" ? "L" : c.cost ?? "–"}</b><span>${esc(c.name)}</span>${c.eddiable && c.type !== "Legend" ? `<i class="dEd" title="Vendibile">€$</i>` : ""}${n > 1 ? `<em>×${n}</em>` : ""}</button>`; };
 /* copie della stessa carta: una striscia sola con ×N */
 const grouped = xs => { const m = new Map(); for(const x of xs){ const g = m.get(x.c.id); if(g) g.n++; else m.set(x.c.id, { ...x, n: 1 }); } return [...m.values()]; };
+const items = pool => pool.map((p, i) => ({ p, i, c: cardOf(p) }));
+const mainCards = pool => items(pool).filter(x => x.c.type !== "Legend" && !inSide(x.i));
 function poolHTML(pool, mode){
-  const items = pool.map((p, i) => ({ p, i, c: cardOf(p) })).filter(x => x.c.type !== "Legend");
+  const xs0 = mainCards(pool);
+  if(!xs0.length) return `<div class="sub" style="padding:8px 2px">Le carte che prendi finiscono qui, divise per ${mode === "color" ? "colore" : "costo"}.</div>`;
   const groups = mode === "color"
-    ? COLS.map(k => [COLOR_IT[k], items.filter(x => x.c.color === k)])
-    : [0, 1, 2, 3, 4, 5, 6].map(k => [k === 6 ? "6+" : String(k), items.filter(x => Math.min(6, x.c.cost ?? 0) === k)]);
+    ? COLS.map(k => [COLOR_IT[k], xs0.filter(x => x.c.color === k)])
+    : [0, 1, 2, 3, 4, 5, 6].map(k => [k === 6 ? "6+" : String(k), xs0.filter(x => Math.min(6, x.c.cost ?? 0) === k)]);
   return `<div class="dCols ${mode}">${groups.map(([lab, xs]) => `<div class="dCol${xs.length ? "" : " none"}"><div class="dColH"><span>${mode === "color" ? "" : "Costo "}${esc(lab)}</span><b>${xs.length}</b></div>${grouped(xs).sort((a, b) => (a.c.cost ?? 0) - (b.c.cost ?? 0) || String(a.c.color).localeCompare(b.c.color) || a.c.name.localeCompare(b.c.name)).map(x => strip(x.p, x.i, x.n)).join("")}</div>`).join("")}</div>`;
 }
-const chipsHTML = pool => { const n = {}; for(const p of pool){ const c = cardOf(p); if(c.type !== "Legend" && c.color) n[c.color] = (n[c.color] || 0) + 1; } return COLS.map(k => `<span class="dChip" title="${COLOR_IT[k]}"><i style="background:var(--c${k})"></i>${n[k] || 0}</span>`).join(""); };
-const legsOf = pool => pool.map((p, i) => ({ p, i })).filter(x => cardOf(x.p).type === "Legend");
+function sideHTML(pool){
+  const xs = items(pool).filter(x => inSide(x.i));
+  return `<div class="dSB" id="dSB" data-drop="side"><div class="dColH"><span>Sideboard</span><b>${xs.length}</b></div>
+    ${xs.length ? grouped(xs).sort((a, b) => (a.c.type === "Legend") - (b.c.type === "Legend") || (a.c.cost ?? 0) - (b.c.cost ?? 0) || a.c.name.localeCompare(b.c.name)).map(x => strip(x.p, x.i, x.n)).join("") : `<div class="dSBe">Trascina qui le carte che non vuoi nel mazzo: restano nel pool, fuori dal mazzo proposto.</div>`}</div>`;
+}
+function statsOf(pool){
+  const n = {}; let ed = 0;
+  for(const x of mainCards(pool)){ if(x.c.color) n[x.c.color] = (n[x.c.color] || 0) + 1; if(x.c.eddiable) ed++; }
+  return { n, ed, main: mainCards(pool).length, side: D.side.length };
+}
+const chipsHTML = pool => { const s = statsOf(pool); return COLS.map(k => `<span class="dChip" title="${COLOR_IT[k]}"><i style="background:var(--c${k})"></i>${s.n[k] || 0}</span>`).join("") + `<span class="dChip ed" title="Vendibili">€$ ${s.ed}</span>`; };
+const legsOf = pool => items(pool).filter(x => x.c.type === "Legend" && !inSide(x.i));
+const legBtns = legs => legs.map(x => `<button class="dLeg" data-pool="${x.i}"><img src="${thumbUrl(x.p.id)}" alt="${esc(cardOf(x.p).dn)}" draggable="false"></button>`).join("");
 function barsHTML(pool){
-  const n = {}; for(const p of pool){ const c = cardOf(p); if(c.type !== "Legend" && c.color) n[c.color] = (n[c.color] || 0) + 1; }
-  const mx = Math.max(1, ...COLS.map(k => n[k] || 0));
-  return COLS.map(k => `<div class="dBar"><span><i style="background:var(--c${k})"></i>${COLOR_IT[k]}</span><em><i style="width:${((n[k] || 0) / mx * 100).toFixed(0)}%;background:var(--c${k})"></i></em><b>${n[k] || 0}</b></div>`).join("");
+  const s = statsOf(pool), mx = Math.max(1, ...COLS.map(k => s.n[k] || 0));
+  return COLS.map(k => `<div class="dBar"><span><i style="background:var(--c${k})"></i>${COLOR_IT[k]}</span><em><i style="width:${((s.n[k] || 0) / mx * 100).toFixed(0)}%;background:var(--c${k})"></i></em><b>${s.n[k] || 0}</b></div>`).join("")
+    + `<div class="dEdLine"><span>Vendibili <b>${s.ed}</b>${s.main ? ` (${Math.round(s.ed / s.main * 100)}%)` : ""}</span><span>Sideboard <b>${s.side}</b></span></div>`;
 }
 function previewHTML(p){
-  if(!p) return `<div class="dPrevE">Passa il mouse su una carta per leggerla</div>`;
+  if(!p) return `<div class="dPrevE">Passa il mouse su una carta per leggerla · tasto destro o tieni premuto per ingrandirla</div>`;
   const c = cardOf(p);
-  return `<img src="${imgUrl(p.id)}" alt="${esc(c.dn)}"><div><b>${esc(c.name)}</b>${c.sub ? `<small>${esc(c.sub)}</small>` : ""}<div class="dMeta"><i class="pip ${c.color || ""}"></i> ${COLOR_IT[c.color] || ""} · ${TYPE_IT[c.type] || c.type}</div><div class="dStats"><span>Costo <b>${c.cost ?? "–"}</b></span>${c.power != null ? `<span>Potenza <b>${c.power}</b></span>` : ""}${c.ram != null ? `<span>RAM <b>${c.ram}</b></span>` : ""}</div><div class="dRules">${rulesHTML(c.text) || ""}</div></div>`;
+  return `<img src="${imgUrl(p.id)}" alt="${esc(c.dn)}"><div class="dPrevT"><b>${esc(c.name)}</b>${c.sub ? `<small>${esc(c.sub)}</small>` : ""}<div class="dMeta"><i class="pip ${c.color || ""}"></i> ${COLOR_IT[c.color] || ""} · ${TYPE_IT[c.type] || c.type}${c.eddiable && c.type !== "Legend" ? " · €$" : ""}</div><div class="dStats"><span>Costo <b>${c.cost ?? "–"}</b></span>${c.power != null ? `<span>Potenza <b>${c.power}</b></span>` : ""}${c.ram != null ? `<span>RAM <b>${c.ram}</b></span>` : ""}</div><div class="dRules">${rulesHTML(c.text) || ""}</div>${glossHTML(c)}</div>`;
 }
 /* parole chiave spiegate (dal regolamento ufficiale) */
 const GLOSS = [
@@ -195,16 +212,20 @@ function glossHTML(c){
   const t = c.text || "", kw = c.kw || [];
   return GLOSS.filter(([k]) => k === "Call a Legend" ? /Call a Legend/i.test(t) : (t.includes("{" + k + "}") || kw.includes(k))).map(([k, v]) => `<div class="dGl"><b>${k}</b> ${v}</div>`).join("");
 }
-function inspectorHTML(st){
+function inspectorHTML(){
   if(!ins) return "";
-  const p = ins.list[ins.idx], c = cardOf(p), n = ins.list.length;
+  const p = ins.list[ins.idx], c = cardOf(p), n = ins.list.length, pi = ins.take ? -1 : ins.pool[ins.idx];
+  const acts = ins.take
+    ? `<button class="btn" id="dInsClose">Chiudi</button><button class="btn" id="dInsSide">In sideboard</button><button class="btn yel" id="dInsTake">Prendi ${esc(c.name)}</button>`
+    : `<button class="btn" id="dInsClose">Chiudi</button><button class="btn${inSide(pi) ? " acc2" : ""}" id="dInsMove">${inSide(pi) ? "Rimetti nel mazzo" : "Sposta in sideboard"}</button>`;
   return `<div class="dIns" id="dIns"><div class="dInsBox" role="dialog" aria-label="${esc(c.dn)}">
-    <div class="dInsNav">${n > 1 ? `<button class="btn sm icon" data-insstep="-1" aria-label="Carta precedente"${ins.idx ? "" : " disabled"}>‹</button>` : ""}<span>${ins.take ? `Carta ${ins.idx + 1} di ${n} nella busta` : `Il tuo pool · ${ins.idx + 1} di ${n}`}</span>${n > 1 ? `<button class="btn sm icon" data-insstep="1" aria-label="Carta successiva"${ins.idx < n - 1 ? "" : " disabled"}>›</button>` : ""}</div>
-    <div class="dInsTop"><img src="${imgUrl(p.id)}" alt="${esc(c.dn)}"><div><h3>${esc(c.name)}</h3>${c.sub ? `<small>${esc(c.sub)}</small>` : ""}
-      <div class="dMeta"><i class="pip ${c.color || ""}"></i> ${COLOR_IT[c.color] || ""} · ${TYPE_IT[c.type] || c.type}${c.cls && c.cls.length ? " · " + esc(c.cls.join(", ")) : ""}</div>
-      <div class="dStats"><span>Costo <b>${c.cost ?? "–"}</b></span>${c.power != null ? `<span>Potenza <b>${c.power}</b></span>` : ""}${c.ram != null ? `<span>RAM <b>${c.ram}</b></span>` : ""}${p.rarity && p.rarity !== "Common" ? `<span>${esc(p.rarity)}</span>` : ""}</div></div></div>
-    <div class="dRules big">${rulesHTML(c.text) || "<i>Nessun testo.</i>"}</div>${glossHTML(c)}
-    <div class="dInsAct"><button class="btn" id="dInsClose">Chiudi</button>${ins.take ? `<button class="btn yel" id="dInsTake">Prendi ${esc(c.name)}</button>` : ""}</div>
+    <div class="dInsNav">${n > 1 ? `<button class="btn sm icon" data-insstep="-1" aria-label="Carta precedente"${ins.idx ? "" : " disabled"}>‹</button>` : ""}<span>${ins.take ? `Carta ${ins.idx + 1} di ${n} nella busta` : inSide(pi) ? "In sideboard" : `Il tuo pool · ${ins.idx + 1} di ${n}`}</span>${n > 1 ? `<button class="btn sm icon" data-insstep="1" aria-label="Carta successiva"${ins.idx < n - 1 ? "" : " disabled"}>›</button>` : ""}</div>
+    <div class="dInsGrid"><img class="dInsImg" id="dInsImg" src="${imgUrl(p.id)}" alt="${esc(c.dn)}" title="Tocca per ingrandire">
+      <div class="dInsInfo"><h3>${esc(c.name)}</h3>${c.sub ? `<small>${esc(c.sub)}</small>` : ""}
+        <div class="dMeta"><i class="pip ${c.color || ""}"></i> ${COLOR_IT[c.color] || ""} · ${TYPE_IT[c.type] || c.type}${c.cls && c.cls.length ? " · " + esc(c.cls.join(", ")) : ""}</div>
+        <div class="dStats"><span>Costo <b>${c.cost ?? "–"}</b></span>${c.power != null ? `<span>Potenza <b>${c.power}</b></span>` : ""}${c.ram != null ? `<span>RAM <b>${c.ram}</b></span>` : ""}${c.eddiable && c.type !== "Legend" ? `<span>Vendibile €$</span>` : ""}${p.rarity && p.rarity !== "Common" ? `<span>${esc(p.rarity)}</span>` : ""}</div></div>
+      <div class="dInsTxt"><div class="dRules big">${rulesHTML(c.text) || "<i>Nessun testo.</i>"}</div>${glossHTML(c)}</div></div>
+    <div class="dInsAct">${acts}</div>
   </div></div>`;
 }
 function stepsHTML(round){ return `<div class="dSteps">${["Leggende", "Busta 1", "Busta 2", "Busta 3", "Busta 4"].map((t, i) => `<span class="${i < round ? "done" : i === round ? "on" : ""}">${t}</span>`).join("")}</div>`; }
@@ -214,25 +235,26 @@ function render(newPick){
   const st = replay(D);
   if(!st){ discardDraft(); closeDraft(); return; }
   const { seats } = seatsOf(D);
-  const pool = st.pools[0], legs = legsOf(pool);
+  const pool = st.pools[0], legs = legsOf(pool), stt = statsOf(pool);
   const mode = S.settings.draftPool === "color" ? "color" : "cost";
   const alpha = `<b class="dAlpha" title="Modalità in prova: possono esserci errori">ALPHA</b>`;
+  const legsBlock = legs.length ? `<div class="dColH legs"><span>Leggende</span><b>${legs.length}</b></div><div class="dLegBox"><div class="dLegs">${legBtns(legs)}</div></div>` : "";
   if(st.done){
     stopTimer();
     const opps = draftOpponents(D);
     root.innerHTML = `<div class="dEnd">
-      <div class="dHd"><div class="dTitle"><span class="k">Draft contro l'IA · ${esc(setName(D.set))} ${alpha}</span><h2>Draft completo</h2></div><span style="flex:1"></span><button class="btn sm icon" id="dExit" aria-label="Chiudi">✕</button></div>
+      <div class="dHd"><div class="dTitle"><span class="k">Draft contro l'IA<span class="dSet"> · ${esc(setName(D.set))}</span> ${alpha}</span><h2>Draft completo</h2></div><button class="btn sm icon dExit" id="dExit" aria-label="Chiudi">✕</button></div>
       <div class="dEndBody">
-        <div class="card"><h3>Il tuo pool · ${pool.length - legs.length} carte + ${legs.length} Leggende</h3>
-          <div class="dLegs">${legs.map(x => `<button class="dLeg" data-pool="${x.i}"><img src="${thumbUrl(x.p.id)}" alt="${esc(cardOf(x.p).dn)}"></button>`).join("")}</div>
+        <div class="card"><h3>Il tuo pool · ${stt.main} carte + ${legs.length} Leggende</h3>
+          <div class="dLegBox"><div class="dLegs">${legBtns(legs)}</div></div>
           ${barsHTML(pool)}
-          <p class="sub">Scegli <b>3 Leggende</b> e almeno <b>30 carte</b> di massimo 3 colori (le Leggende non contano). Le carte del draft non entrano nella collezione.</p>
+          <p class="sub">Ti proponiamo un mazzo con tutte le carte del pool tranne quelle in sideboard: poi scegli <b>3 Leggende</b> e almeno <b>30 carte</b> di massimo 3 colori (le Leggende non contano). Le carte del draft non entrano nella collezione.</p>
           <button class="btn yel" id="dBuild">Costruisci il mazzo</button></div>
         <div class="card"><h3>Le sfide del tuo tavolo</h3>
           ${opps.map(o => `<div class="dOpp"><span class="seat" style="background-image:url(${o.img})"></span><b>${esc(o.name)}</b></div>`).join("")}
           <p class="sub">3 partite contro i bot del tuo tavolo: le trovi nel Simulator, scheda Prerelease e draft, scegliendo questo mazzo.</p></div>
-        <div class="card dPoolEnd">${poolHTML(pool, mode)}</div>
-      </div></div>${inspectorHTML(st)}`;
+        <div class="card dPoolEnd dPool" data-drop="main"><div class="dPoolBody"><div class="dPoolB">${poolHTML(pool, mode)}</div>${sideHTML(pool)}</div></div>
+      </div></div>${inspectorHTML()}`;
     return;
   }
   const pack = st.packs[0], r = st.round, dir = DIR[r];
@@ -242,30 +264,31 @@ function render(newPick){
   const prevP = pack[hoverI ?? sel ?? -1] || null;
   const card = (p, i) => { const c = cardOf(p), ep = r === 0 && (p.rarity === "Epic" || p.rarity === "Secret"); return `<button class="dc${i === sel ? " sel" : ""}" data-i="${i}" aria-label="${esc(c.dn)}"><img src="${thumbUrl(p.id)}" alt="" draggable="false">${ep ? `<span class="dEpic">EPIC+</span>` : ""}</button>`; };
   const takeLbl = sel != null ? `Prendi «${esc(cardOf(pack[sel]).name)}»` : "Scegli una carta";
-  root.innerHTML = `<div class="dft${poolOpen ? " poolOpen" : ""}">
+  root.innerHTML = `<div class="dft${poolSt === 2 ? " poolOpen" : poolSt === 1 ? " poolHalf" : ""}">
     <div class="dHd">
-      <div class="dTitle"><span class="k">Draft contro l'IA<span class="dSet"> · ${esc(setName(D.set))}</span> ${alpha}</span><h2>${title}</h2><span class="dDir">${r === 0 ? `Scelta ${st.pick + 1} di ${total}` : `Scelta ${st.pick + 1} di ${total}`} · passa a ${dir > 0 ? "sinistra" : "destra"}</span></div>
+      <div class="dTitle"><span class="k">Draft contro l'IA<span class="dSet"> · ${esc(setName(D.set))}</span> ${alpha}</span><h2>${title}</h2><span class="dDir">${`Scelta ${st.pick + 1} di ${total}`} · passa a ${dir > 0 ? "sinistra" : "destra"}</span></div>
       ${stepsHTML(r)}
       <div class="dTimer"${D.timer ? "" : " hidden"}><em><i id="dTb"></i></em><b id="dT"></b></div>
       ${ringHTML(seats, dir)}
       <button class="btn sm icon dExit" id="dExit" aria-label="Esci dal draft (lo riprendi quando vuoi)" title="Esci: il draft resta salvato">✕</button>
     </div>
-    <div class="dPack" id="dPack"><div class="dPackH"><span class="k">${pack.length} ${pack.length === 1 ? "carta" : "carte"} · ${r === 0 ? "scegli una Leggenda" : "scegline una"}</span><span class="dHint">Tocca per scegliere · tieni premuto per leggere o trascinare nel pool</span></div>
+    <div class="dPack" id="dPack"><div class="dPackH"><span class="k">${pack.length} ${pack.length === 1 ? "carta" : "carte"} · ${r === 0 ? "scegli una Leggenda" : "scegline una"}</span><span class="dHint">Clic per scegliere · doppio clic per prendere · tasto destro o tieni premuto per ingrandire · trascina nel pool o in sideboard</span></div>
       <div class="dGrid${r === 0 ? " legs" : ""}">${pack.map(card).join("")}</div></div>
     <aside class="dSide">
       <div class="card dPrev" id="dPrev">${previewHTML(prevP)}</div>
-      <div class="card"><h3>Le tue Leggende · ${legs.length}</h3><div class="dLegs">${legs.map(x => `<button class="dLeg" data-pool="${x.i}"><img src="${thumbUrl(x.p.id)}" alt="${esc(cardOf(x.p).dn)}"></button>`).join("")}${"<span class='dLegE'></span>".repeat(Math.max(0, 4 - legs.length))}</div><div class="sub">Nel mazzo ne vanno 3.</div></div>
-      <div class="card"><h3>Colori</h3>${barsHTML(pool)}<div class="sub">Nel mazzo al massimo <b>3 colori</b> (le Leggende non contano).</div></div>
+      <div class="card"><h3>Le tue Leggende · ${legs.length}</h3><div class="dLegBox"><div class="dLegs">${legBtns(legs)}${"<span class='dLegE'></span>".repeat(Math.max(0, 4 - legs.length))}</div></div><div class="sub">Nel mazzo ne vanno 3.</div></div>
+      <div class="card"><h3>Colori</h3>${barsHTML(pool)}<div class="sub">Nel mazzo al massimo <b>3 colori</b> (le Leggende non contano). I conteggi escludono la sideboard.</div></div>
       <button class="btn yel dTake" ${sel == null ? "disabled" : ""}>${takeLbl}</button>
     </aside>
-    <section class="dPool" id="dPool">
-      <button class="dGrab" id="dGrab" aria-label="${poolOpen ? "Chiudi il pool" : "Apri il pool"}"><i></i></button>
-      <div class="dPoolH"><button class="dPoolT" id="dPoolT"><span class="k">Il tuo pool · ${pool.length - legs.length}</span><span class="dArr">${poolOpen ? "▼" : "▲"}</span></button><span class="dChips">${chipsHTML(pool)}</span>
+    <section class="dPool" id="dPool" data-drop="main">
+      <button class="dGrab" id="dGrab" aria-label="${poolSt ? "Chiudi il pool" : "Apri il pool"}"><i></i></button>
+      <div class="dPoolH"><button class="dPoolT" id="dPoolT"><span class="k">Il tuo pool · ${stt.main}${stt.side ? ` + ${stt.side} SB` : ""}</span><span class="dArr">${poolSt === 2 ? "▼" : "▲"}</span></button><span class="dChips">${chipsHTML(pool)}</span>
         <span class="seg dSeg" id="dSeg"><button data-v="cost" aria-pressed="${mode === "cost"}">Costo</button><button data-v="color" aria-pressed="${mode === "color"}">Colore</button></span></div>
-      <div class="dPoolMini"><div class="dLegs mini">${legs.map(x => `<button class="dLeg" data-pool="${x.i}"><img src="${thumbUrl(x.p.id)}" alt="${esc(cardOf(x.p).dn)}"></button>`).join("")}</div><span style="flex:1"></span><button class="btn yel dTake" ${sel == null ? "disabled" : ""}>Prendi</button></div>
-      <div class="dPoolB" id="dPoolB">${legs.length ? `<div class="dColH legs"><span>Leggende</span><b>${legs.length}</b></div><div class="dLegs">${legs.map(x => `<button class="dLeg" data-pool="${x.i}"><img src="${thumbUrl(x.p.id)}" alt="${esc(cardOf(x.p).dn)}"></button>`).join("")}</div>` : ""}${pool.length - legs.length ? poolHTML(pool, mode) : `<div class="sub" style="padding:8px 2px">Le carte che prendi finiscono qui, divise per ${mode === "color" ? "colore" : "costo"}.</div>`}</div>
+      <div class="dPoolMini"><div class="dLegs mini">${legBtns(legs.slice(0, 3))}${legs.length > 3 ? `<span class="dLegMore">+${legs.length - 3}</span>` : ""}</div><span style="flex:1"></span><button class="btn yel dTake" ${sel == null ? "disabled" : ""}>Prendi</button></div>
+      <div class="dDrops"><div data-drop="main">Nel pool</div><div data-drop="side">In sideboard</div></div>
+      <div class="dPoolBody" id="dPoolBody"><div class="dPoolB" id="dPoolB">${legsBlock}${poolHTML(pool, mode)}</div>${sideHTML(pool)}</div>
     </section>
-  </div>${inspectorHTML(st)}`;
+  </div>${inspectorHTML()}`;
   if(newPick) startTimer(pack.length, r);
   else tickTimer();
 }
@@ -276,14 +299,26 @@ function refreshSel(){
   root.querySelectorAll(".dTake").forEach(b => { b.disabled = sel == null; if(b.closest(".dSide")) b.textContent = sel != null ? `Prendi «${cardOf(pack[sel]).name}»` : "Scegli una carta"; });
   const pv = root.querySelector("#dPrev"); if(pv) pv.innerHTML = previewHTML(pack[hoverI ?? sel ?? -1] || null);
 }
+/* ridisegno che non perde lo scorrimento del pool */
+function rerender(newPick){
+  const sb = document.getElementById("dPoolBody"), y = sb ? sb.scrollTop : 0, pb = document.getElementById("dPoolB"), y2 = pb ? pb.scrollTop : 0;
+  render(newPick);
+  const sb2 = document.getElementById("dPoolBody"); if(sb2) sb2.scrollTop = y; const pb2 = document.getElementById("dPoolB"); if(pb2) pb2.scrollTop = y2;
+}
 
 /* ------------------------------------------------------------ azioni */
-function take(i){
+function take(i, toSide = false){
   const st = replay(D); if(!st || st.done) return;
   if(!(i >= 0 && i < st.packs[0].length)) return;
-  D.picks.push(i); save(); sel = null; ins = null; hoverI = null;
-  render(true);
+  const at = st.pools[0].length;
+  D.picks.push(i); if(toSide) D.side.push(at); save(); sel = null; ins = null; hoverI = null;
+  rerender(true);
   const pc = document.querySelector("#dPoolT .k"); if(pc){ pc.classList.remove("bump"); void pc.offsetWidth; pc.classList.add("bump"); }
+}
+function setSide(i, on){
+  const has = inSide(i); if(on === has) return;
+  if(on) D.side.push(i); else D.side = D.side.filter(x => x !== i);
+  save();
 }
 function autoPick(){ const st = replay(D); if(!st || st.done) return; take(sel ?? botPick(0, st.pools[0], st.packs[0], st.round, D.seed, st.k)); }
 
@@ -302,67 +337,130 @@ function tickTimer(){
   if(left <= 0){ stopTimer(); autoPick(); }
 }
 
+/* scheda ingrandita: carta della busta (si può prendere) o del pool (si sposta in sideboard e ritorno) */
+function openPackIns(i){ const st = replay(D); if(!st || st.done) return; sel = i; ins = { list: st.packs[0], idx: i, take: true }; rerender(); }
+function openPoolIns(i){
+  const st = replay(D); if(!st) return; const pool = st.pools[0];
+  // si sfogliano le carte dello stesso gruppo: mazzo o sideboard
+  const idx = items(pool).filter(x => inSide(x.i) === inSide(i)).map(x => x.i);
+  ins = { list: idx.map(k => pool[k]), pool: idx, idx: Math.max(0, idx.indexOf(i)), take: false }; rerender();
+}
+
+let sheet = null;   // trascinamento della tendina del pool (telefono in verticale)
 function wire(root){
-  let press = null, drag = null;
+  let press = null, drag = null, hot = null, swallow = 0;
+  const phone = () => matchMedia("(max-width: 699px)").matches;
+  root.addEventListener("pointerdown", e => {
+    if(!phone() || ins || !e.target.closest("#dGrab, .dPoolH") || e.target.closest("#dSeg, .dChips")) return;
+    const el = root.querySelector(".dPool"); if(!el) return;
+    const r = el.getBoundingClientRect();
+    sheet = { y0: e.clientY, top0: r.top, el, moved: false, closedTop: poolSt === 0 ? r.top : innerHeight - 150 };
+  });
+  window.addEventListener("pointermove", e => {
+    if(!sheet) return;
+    const dy = e.clientY - sheet.y0; if(!sheet.moved && Math.abs(dy) < 6) return;
+    if(!sheet.moved){ sheet.moved = true; root.querySelector(".dft")?.classList.add("poolDrag"); }
+    sheet.el.style.top = Math.max(64, Math.min(sheet.closedTop, sheet.top0 + dy)) + "px";
+  });
+  const endSheet = () => {
+    if(!sheet) return; const s = sheet;
+    if(s.moved){
+      const top = s.el.getBoundingClientRect().top, snaps = [[0, s.closedTop], [1, innerHeight * 0.5], [2, 64]];
+      poolSt = snaps.reduce((a, b) => Math.abs(b[1] - top) < Math.abs(a[1] - top) ? b : a)[0];
+      s.el.style.top = ""; root.querySelector(".dft")?.classList.remove("poolDrag");
+      rerender(); setTimeout(() => { sheet = null; }, 0);   // il clic che segue il trascinamento non apre/chiude di nuovo
+    } else sheet = null;
+  };
+  window.addEventListener("pointerup", endSheet); window.addEventListener("pointercancel", endSheet);
   const packList = () => { const st = replay(D); return st && !st.done ? st.packs[0] : []; };
-  const poolList = () => { const st = replay(D); return st ? st.pools[0] : []; };
-  const overPool = (x, y) => { const el = root.querySelector(".dPool"); if(!el) return false; const r = el.getBoundingClientRect(); return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom; };
+  const target = (x, y) => { const el = document.elementFromPoint(x, y); const t = el && el.closest("[data-drop]"); return t && root.contains(t) ? t : null; };
   const endDrag = (x, y, drop) => {
-    if(!drag) return; drag.ghost.remove(); root.querySelector(".dPool")?.classList.remove("drop");
-    const i = drag.i; drag = null; if(drop && overPool(x, y)) take(i);
+    if(!drag) return;
+    const t = drop ? target(x, y) : null;   // prima di nascondere le zone di rilascio
+    drag.ghost.remove(); hot?.classList.remove("drop"); hot = null; root.querySelector(".dft")?.classList.remove("dragging");
+    const d = drag; drag = null; if(!t) return; const side = t.dataset.drop === "side";
+    if(d.kind === "pack") take(d.i, side);
+    else { setSide(d.i, side); rerender(); }
   };
   root.addEventListener("click", e => {
     const t = e.target;
+    if(Date.now() - swallow < 450 && !t.closest(".dInsBox")){ e.preventDefault(); return; }   // il rilascio dopo una pressione lunga non deve chiudere la scheda appena aperta
     if(t.closest("#dExit")){ closeDraft(); return; }
     if(t.closest("#dBuild")){ build(); return; }
-    if(t.closest("#dInsClose") || t.id === "dIns"){ ins = null; render(); return; }
+    if(t.closest("#dInsImg") && ins){ openLens(imgUrl(ins.list[ins.idx].id)); return; }
+    if(t.closest("#dInsClose") || t.id === "dIns"){ ins = null; rerender(); return; }
     if(t.closest("#dInsTake") && ins){ take(ins.idx); return; }
-    const st = t.closest("[data-insstep]"); if(st && ins){ ins.idx = Math.max(0, Math.min(ins.list.length - 1, ins.idx + +st.dataset.insstep)); if(ins.take) sel = ins.idx; render(); return; }
+    if(t.closest("#dInsSide") && ins){ take(ins.idx, true); return; }
+    if(t.closest("#dInsMove") && ins){ const i = ins.pool[ins.idx]; setSide(i, !inSide(i)); ins = null; rerender(); return; }
+    const st = t.closest("[data-insstep]"); if(st && ins){ ins.idx = Math.max(0, Math.min(ins.list.length - 1, ins.idx + +st.dataset.insstep)); if(ins.take) sel = ins.idx; rerender(); return; }
     if(t.closest(".dTake")){ if(sel != null) take(sel); return; }
-    if(t.closest("#dGrab") || t.closest("#dPoolT")){ poolOpen = !poolOpen; render(); return; }
-    const sg = t.closest("#dSeg button"); if(sg){ S.settings.draftPool = sg.dataset.v; S.save("settings"); render(); return; }
-    const pl = t.closest("[data-pool]"); if(pl){ const list = poolList(); ins = { list, idx: +pl.dataset.pool, take: false }; render(); return; }
+    if(t.closest("#dGrab") || t.closest("#dPoolT")){ if(sheet && sheet.moved) return; poolSt = poolSt ? 0 : 1; rerender(); return; }
+    const sg = t.closest("#dSeg button"); if(sg){ S.settings.draftPool = sg.dataset.v; S.save("settings"); rerender(); return; }
+    const pl = t.closest("[data-pool]"); if(pl){ if(pl.dataset.noclick){ delete pl.dataset.noclick; return; } openPoolIns(+pl.dataset.pool); return; }
     const c = t.closest(".dc"); if(c){ if(c.dataset.noclick){ delete c.dataset.noclick; return; } sel = +c.dataset.i; refreshSel(); return; }
   });
   root.addEventListener("dblclick", e => { const c = e.target.closest(".dc"); if(c) take(+c.dataset.i); });
   root.addEventListener("pointerover", e => { if(e.pointerType !== "mouse") return; const c = e.target.closest(".dc"); const v = c ? +c.dataset.i : null; if(v !== hoverI){ hoverI = v; const pv = root.querySelector("#dPrev"); if(pv) pv.innerHTML = previewHTML(packList()[hoverI ?? sel ?? -1] || null); } });
+  // tasto destro: ingrandisce
+  root.addEventListener("contextmenu", e => {
+    const c = e.target.closest(".dc"), pl = e.target.closest("[data-pool]");
+    if((c || pl) && (drag || (press && !press.mouse))){ e.preventDefault(); return; }   // al tocco ci pensa la pressione lunga
+    if(c){ e.preventDefault(); openPackIns(+c.dataset.i); } else if(pl){ e.preventDefault(); openPoolIns(+pl.dataset.pool); }
+  });
   root.addEventListener("pointerdown", e => {
-    const c = e.target.closest(".dc"); if(!c || e.button > 0) return;
-    press = { c, i: +c.dataset.i, x: e.clientX, y: e.clientY, mouse: e.pointerType === "mouse", lifted: false, id: e.pointerId };
-    if(!press.mouse) press.timer = setTimeout(() => { if(!press) return; press.lifted = true; c.classList.add("lift"); navigator.vibrate?.(15); }, 320);
+    if(e.button > 0 || ins) return;
+    const c = e.target.closest(".dc"), pl = !c && e.target.closest("[data-pool]"); const el = c || pl; if(!el) return;
+    press = { el, kind: c ? "pack" : "pool", i: +(c ? c.dataset.i : pl.dataset.pool), x: e.clientX, y: e.clientY, mouse: e.pointerType === "mouse", lifted: false };
+    if(press.mouse) press.timer = setTimeout(() => { if(!press || drag) return; const p = press; press = null; swallow = Date.now(); p.el.dataset.noclick = "1"; p.kind === "pack" ? openPackIns(p.i) : openPoolIns(p.i); }, 500);   // tenuto fermo col mouse: ingrandisce
+    else press.timer = setTimeout(() => { if(!press) return; press.lifted = true; el.classList.add("lift"); el.insertAdjacentHTML("beforeend", `<span class="dTip">Rilascia per ingrandire · trascina per prendere</span>`); navigator.vibrate?.(15); }, 300);
   });
   const startDrag = (e) => {
-    const r = press.c.getBoundingClientRect(), g = press.c.cloneNode(true);
-    g.className = "dGhost"; g.style.width = r.width + "px"; document.body.appendChild(g);
-    drag = { i: press.i, ghost: g, w: r.width, h: r.height }; press.c.dataset.noclick = "1"; press.c.classList.remove("lift");
-    if(!poolOpen && window.matchMedia("(max-width: 699px)").matches){ /* sul telefono la tendina chiusa resta il bersaglio */ }
+    clearTimeout(press.timer);
+    const r = press.el.getBoundingClientRect(), g = document.createElement("div");
+    const src = press.kind === "pack" ? press.el.querySelector("img").src : thumbUrl(replay(D).pools[0][press.i].id);
+    const w = press.kind === "pack" ? r.width : 110;
+    g.className = "dGhost"; g.style.width = w + "px"; g.innerHTML = `<img src="${src}" alt="">`; document.body.appendChild(g);
+    drag = { kind: press.kind, i: press.i, ghost: g, w, h: w * 1024 / 733 }; press.el.dataset.noclick = "1"; press.el.classList.remove("lift");
+    root.querySelector(".dft")?.classList.add("dragging");
     moveGhost(e.clientX, e.clientY);
   };
-  const moveGhost = (x, y) => { if(!drag) return; drag.ghost.style.transform = `translate(${x - drag.w / 2}px, ${y - drag.h * 0.6}px) rotate(-6deg)`; root.querySelector(".dPool")?.classList.toggle("drop", overPool(x, y)); };
+  const moveGhost = (x, y) => {
+    if(!drag) return; drag.ghost.style.transform = `translate(${x - drag.w / 2}px, ${y - drag.h * 0.6}px) rotate(-6deg)`;
+    const t = target(x, y); if(t !== hot){ hot?.classList.remove("drop"); hot = t; hot?.classList.add("drop"); }
+  };
   window.addEventListener("pointermove", e => {
     if(drag){ moveGhost(e.clientX, e.clientY); return; }
     if(!press) return;
-    const dx = e.clientX - press.x, dy = e.clientY - press.y, far = Math.hypot(dx, dy) > 8;
+    const far = Math.hypot(e.clientX - press.x, e.clientY - press.y) > 8;
     if(!far) return;
     if(press.mouse || press.lifted) startDrag(e);
     else { clearTimeout(press.timer); press = null; }   // è uno scorrimento
   });
   window.addEventListener("pointerup", e => {
     if(drag){ endDrag(e.clientX, e.clientY, true); press = null; return; }
-    if(press){ clearTimeout(press.timer); if(press.lifted){ press.c.classList.remove("lift"); press.c.dataset.noclick = "1"; const list = packList(); sel = press.i; ins = { list, idx: press.i, take: true }; render(); } press = null; }
+    if(press){ clearTimeout(press.timer); if(press.lifted){ swallow = Date.now(); press.el.classList.remove("lift"); press.el.dataset.noclick = "1"; press.kind === "pack" ? openPackIns(press.i) : openPoolIns(press.i); } press = null; }
   });
-  window.addEventListener("pointercancel", () => { if(drag) endDrag(0, 0, false); if(press){ clearTimeout(press.timer); press.c.classList.remove("lift"); press = null; } });
+  window.addEventListener("pointercancel", () => { if(drag) endDrag(0, 0, false); if(press){ clearTimeout(press.timer); press.el.classList.remove("lift"); press = null; } });
   // durante il trascinamento col dito la pagina non deve scorrere
-  window.addEventListener("touchmove", e => { if(drag || press?.lifted) e.preventDefault(); }, { passive: false });
-  root.addEventListener("contextmenu", e => { if(e.target.closest(".dc")) e.preventDefault(); });
-  window.addEventListener("keydown", e => { if(root.hidden) return; if(e.key === "Escape"){ if(ins){ ins = null; render(); } } if(e.key === "Enter" && sel != null && !ins) take(sel); });
+  window.addEventListener("touchmove", e => { if(drag || press?.lifted || sheet?.moved) e.preventDefault(); }, { passive: false });
+  window.addEventListener("keydown", e => { if(root.hidden) return; if(e.key === "Escape"){ if(ins){ ins = null; rerender(); } } if(e.key === "Enter" && sel != null && !ins) take(sel); });
 }
 
+/* a draft finito: il mazzo proposto ha tutte le carte del pool tranne la sideboard (che resta «non nel mazzo»);
+   come Leggende le 3 migliori tra quelle non in sideboard */
 function build(){
   const st = replay(D); if(!st || !st.done) return;
-  const deck = poolToDeck(st.pools[0], `Draft ${setName(D.set)}`);
+  const pool = st.pools[0];
+  const deck = poolToDeck(pool, `Draft ${setName(D.set)}`);
   deck.draft = { set: D.set, seed: D.seed, picks: D.picks.slice(), res: "---" };
   deck.notes = `Draft ${setName(D.set)} contro l'IA (alpha)`;
+  const byCid = new Map();
+  for(const x of mainCards(pool)){ const e = byCid.get(x.c.id) || { cid: x.c.id, pid: x.p.id, n: 0, prints: [] }; e.n++; e.prints.push(x.p.id); byCid.set(x.c.id, e); }
+  deck.cards = [...byCid.values()];
+  const cols = new Set(deck.cards.map(e => DATA.byId.get(e.cid).color));
+  const legs = legsOf(pool).map(x => ({ x, s: legendScore(x.c) + (cols.has(x.c.color) ? 1.5 : 0) })).sort((a, b) => b.s - a.s);
+  const chosen = []; for(const { x } of legs) if(chosen.length < 3 && !chosen.some(y => y.c.id === x.c.id)) chosen.push(x);
+  deck.legends = chosen.map(x => ({ cid: x.c.id, pid: x.p.id })); while(deck.legends.length < 3) deck.legends.push(null);
   saveDeck(deck); discardDraft(); closeDraft();
   if(onBuildCb) onBuildCb(deck.id);
 }

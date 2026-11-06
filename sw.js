@@ -2,7 +2,7 @@
    Rete prima, cache come ripiego: l'app si aggiorna da sola a ogni apertura
    online e continua a funzionare offline con l'ultima versione vista.
    Le immagini delle carte sono messe in cache man mano che le vedi.     */
-const CACHE = "ncd-v1";  // draft contro l'IA (alpha): 1.9.32
+const CACHE = "ncd-v1";  // draft: zoom, sideboard, vendibili: 1.9.33
 const CORE = ["./", "./index.html", "./theme.css", "./sim.css", "./app.js", "./data.js", "./store.js", "./ui.js",
   "./collection.js", "./deck.js", "./profile.js", "./sim.js", "./engine.js", "./bot.js", "./scanner.js", "./parser.js", "./rules.js", "./prerelease.js", "./draft.js", "./tutorial.js", "./i18n.js", "./cloud.js", "./social.js", "./online.js", "./home.js", "./manifest.webmanifest", "./icon.svg", "./mark.svg", "./badge-96.png"];
 

@@ -344,7 +344,9 @@ function renderEditor(){
         <span class="chip">${n} carte</span><span class="chip" title="Carte con il simbolo €$: si possono vendere per 1 Eddie">vendibili ${sellable} (${n ? Math.round(sellable / n * 100) : 0}%)</span><span class="chip">valore ${eur(deckValue(d))}</span>
         ${miss.copies ? `<span class="chip bad">mancano ${miss.copies} copie ≈ ${eur(miss.cost)}${miss.unpriced ? " + " + miss.unpriced + " senza prezzo" : ""}</span>` : `<span class="chip good">hai tutte le carte</span>`}
       </div>
-      ${groups || `<div class="empty">Aggiungi carte dall'elenco delle carte: tocca il nome per +1, la miniatura per scegliere l'artwork.</div>`}
+      <details class="deckSec" id="deckSec"${S.settings.deckOpen === false && n ? "" : " open"}><summary>${deckSumHTML(d, checks, n)}</summary>
+        <div class="deckBody">${groups || `<div class="empty">Aggiungi carte dall'elenco delle carte: tocca il nome per +1, la miniatura per scegliere l'artwork.</div>`}</div>
+      </details>
     </div>
 
     <div class="card flush" id="deckBrowser">
@@ -357,9 +359,10 @@ function renderEditor(){
       <div class="search"><input class="inp" id="deckQ" type="search" placeholder="Cerca carta…" value="${esc(F.q)}" autocomplete="off"><button class="btn sm" id="deckFilt">Filtri</button></div>
       <div class="filters${filtOpen ? " on" : ""}" id="deckFilters">${(F.browse = browse, filtersHTML(F))}</div>
       <div class="rows" id="deckRows"></div>
-    </div>`;
+    </div>
+    <div class="deckStick" id="deckStick" role="button" tabindex="0" aria-label="Torna al Deck">${deckStickHTML(d, checks, n)}</div>`;
   fitFilters($("#deckFilters"));
-  renderBrowser();
+  renderBrowser(); updateStick();
 }
 function renderBrowser(){
   const d = CUR, lim = ramLimits(d);
@@ -375,21 +378,53 @@ function renderBrowser(){
     const ramKo = browse === "cards" && d.format !== "sealed" && (c.ramN || 0) > (lim[c.color] || 0);
     // già nel mazzo: «−» per togliere senza tornare all'elenco del mazzo (il resto della riga aggiunge)
     const minus = inDeck ? `<button class="bminus" data-bminus="${c.id}" aria-label="Togli una copia">−</button>` : "";
-    const right = browse === "legends" ? `<span class="bqty">${minus}<span class="chip${inDeck ? " acc" : ""}">${inDeck ? "nel mazzo" : "+"}</span></span>` : `<span class="bqty">${minus}<span class="chip${inDeck ? " acc" : ""}">${inDeck ? "×" + inDeck : "+"}</span></span>`;
+    // carte: contatore − n + sulla riga (il resto della riga aggiunge); ×3 mette subito il massimo nel Costruito
+    const cap = d.format === "sealed" ? poolCount(d, c.id) : MAX_COPIES;
+    const max = d.format !== "sealed" && (inDeck || 0) < cap ? `<button class="bmax" data-bmax="${c.id}" aria-label="Metti ${cap} copie" title="Metti ${cap} copie">×${cap}</button>` : "";
+    const right = browse === "legends" ? `<span class="bqty">${minus}<span class="chip${inDeck ? " acc" : ""}">${inDeck ? "nel mazzo" : "+"}</span></span>`
+      : inDeck ? `<span class="bqty"><span class="qtyctl bstep"><button data-bminus="${c.id}" aria-label="Togli una copia">−</button><b>${inDeck}</b><button aria-label="Aggiungi una copia"${inDeck >= cap ? " disabled" : ""}>+</button></span>${max}</span>`
+      : `<span class="bqty"><span class="chip">+</span>${max}</span>`;
     const pe = d.format === "sealed" ? d.pool.find(e => e.cid === c.id) : null;
     const extra = d.format === "sealed" ? "" : `<span class="chip${ramKo ? " bad" : ""}">RAM ${c.ramN}</span>${cardQty(c) ? `<span class="chip">hai ${cardQty(c)}</span>` : ""}`;
     const left = d.format === "sealed" ? poolCount(d, c.id) - (browse === "legends" ? (inDeck ? 1 : 0) : (inDeck || 0)) : 0;
     const html = rowHTML(c, pe ? pe.pid : null, right, extra, false, d.format === "sealed" ? `${left}x` : "");
-    return d.format !== "sealed" && !cardQty(c) ? html.replace('class="row"', 'class="row unowned" title="Non in collezione"') : html;   // non posseduta: miniatura in bianco e nero
+    const h2 = inDeck ? html.replace('class="row"', 'class="row indeck"') : html;   // già nel mazzo: evidenziata
+    return d.format !== "sealed" && !cardQty(c) ? h2.replace(/class="row( indeck)?"/, 'class="row$1 unowned" title="Non in collezione"') : h2;   // non posseduta: miniatura in bianco e nero
   };
-  // due sezioni a scomparsa: ciò che è già nel mazzo e il resto; lo stato aperto/chiuso resta finché si usa il deckbuilder
-  const ins = list.filter(has), outs = list.filter(c => !has(c));
-  const copies = browse === "legends" ? ins.length : ins.reduce((a, c) => a + (d.cards.find(x => x.cid === c.id)?.n || 0), 0);
-  const sec = (k, title, n, items) => items.length ? `<details class="dsec ${k}" data-sec="${k}"${secOpen[k] ? " open" : ""}><summary><span class="bar"></span>${title}<span class="n">${n}</span></summary>${items.map(row).join("")}</details>` : "";
-  $("#deckRows").innerHTML = list.length ? sec("in", "Nel mazzo", browse === "legends" ? `${ins.length} di 3` : `${ins.length} carte · ${copies} copie`, ins) + sec("out", "Non nel mazzo", `${outs.length} carte`, outs)
+  // un solo elenco: le carte che si possono ancora aggiungere (nel Costruito fino a 3 copie, nel sealed finché ne avanzano
+  // nel pool); quelle già al massimo stanno nel Deck. Le Leggende restano tutte, con quelle scelte evidenziate.
+  const left = c => (d.format === "sealed" ? poolCount(d, c.id) : MAX_COPIES) - (d.cards.find(x => x.cid === c.id)?.n || 0);
+  const items = browse === "legends" ? list : list.filter(c => left(c) > 0), full = browse === "legends" ? [] : list.filter(c => left(c) <= 0);
+  const head = browse === "legends" ? `Leggende<span class="n">${items.length} · ${d.legends.filter(Boolean).length} di 3 nel mazzo</span>` : `Aggiungi carte<span class="n">${items.length} carte</span>`;
+  $("#deckRows").innerHTML = items.length || full.length
+    ? `<div class="dsec out" data-sec="out"><div class="dsum"><span class="bar"></span>${head}</div>${items.map(row).join("")}${full.length ? `<div class="dfull">Già al massimo nel Deck: ${full.map(c => esc(c.dn)).join(", ")}</div>` : ""}</div>`
     : `<div class="empty">Il tuo fixer non trova niente con questi filtri.</div>`;
 }
-const secOpen = { in: false, out: true };
+/* riepilogo del Deck, visibile anche da chiuso: carte e, se il mazzo non è in regola, tutti i motivi in breve */
+const SHORT = [[/^(\d+)\/3 Leggende/, m => `${m[1]}/3 Leggende`], [/stesso nome/, () => "Leggende uguali"],
+  [/^(\d+) carte \(servono (\d+)–(\d+)/, m => +m[1] < +m[2] ? `${m[1]}/${m[2]} carte` : `${m[1]} carte, max ${m[3]}`],
+  [/^(\d+) carte \(nel sealed ne servono almeno (\d+)/, m => `${m[1]}/${m[2]} carte`], [/^Più di (\d+) copie/, m => `oltre ${m[1]} copie`],
+  [/^Fuori dai limiti RAM/, () => "carte fuori RAM"], [/^Non legali/, () => "non legali nei tornei"], [/^Troppi colori/, () => "più di 3 colori"],
+  [/^Più copie di quelle aperte/, () => "copie oltre il pool"], [/^Stampe non aperte/, () => "stampe non aperte"]];
+export function deckIssues(checks){ return checks.filter(v => !v.ok).map(v => { for(const [rx, f] of SHORT){ const m = rx.exec(v.t); if(m) return f(m); } return v.t; }); }
+function deckSumHTML(d, checks, n){
+  const ko = deckIssues(checks);
+  return `<span class="bar"></span><span class="dt">Deck</span><span class="n">${n} carte</span>${ko.length ? `<span class="dko">${ko.map(t => `<i>✘ ${esc(t)}</i>`).join("")}</span>` : `<span class="dok">✔ Legale</span>`}`;
+}
+/* telefono: scorrendo l'elenco, il riepilogo del Deck resta agganciato in alto; toccandolo si torna al Deck aperto */
+function deckStickHTML(d, checks, n){
+  const curve = [0, 1, 2, 3, 4, 5, 6, 7].map(v => d.cards.filter(e => { const x = DATA.byId.get(e.cid)?.cost ?? 0; return v === 7 ? x >= 7 : x === v; }).reduce((a, e) => a + e.n, 0)), mx = Math.max(1, ...curve);
+  const ko = deckIssues(checks);
+  return `<span class="ar">▸</span><span class="dt">Deck</span><span class="cv">${curve.map(c => `<i style="height:${Math.round(c / mx * 100)}%"></i>`).join("")}</span><span class="n">${n} carte</span>${ko.length ? `<span class="dko1">✘ ${ko.length === 1 ? esc(ko[0]) : ko.length + " problemi"}</span>` : `<span class="dok">✔ Legale</span>`}`;
+}
+function updateStick(){
+  const st = $("#deckStick"), sum = $("#deckSec > summary"), br = $("#deckBrowser");
+  if(!st || !sum || !br || $("#deckEdit").hidden){ if(st) st.classList.remove("on"); return; }
+  const top = (document.querySelector("header") || document.querySelector(".top"))?.getBoundingClientRect().bottom || 0;
+  st.style.top = Math.max(0, top) + "px";
+  const show = matchMedia("(max-width: 999px)").matches && sum.getBoundingClientRect().bottom < top && br.getBoundingClientRect().top < innerHeight * 0.6;
+  st.classList.toggle("on", show);
+}
 
 /* aggiunte/rimozioni */
 function addCard(cid, delta, where = "browser"){
@@ -404,9 +439,10 @@ function addCard(cid, delta, where = "browser"){
 }
 /* il mazzo sta sopra l'elenco: quando cresce o si accorcia, l'elenco scenderebbe o salirebbe sotto il dito.
    Si misura dove si trova la riga toccata prima del ridisegno e si compensa lo scorrimento dopo. */
-let anchorCid = null;
+let anchorCid = null, anchorSec = null;   // la stessa carta può stare in entrambe le sezioni: conta quella toccata
 function keepPlace(cid, fn, where = "browser"){
-  const inB = id => document.querySelector(`#deckRows .row[data-cid="${CSS.escape(id)}"]`), inD = id => document.querySelector(`.dlist .row[data-cid="${CSS.escape(id)}"]`);
+  const sec1 = anchorSec; anchorSec = null;
+  const inB = id => (sec1 && document.querySelector(`#deckRows .dsec[data-sec="${sec1}"] .row[data-cid="${CSS.escape(id)}"]`)) || document.querySelector(`#deckRows .row[data-cid="${CSS.escape(id)}"]`), inD = id => document.querySelector(`.dlist .row[data-cid="${CSS.escape(id)}"]`);
   const sel = id => where === "deck" ? (inD(id) || inB(id)) : (inB(id) || inD(id));
   const el = (anchorCid && sel(anchorCid)) || (cid && sel(cid)), key = el && el.dataset.cid;
   const top = el ? el.getBoundingClientRect().top : null;
@@ -433,7 +469,11 @@ function setLegend(i, cid){
   CUR.legends[i] = { cid, pid: pe ? pe.pid : c.def.id }; save(); keepPlace(cid, renderEditor);
 }
 
-document.addEventListener("toggle", e => { const x = e.target; if(x.matches && x.matches("#deckRows .dsec")) secOpen[x.dataset.sec] = x.open; }, true);
+document.addEventListener("toggle", e => { const x = e.target; if(x.id === "deckSec" && deckSize(CUR || { cards: [] })){ if(S.settings.deckOpen !== x.open){ S.settings.deckOpen = x.open; S.save("settings"); } updateStick(); } }, true);
+addEventListener("scroll", () => updateStick(), { passive: true });
+addEventListener("resize", () => updateStick(), { passive: true });
+document.addEventListener("click", e => { if(!e.target.closest("#deckStick")) return; const ds = $("#deckSec"); if(!ds) return; ds.open = true; S.settings.deckOpen = true; S.save("settings");
+  const top = (document.querySelector("header") || document.querySelector(".top"))?.getBoundingClientRect().bottom || 0; window.scrollBy({ top: ds.getBoundingClientRect().top - top - 8, behavior: "smooth" }); });
 function wire(){
   const list = $("#deckList"), ed = $("#deckEdit");
   list.addEventListener("input", e => { if(e.target.id === "deckListQ"){ LF.q = e.target.value; const pos = e.target.selectionStart; renderDeck(); const el = $("#deckListQ"); if(el){ el.focus(); el.setSelectionRange(pos, pos); } } });
@@ -466,12 +506,17 @@ function wire(){
     if(e.target.closest("#deckRamOnly")){ F.ramOnly = !F.ramOnly; renderEditor(); return; }
     if(e.target.closest("#deckFilt")){ filtOpen = $("#deckFilters").classList.toggle("on"); fitFilters($("#deckFilters")); return; }
     if(e.target.closest("#deckFilters")){ return; } // gestito da bindFilters (delegato sotto)
+    const bx = e.target.closest("[data-bmax]"); if(bx){
+      const cid = bx.dataset.bmax; anchorCid = cid; anchorSec = bx.closest(".dsec")?.dataset.sec || null;
+      const n = CUR.cards.find(x => x.cid === cid)?.n || 0; addCard(cid, MAX_COPIES - n); return;
+    }
     const bm = e.target.closest("[data-bminus]"); if(bm){
-      const cid = bm.dataset.bminus; anchorCid = cid;
+      const cid = bm.dataset.bminus; anchorCid = cid; anchorSec = bm.closest(".dsec")?.dataset.sec || null;
       if(browse === "legends"){ const i = CUR.legends.findIndex(l => l && l.cid === cid); if(i >= 0){ CUR.legends[i] = null; save(); keepPlace(cid, renderEditor); } return; }
       addCard(cid, -1); return;
     }
-    const row = e.target.closest("#deckRows .row"); if(row){ anchorCid = row.dataset.cid;
+    const row = e.target.closest("#deckRows .row"); if(row){ anchorCid = row.dataset.cid; anchorSec = row.closest(".dsec")?.dataset.sec || null;
+      if(e.target.closest(".bstep button[disabled]")) return;
       const cid = row.dataset.cid;
       if(e.target.closest(".thumb")){ openCard(cid, row.dataset.pid, { only: CUR.format === "sealed" ? poolPrints(CUR, cid) : null, pick: pid => { const en = CUR.cards.find(x => x.cid === cid); if(en){ en.pid = pid; } else { addCard(cid, 1); CUR.cards.find(x => x.cid === cid).pid = pid; } save(); renderEditor(); } }); return; }
       if(browse === "legends"){ const i = CUR.legends.findIndex(l => !l); if(i < 0){ toast("Hai già 3 Leggende: togline una"); return; } setLegend(i, cid); return; }

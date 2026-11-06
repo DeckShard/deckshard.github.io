@@ -458,6 +458,11 @@ nav.tabs button{position:relative}.nbadge{position:absolute;top:2px;right:calc(5
 .bqty{display:inline-flex;align-items:center;gap:6px;flex:0 0 auto}
 .bminus{width:32px;height:32px;border:1px solid var(--line2);border-radius:2px;background:var(--surf2);color:var(--ink);font-size:18px;font-weight:700;cursor:pointer;line-height:1}
 .bminus:active{background:var(--acc2Fill);color:var(--acc2Ink)}
+.bstep button{width:32px;height:32px;color:var(--ink)} .bstep b{min-width:28px;font-family:var(--display);color:var(--acc2)}
+.bstep button:active{background:var(--acc2Fill);color:var(--acc2Ink)} .bstep button[disabled]{opacity:.35;cursor:default}
+.bmax{height:32px;padding:0 8px;border:1px solid var(--line2);border-radius:2px;background:var(--surf2);color:var(--yel);font:700 12px var(--mono);cursor:pointer}
+.bmax:active{background:var(--yel);color:var(--yelInk)}
+#deckRows .row.indeck{background:color-mix(in srgb,var(--acc2Fill) 8%,transparent);box-shadow:inset 3px 0 var(--acc2Fill)}
 /* menù di un amico: ogni azione con una riga che spiega cosa fa */
 #mergeAsk .fmenu .opts{display:flex;flex-direction:column;gap:6px}
 #mergeAsk .fmenu .opts .btn{display:flex;flex-direction:column;align-items:flex-start;text-align:left;gap:2px;width:100%;text-transform:none;letter-spacing:0}
@@ -629,6 +634,30 @@ nav.tabs button.homebtn:not([aria-selected="true"]) svg{opacity:.85}
 #deckRows .dsec.out>summary .bar{background:var(--line2)}
 #deckRows .dsec>summary .n{margin-left:auto;font:600 11.5px var(--font);letter-spacing:.04em;color:var(--mute);text-transform:none}
 #deckRows .dsec>summary:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
+#deckRows .dsum{display:flex;align-items:center;gap:8px;padding:11px 14px;background:var(--surf2);font:700 12px var(--display);letter-spacing:.14em;text-transform:uppercase;position:relative}
+#deckRows .dsum .bar{position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--line2)}
+#deckRows .dsum .n{margin-left:auto;font:600 11.5px var(--font);letter-spacing:.04em;color:var(--mute);text-transform:none}
+#deckRows .dfull{padding:10px 14px;font-size:12.5px;color:var(--mute);border-top:1px solid var(--line)}
+/* il Deck: sezione richiudibile con il riepilogo (carte e motivi per cui non è in regola) */
+.deckSec{margin:14px -14px -14px;border-top:1px solid var(--line)}
+.deckSec>summary{list-style:none;display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;padding:12px 14px;cursor:pointer;background:var(--surf2);position:relative;user-select:none}
+.deckSec>summary::-webkit-details-marker{display:none}
+.deckSec>summary::before{content:"▸";color:var(--acc);font-size:13px;transition:transform .15s}
+.deckSec[open]>summary::before{transform:rotate(90deg)}
+.deckSec>summary .bar{position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--acc)}
+.deckSec .dt{font:700 13px var(--display);letter-spacing:.14em;text-transform:uppercase}
+.deckSec .n{margin-left:auto;font:600 12px var(--font);color:var(--mute)}
+.deckSec .dok,.deckStick .dok{font:700 12px var(--font);color:var(--good)}
+.deckSec .dko{flex-basis:100%;display:flex;flex-wrap:wrap;gap:4px}
+.deckSec .dko i{font:700 11.5px var(--font);font-style:normal;color:var(--bad);border:1px solid color-mix(in srgb,var(--bad) 45%,transparent);background:color-mix(in srgb,var(--bad) 10%,transparent);padding:2px 7px}
+.deckSec>summary:focus-visible{outline:2px solid var(--acc);outline-offset:-2px}
+.deckBody{padding:2px 14px 14px}
+.deckStick{position:fixed;left:0;right:0;z-index:25;display:none;align-items:center;gap:8px;padding:9px 14px;background:linear-gradient(var(--surf2),var(--surf2)),var(--bg);border-bottom:2px solid var(--accFill);box-shadow:0 6px 18px rgba(0,0,0,.5);cursor:pointer}
+.deckStick.on{display:flex}
+.deckStick .ar{color:var(--acc)} .deckStick .dt{font:700 12.5px var(--display);letter-spacing:.14em;text-transform:uppercase}
+.deckStick .cv{display:flex;align-items:flex-end;gap:2px;height:18px} .deckStick .cv i{display:block;width:6px;min-height:1px;background:var(--accFill)}
+.deckStick .n{margin-left:auto;font:600 12px var(--font);color:var(--mute)}
+.deckStick .dko1{font:700 12px var(--font);color:var(--bad);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:45%}
 /* novità dopo un aggiornamento */
 #newsAsk{position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.62);display:flex;align-items:center;justify-content:center;padding:16px}
 #newsAsk .box{background:var(--bg2);border:1px solid var(--line);border-top:2px solid var(--acc);border-radius:4px;max-width:480px;width:100%;padding:16px 18px;max-height:calc(88dvh / var(--tz,1));overflow-y:auto;box-shadow:var(--glow)}
