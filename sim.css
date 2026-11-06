@@ -144,7 +144,7 @@ html[data-motion="reduce"] .die.rolling,html[data-motion="reduce"] .die.landed,h
 .srow>span:first-of-type{flex:1;min-width:0} .srow b{display:block;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .srow small{color:var(--mute);font-size:11.5px}
 .srow .qtyctl button{width:28px;height:28px;font-size:16px} .srow .qtyctl b{min-width:26px;font-size:14px}
 .scanView video{width:100%;height:100%;object-fit:cover}
-.scanView .guide{position:absolute;inset:0;margin:auto;height:90%;aspect-ratio:733/1024;border:2px solid #fcee0a;box-shadow:0 0 0 2000px rgba(0,0,0,.45);pointer-events:none;
+.scanView .guide{position:absolute;inset:0;margin:auto;height:88%;aspect-ratio:733/1024;border:2px solid #fcee0a;box-shadow:0 0 0 2000px rgba(0,0,0,.45);pointer-events:none;
   clip-path:polygon(0 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%)}
 .scanView #scanPreview{position:absolute;right:8px;bottom:8px;width:64px;border:1px solid #fcee0a;filter:grayscale(1)}
 .scanBar{display:flex;gap:8px;padding:8px 12px}
@@ -508,3 +508,13 @@ html[data-theme="light"] .die:has(b:not(:empty)) small{background:none;color:col
 :root[data-mat][data-contrast="high"] #board{--veil:color-mix(in srgb,var(--bg) 75%,transparent)}
 :root[data-mat="skyline"]{--mat:url(mat-skyline.svg)} :root[data-mat="corpo"]{--mat:url(mat-corpo.svg)} :root[data-mat="badlands"]{--mat:url(mat-badlands.svg)}
 :root[data-mat="pacifica"]{--mat:url(mat-pacifica.svg)} :root[data-mat="wall"]{--mat:url(mat-wall.svg)}
+
+/* scanner: anteprima più alta in verticale (si legge esattamente ciò che sta nel riquadro), edizione e gemelle */
+@media (orientation: portrait){ .scanView{aspect-ratio:3/4;max-height:54dvh} }
+.scanEd{display:flex;align-items:center;gap:6px;padding:0 12px 6px;flex-wrap:wrap}
+.scanEd>span{font-size:11.5px;color:var(--mute);letter-spacing:.1em;text-transform:uppercase;margin-right:2px}
+.scanEd button{flex:1 1 auto;min-width:0;font:inherit;font-size:12.5px;padding:6px 8px;border:1px solid var(--line2);background:var(--surf2);color:var(--ink2);cursor:pointer}
+.scanEd button[aria-pressed="true"]{background:var(--acc2Fill);color:var(--acc2Ink);border-color:transparent;font-weight:700}
+.srow .twins{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+.srow .twins button{font:inherit;font-size:11px;line-height:1.3;padding:2px 7px;border:1px solid var(--line2);background:transparent;color:var(--ink2);cursor:pointer}
+.srow .twins button[aria-pressed="true"]{border-color:var(--acc2Fill);color:var(--acc2);font-weight:700}

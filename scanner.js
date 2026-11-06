@@ -19,9 +19,9 @@ let auto = true, loopT = null, lastGuess = null, stableN = 0, lastAdded = null, 
 let STAGE = (() => { try{ return JSON.parse(localStorage.getItem("ncd:scanlist") || "[]"); }catch(e){ return []; } })();
 const saveStage = () => { try{ localStorage.setItem("ncd:scanlist", JSON.stringify(STAGE)); }catch(e){} };
 export const stageCount = () => STAGE.reduce((a, e) => a + e.n, 0);
-function stageAdd(c, pid, n = 1){
+function stageAdd(c, pid, n = 1, twins){
   const e = STAGE.find(x => x.cid === c.id && x.pid === pid);
-  if(e) e.n += n; else STAGE.unshift({ cid: c.id, pid: pid || c.def.id, n });
+  if(e){ e.n += n; if(twins && twins.length > 1) e.tw = twins; } else STAGE.unshift({ cid: c.id, pid: pid || c.def.id, n, ...(twins && twins.length > 1 ? { tw: twins } : {}) });
   saveStage(); renderStage();
 }
 
@@ -72,42 +72,98 @@ export function matchText(text){
   return out.slice(0, 5).filter(x => x.score >= 0.35);
 }
 
-/* ------------------------------------------------------------ variante dall'illustrazione */
-/* firma 24×24 in scala di grigi della finestra dell'arte (dal 12% al 58% dell'altezza) */
-const SIG = 24, SIGS = new Map();
-function signature(src, sx, sy, sw, sh){
-  const cv = document.createElement("canvas"); cv.width = SIG; cv.height = SIG;
+/* ------------------------------------------------------------ variante dall'illustrazione
+   Due passi. 1) L'illustrazione: tra le stampe della carta si cerca quella con l'arte più simile,
+   provando piccoli spostamenti e zoom dell'inquadratura (la carta non è mai perfetta nel riquadro).
+   2) Le gemelle: molte stampe hanno la stessa identica arte (retail e beta, starter, ristampe) e
+   cambiano solo per timbri e codici minuscoli. Lì decidono l'«Edizione» scelta nello scanner e, se
+   c'è, un timbro grande (prerelease, Edgerunner) nella zona in alto a destra. Nel dubbio la stampa
+   resta quella dell'edizione scelta e la riga della lista mostra le gemelle da toccare. */
+let STAMP_GAP = 0.06;
+const SIG = 24, PDESC = new Map(), GROUPS = new Map();
+const ART = [0.06, 0.12, 0.88, 0.46], STAMP = [0.55, 0.07, 0.43, 0.20], TAG = [0, 0.85, 0.22, 0.15];
+/* firma normalizzata (media 0, varianza 1) in scala di grigi di una zona della carta */
+function zoneSig(src, bx, by, bw, bh, z, nx = SIG, ny = SIG){
+  const cv = document.createElement("canvas"); cv.width = nx; cv.height = ny;
   const ctx = cv.getContext("2d", { willReadFrequently: true });
-  ctx.drawImage(src, sx + sw * 0.06, sy + sh * 0.12, sw * 0.88, sh * 0.46, 0, 0, SIG, SIG);
-  const d = ctx.getImageData(0, 0, SIG, SIG).data, v = new Float32Array(SIG * SIG);
+  ctx.drawImage(src, bx + bw * z[0], by + bh * z[1], bw * z[2], bh * z[3], 0, 0, nx, ny);
+  const d = ctx.getImageData(0, 0, nx, ny).data, v = new Float32Array(nx * ny);
   let mean = 0; for(let i = 0; i < v.length; i++){ v[i] = 0.3 * d[i * 4] + 0.59 * d[i * 4 + 1] + 0.11 * d[i * 4 + 2]; mean += v[i]; }
   mean /= v.length; let sd = 0; for(let i = 0; i < v.length; i++){ v[i] -= mean; sd += v[i] * v[i]; } sd = Math.sqrt(sd / v.length) || 1;
   for(let i = 0; i < v.length; i++) v[i] /= sd;
   return v;
 }
+const signature = (src, sx, sy, sw, sh) => zoneSig(src, sx, sy, sw, sh, ART);
 const corr = (a, b) => { let s = 0; for(let i = 0; i < a.length; i++) s += a[i] * b[i]; return s / a.length; };
-function printSignature(pid){
-  if(SIGS.has(pid)) return SIGS.get(pid);
-  const pr = new Promise(res => { const im = new Image(); im.onload = () => res(signature(im, 0, 0, im.naturalWidth, im.naturalHeight)); im.onerror = () => res(null); im.src = thumbUrl(pid); });
-  SIGS.set(pid, pr); return pr;
+/* fotografia dell'inquadratura con un margine attorno, per poter provare gli spostamenti senza uscire */
+const MARGIN = 0.07;
+function snapshot(src, sx, sy, sw, sh, srcW, srcH){
+  const W = 440, H = Math.round(W * sh / sw), mx = sw * MARGIN, my = sh * MARGIN;
+  const cv = document.createElement("canvas"); cv.width = Math.round(W * (1 + 2 * MARGIN)); cv.height = Math.round(H * (1 + 2 * MARGIN));
+  const ctx = cv.getContext("2d", { willReadFrequently: true }); ctx.fillStyle = "#000"; ctx.fillRect(0, 0, cv.width, cv.height);
+  const k = W / sw, x0 = Math.max(0, sx - mx), y0 = Math.max(0, sy - my), x1 = Math.min(srcW, sx + sw + mx), y1 = Math.min(srcH, sy + sh + my);
+  if(x1 > x0 && y1 > y0) ctx.drawImage(src, x0, y0, x1 - x0, y1 - y0, (x0 - (sx - mx)) * k, (y0 - (sy - my)) * k, (x1 - x0) * k, (y1 - y0) * k);
+  return { cv, bx: W * MARGIN, by: H * MARGIN, bw: W, bh: H };
 }
-/* tra le stampe della carta sceglie quella con l'illustrazione più simile all'inquadratura;
-   a parità di arte (es. beta e retail) preferisce la stampa predefinita */
-async function bestVariant(card, camSig){
+function printDesc(pid){
+  if(PDESC.has(pid)) return PDESC.get(pid);
+  const pr = new Promise(res => { const im = new Image(); im.onload = () => { const w = im.naturalWidth, h = im.naturalHeight;
+    res({ art: zoneSig(im, 0, 0, w, h, ART), stamp: zoneSig(im, 0, 0, w, h, STAMP, 40, 24), tag: zoneSig(im, 0, 0, w, h, TAG, 20, 16) }); };
+    im.onerror = () => res(null); im.src = thumbUrl(pid); });
+  PDESC.set(pid, pr); return pr;
+}
+/* gruppi di stampe con la stessa illustrazione (somiglianza > 0.93 tra le immagini del catalogo) */
+function artGroups(card, prints, D){
+  if(GROUPS.has(card.id)) return GROUPS.get(card.id);
+  const par = prints.map((_, i) => i), f = i => { while(par[i] !== i) i = par[i]; return i; };
+  for(let i = 0; i < prints.length; i++) for(let j = i + 1; j < prints.length; j++) if(D[i] && D[j] && corr(D[i].art, D[j].art) > 0.93) par[f(i)] = f(j);
+  const g = prints.map((_, i) => f(i)); GROUPS.set(card.id, g); return g;
+}
+/* edizione che si sta scansionando: decide tra le gemelle (Impostazioni dello scanner, ricordata) */
+export const EDITIONS = [["auto", "Auto"], ["retail", "Retail"], ["beta", "Beta"], ["starter", "Starter"], ["starterb", "Starter beta"], ["demo", "Demo"]];
+let autoPref = null;   // in «Automatica»: l'edizione dell'ultima correzione fatta a mano in questa sessione
+let edition = (() => { try{ const v = localStorage.getItem("ncd:scanEd"); return EDITIONS.some(e => e[0] === v) ? v : "auto"; }catch(e){ return "auto"; } })();
+const edClass = p => isDemo(p) ? "demo" : isStarter(p) ? (isBeta(p) ? "starterb" : "starter") : isBeta(p) ? "beta" : "retail";
+const isBeta = p => /beta/i.test(p.set) || /^β/.test(p.num), isStarter = p => /starter/i.test(p.set), isDemo = p => /demo/i.test(p.set);
+function edRank(p, card){
+  const main = /^welcometonightcity/.test(p.set) ? 0 : 1, b = isBeta(p), st = isStarter(p), dm = isDemo(p);
+  const want = { retail: !b && !st && !dm, beta: b && !st && !dm, starter: st && !b, starterb: st && b, demo: dm }[edition === "auto" && autoPref ? autoPref : edition];
+  if(want !== undefined) return (want ? 0 : 8) + (st || dm ? 2 : 0) + (b ? 1 : 0) + main;
+  return p === card.def ? 0 : (b ? 4 : 0) + (st || dm ? 2 : 0) + main + 1;   // automatica: la stampa predefinita del catalogo
+}
+/* nome breve dell'edizione, per i pulsanti delle gemelle */
+const SHORT = [[/^welcometonightcityretail/, "Base"], [/^welcometonightcitybeta/, "Base β"], [/^theheistretail/, "Heist"], [/^theheistbeta/, "Heist β"],
+  [/^embracingpowerretail/, "Power"], [/^embracingpowerbeta/, "Power β"], [/^prereleaseretail/, "Prerelease"], [/^prereleasebeta/, "Prerelease β"],
+  [/^boxtoppersretail/, "Box topper"], [/^boxtoppersbeta/, "Box topper β"], [/demodeck$/, "Demo"], [/^edgerunner/, "Edgerunner"], [/^nightcitybrawl/, "Brawl"],
+  [/^nightcityshowdown/, "Showdown"], [/^judge/, "Judge"], [/^PRM/, "Promo"]];
+export const edLabel = p => { const m = SHORT.find(([rx]) => rx.test(p.set)); return `${m ? m[1] : p.set} #${p.num}`; };
+async function bestVariant(card, cam){
   const prints = card.prints.filter(p => p.img && p.lang === "en");
-  if(prints.length < 2 || !camSig) return { pid: card.def.id, alt: false, score: 0 };
-  const sigs = await Promise.all(prints.map(p => printSignature(p.id)));
-  let best = null;
-  prints.forEach((p, i) => { if(!sigs[i]) return; const sc = corr(camSig, sigs[i]); if(!best || sc > best.sc + 1e-6) best = { p, sc, i }; });
-  if(!best) return { pid: card.def.id, alt: false, score: 0 };
-  // stesso artwork della predefinita? allora è la predefinita
+  const none = { pid: card.def.id, alt: false, score: 0, twins: [] };
+  if(prints.length < 2 || !cam) return none;
+  const D = await Promise.all(prints.map(p => printDesc(p.id))), G = artGroups(card, prints, D);
+  // 1) illustrazione: miglior allineamento tra piccoli spostamenti e zoom
+  const boxes = []; for(const s of [0.94, 1, 1.06]) for(const dx of [-0.04, 0, 0.04]) for(const dy of [-0.04, 0, 0.04]){
+    const bw = cam.bw * s, bh = cam.bh * s; boxes.push([cam.bx + (cam.bw - bw) / 2 + dx * cam.bw, cam.by + (cam.bh - bh) / 2 + dy * cam.bh, bw, bh]); }
+  const sigs = boxes.map(b => zoneSig(cam.cv, b[0], b[1], b[2], b[3], ART));
+  const sc = prints.map((p, i) => { if(!D[i]) return { s: -9, b: 0 }; let s = -9, bi = 0; sigs.forEach((c, k) => { const v = corr(c, D[i].art); if(v > s){ s = v; bi = k; } }); return { s, b: bi }; });
+  const gs = new Map(); prints.forEach((p, i) => { if(!gs.has(G[i]) || sc[i].s > gs.get(G[i])) gs.set(G[i], sc[i].s); });
   const di = prints.indexOf(card.def);
-  if(di >= 0 && sigs[di] && corr(sigs[di], sigs[best.i]) > 0.93) return { pid: card.def.id, alt: false, score: best.sc };
-  // una variante solo se somiglia chiaramente di più: con una foto storta, riflessi o un'inquadratura imprecisa
-  // le somiglianze si avvicinano tutte e vincerebbe una variante a caso. Nel dubbio, la stampa base.
-  const defSc = di >= 0 && sigs[di] ? corr(camSig, sigs[di]) : -1;
-  if(best.sc < 0.4 || best.sc - defSc < 0.06) return { pid: card.def.id, alt: false, score: defSc };
-  return { pid: best.p.id, alt: true, score: best.sc };
+  let g = [...gs.entries()].sort((a, b) => b[1] - a[1])[0][0];
+  if(di >= 0 && gs.get(G[di]) >= gs.get(g) - 0.02) g = G[di];   // quasi pari: vince l'arte della stampa predefinita
+  const mem = prints.map((_, i) => i).filter(i => G[i] === g);
+  const twins = mem.map(i => prints[i].id);
+  if(gs.get(g) < 0.3) return { ...none, twins: di >= 0 ? prints.map((_, i) => i).filter(i => G[i] === G[di]).map(i => prints[i].id) : [] };   // inquadratura illeggibile
+  // 2) gemelle: l'edizione scelta, poi un timbro grande che la smentisce chiaramente
+  mem.sort((a, b) => edRank(prints[a], card) - edRank(prints[b], card));
+  let pick = mem[0];
+  if(mem.length > 1){
+    const best = boxes[sc[mem[0]].b], st = zoneSig(cam.cv, best[0], best[1], best[2], best[3], STAMP, 40, 24), tg = zoneSig(cam.cv, best[0], best[1], best[2], best[3], TAG, 20, 16);
+    const z = i => D[i] ? corr(st, D[i].stamp) + 0.5 * corr(tg, D[i].tag) : -9;
+    const zp = z(pick); let alt = null; for(const i of mem.slice(1)){ const v = z(i); if(v > zp + STAMP_GAP && (!alt || v > alt.v)) alt = { i, v }; }
+    if(alt) pick = alt.i;
+  }
+  return { pid: prints[pick].id, alt: prints[pick] !== card.def, score: sc[pick].s, twins };
 }
 
 /* ------------------------------------------------------------ OCR */
@@ -146,9 +202,9 @@ async function recognize(canvas, st){
 }
 /* legge un'immagine (o un fotogramma) e ritorna i candidati */
 async function readImage(src, sw, sh, crop, st, quick){
-  const r = crop ? guideRect(sw, sh) : { x: 0, y: 0, w: sw, h: sh };
+  const r = crop ? viewRect(src, sw, sh) : { x: 0, y: 0, w: sw, h: sh };
   const W = quick ? 720 : 900;
-  lastCamSig = signature(src, r.x, r.y, r.w, r.h);
+  lastCamSig = snapshot(src, r.x, r.y, r.w, r.h, sw, sh);
   const cv = prepare(src, r.x, r.y, r.w, r.h, false, W);
   $("#scanPreview").src = cv.toDataURL("image/jpeg", 0.6); $("#scanPreview").hidden = false;
   let text = await recognize(cv, st);
@@ -165,7 +221,7 @@ async function readImage(src, sw, sh, crop, st, quick){
 export function openScanner(){
   if(!wired){ wire(); wired = true; }
   $("#scan").hidden = false; document.body.style.overflow = "hidden";
-  lastHits = []; renderHits(); renderStage();
+  lastHits = []; renderHits(); renderStage(); renderEd();
   $("#scanAuto").setAttribute("aria-pressed", String(auto));
   startCamera();
 }
@@ -185,7 +241,15 @@ async function startCamera(){
 }
 function stopCamera(){ if(stream){ for(const t of stream.getTracks()) t.stop(); stream = null; } const v = $("#scanVideo"); if(v) v.srcObject = null; }
 
-/* il riquadro guida copre il centro dell'inquadratura con le proporzioni della carta */
+/* si legge esattamente ciò che sta dentro il riquadro giallo: la sua posizione sullo schermo viene
+   riportata nei pixel del video, tenendo conto del ritaglio dell'anteprima (object-fit: cover) */
+function viewRect(v, vw, vh){
+  const g = $(".scanView .guide"), r = v.getBoundingClientRect && v.getBoundingClientRect(), gr = g && g.getBoundingClientRect();
+  if(!r || !gr || !r.width || !gr.width) return guideRect(vw, vh);
+  const k = Math.max(r.width / vw, r.height / vh), ox = (r.width - vw * k) / 2, oy = (r.height - vh * k) / 2, b = 2;
+  const x = (gr.left + b - r.left - ox) / k, y = (gr.top + b - r.top - oy) / k, w = (gr.width - 2 * b) / k, h = (gr.height - 2 * b) / k;
+  return { x: Math.max(0, x), y: Math.max(0, y), w: Math.min(w, vw - Math.max(0, x)), h: Math.min(h, vh - Math.max(0, y)) };
+}
 function guideRect(vw, vh){
   const h = Math.min(vh * 0.9, (vw * 0.9) * 1024 / 733), w = h * 733 / 1024;
   return { x: (vw - w) / 2, y: (vh - h) / 2, w, h };
@@ -218,10 +282,10 @@ function onAutoResult(hits){
       lastAdded = top.card.id; gap = 0; stableN = 0;
       const sig = lastCamSig;
       bestVariant(top.card, sig).then(v => {
-        stageAdd(top.card, v.pid, 1);
+        stageAdd(top.card, v.pid, 1, v.twins);
         navigator.vibrate?.([30, 40, 30]);
         const p = DATA.byPrint.get(v.pid);
-        flash(`✔ ${top.card.dn}${v.alt ? ` · variante ${p.rarity}` : ""} in lista (${stageCount()} carte)`);
+        flash(`✔ ${top.card.dn} · ${edLabel(p)} in lista (${stageCount()} carte)`);
       });
       $("#scanLive").textContent = ""; return;
     }
@@ -243,7 +307,7 @@ async function scanOnce(src, sw, sh, crop){
     const sig = lastCamSig;
     for(const h of lastHits){ h.variant = await bestVariant(h.card, sig); }
     if(!lastHits.length) st("Non ho riconosciuto il nome. Avvicinati, evita i riflessi e riprova.");
-    else if(lastHits[0].score >= AUTO_MIN){ const v = lastHits[0].variant; stageAdd(lastHits[0].card, v.pid, 1); flash(`✔ ${lastHits[0].card.dn}${v.alt ? " · variante " + DATA.byPrint.get(v.pid).rarity : ""} in lista`); }
+    else if(lastHits[0].score >= AUTO_MIN){ const v = lastHits[0].variant; stageAdd(lastHits[0].card, v.pid, 1, v.twins); flash(`✔ ${lastHits[0].card.dn} · ${edLabel(DATA.byPrint.get(v.pid))} in lista`); }
     else st("Forse una di queste? Tocca quella giusta per metterla in lista.");
     renderHits();
   }catch(e){ st("Errore: " + e.message); }
@@ -252,8 +316,9 @@ async function scanOnce(src, sw, sh, crop){
 function renderHits(){
   const box = $("#scanHits");
   box.innerHTML = lastHits.map((h, i) => { const pid = h.variant ? h.variant.pid : h.card.def.id, p = DATA.byPrint.get(pid); return `<button class="hit${i === 0 && h.score >= AUTO_MIN ? " best" : ""}" data-hit="${i}">
-      <img src="${thumbUrl(pid)}" alt=""><span><b>${esc(h.card.dn)}</b><small>${Math.round(h.score * 100)}%${h.variant && h.variant.alt ? ` · variante ${esc(p.rarity)}` : ""} · in collezione ${h.card.prints.reduce((a, x) => a + qtyOf(x.id), 0)}</small></span><i>+1</i></button>`; }).join("");
+      <img src="${thumbUrl(pid)}" alt=""><span><b>${esc(h.card.dn)}</b><small>${Math.round(h.score * 100)}% · ${esc(edLabel(p))} · in collezione ${h.card.prints.reduce((a, x) => a + qtyOf(x.id), 0)}</small></span><i>+1</i></button>`; }).join("");
 }
+function renderEd(){ const b = $("#scanEd"); if(b) b.innerHTML = `<span>Edizione</span>${EDITIONS.map(([v, t]) => `<button data-ed="${v}" aria-pressed="${edition === v}">${t}</button>`).join("")}`; }
 function renderStage(){
   const n = stageCount(), box = $("#scanList");
   $("#scanCommit").textContent = n ? `Aggiungi ${n} ${n === 1 ? "carta" : "carte"} alla collezione` : "Lista vuota";
@@ -262,7 +327,7 @@ function renderStage(){
     const c = DATA.byId.get(e.cid), p = DATA.byPrint.get(e.pid) || c.def;
     return `<div class="srow" data-i="${i}">
       <img src="${thumbUrl(p.id)}" alt="" data-pick="1" title="Cambia stampa">
-      <span><b>${esc(c.dn)}</b><small>${esc(p.set)} · #${esc(p.num)} · hai già ${qtyOf(p.id)}</small></span>
+      <span><b>${esc(c.dn)}</b><small>${esc(edLabel(p))} · hai già ${qtyOf(p.id)}</small>${(e.tw || []).length > 1 ? `<span class="twins">${e.tw.map(t => DATA.byPrint.get(t)).filter(Boolean).map(t => `<button data-tw="${esc(t.id)}" aria-pressed="${t.id === p.id}">${esc(edLabel(t).replace(/ #.*/, ""))}</button>`).join("")}</span>` : ""}</span>
       <span class="qtyctl"><button data-sq="-1" aria-label="meno">−</button><b>${e.n}</b><button data-sq="1" aria-label="più">+</button></span>
       <button class="btn sm icon" data-srm="1" aria-label="Togli">✕</button>
     </div>`; }).join("") || `<div class="empty" style="padding:14px">Le carte riconosciute compaiono qui; le controlli e poi le aggiungi tutte insieme.</div>`;
@@ -285,16 +350,18 @@ function wire(){
       await scanOnce(v, v.videoWidth, v.videoHeight, true); return;
     }
     if(e.target.closest("#scanPick")){ $("#scanFile").click(); return; }
+    const ed = e.target.closest("#scanEd [data-ed]"); if(ed){ edition = ed.dataset.ed; try{ localStorage.setItem("ncd:scanEd", edition); }catch(err){} renderEd(); return; }
     if(e.target.closest("#scanCommit")){ commitStage(); return; }
     if(e.target.closest("#scanClear")){ askConfirm("Svuotare la lista di scansione?", { ok: "Svuota", danger: true }).then(ok => { if(ok){ STAGE = []; saveStage(); renderStage(); } }); return; }
     const hit = e.target.closest("[data-hit]"); if(hit){
       const h = lastHits[+hit.dataset.hit], c = h.card, pid = h.variant ? h.variant.pid : c.def.id;
       if(e.target.closest("img")){ openCard(c.id, pid, { pick: p2 => stageAdd(c, p2, 1) }); return; }
-      stageAdd(c, pid, 1); navigator.vibrate?.(12); flash(`✔ ${c.dn} in lista`); return;
+      stageAdd(c, pid, 1, h.variant && h.variant.twins); navigator.vibrate?.(12); flash(`✔ ${c.dn} in lista`); return;
     }
     const row = e.target.closest(".srow"); if(row){
       const i = +row.dataset.i, en = STAGE[i]; if(!en) return;
       if(e.target.closest("[data-srm]")){ STAGE.splice(i, 1); saveStage(); renderStage(); return; }
+      const tw = e.target.closest("[data-tw]"); if(tw){ const tp = DATA.byPrint.get(tw.dataset.tw); if(tp && edition === "auto") autoPref = edClass(tp); const same = STAGE.find((x, k) => k !== i && x.cid === en.cid && x.pid === tw.dataset.tw); if(same){ same.n += en.n; STAGE.splice(i, 1); } else en.pid = tw.dataset.tw; saveStage(); renderStage(); return; }
       const q = e.target.closest("[data-sq]"); if(q){ en.n = Math.max(0, en.n + (+q.dataset.sq)); if(!en.n) STAGE.splice(i, 1); saveStage(); renderStage(); return; }
       if(e.target.closest("[data-pick]")){ const c = DATA.byId.get(en.cid); openCard(c.id, en.pid, { pick: pid => { en.pid = pid; saveStage(); renderStage(); } }); }
     }
@@ -307,4 +374,4 @@ function wire(){
   });
   document.addEventListener("visibilitychange", () => { if($("#scan").hidden) return; if(document.hidden){ stopLoop(); stopCamera(); } else startCamera(); });
 }
-export const _scanTest = { signature: (...a) => signature(...a), bestVariant: (...a) => bestVariant(...a) };   // per i collaudi
+export const _scanTest = { signature: (...a) => signature(...a), snapshot: (...a) => snapshot(...a), bestVariant: (...a) => bestVariant(...a), setEdition: v => { edition = v; autoPref = null; }, viewRect: (...a) => viewRect(...a), last: () => lastCamSig, setGap: v => { STAMP_GAP = v; }, edLabel };   // per i collaudi

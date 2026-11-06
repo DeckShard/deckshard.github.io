@@ -95,7 +95,7 @@ for(const [pid, name] of SCANS){
   try{
     await page.waitForFunction(() => /in lista|Forse|Non ho|Errore/.test(document.querySelector("#scanMsg").textContent), null, { timeout: 120000 });
     const msg = await page.locator("#scanMsg").textContent();
-    const first = msg.includes("in lista") ? msg.replace(/^✔ /, "").replace(/ in lista.*$/, "") : await page.locator("#scanHits .hit b").first().textContent().catch(() => "");
+    const first = msg.includes("in lista") ? msg.replace(/^✔ /, "").replace(/ in lista.*$/, "").replace(/ · .*$/, "") : await page.locator("#scanHits .hit b").first().textContent().catch(() => "");
     if(first === name) scanOk++; else console.log(`  (scanner: atteso ${name}, letto ${first} — ${await page.locator("#scanMsg").textContent()})`);
   }catch(e){ console.log("  (scanner non verificabile qui: " + (await page.locator("#scanMsg").textContent()) + ")"); break; }
 }
