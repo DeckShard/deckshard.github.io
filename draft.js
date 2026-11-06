@@ -388,16 +388,16 @@ function wire(root){
     if(t.closest("#dExit")){ closeDraft(); return; }
     if(t.closest("#dBuild")){ build(); return; }
     if(t.closest("#dInsImg") && ins){ openLens(imgUrl(ins.list[ins.idx].id)); return; }
-    if(t.closest("#dInsClose") || t.id === "dIns"){ ins = null; rerender(); return; }
-    if(t.closest("#dInsTake") && ins){ take(ins.idx); return; }
-    if(t.closest("#dInsSide") && ins){ take(ins.idx, true); return; }
+    if(t.closest("#dInsClose") || t.id === "dIns"){ swallow = 0; ins = null; rerender(); return; }
+    if(t.closest("#dInsTake") && ins){ swallow = 0; take(ins.idx); return; }
+    if(t.closest("#dInsSide") && ins){ swallow = 0; take(ins.idx, true); return; }
     if(t.closest("#dInsMove") && ins){ const i = ins.pool[ins.idx]; setSide(i, !inSide(i)); ins = null; rerender(); return; }
     const st = t.closest("[data-insstep]"); if(st && ins){ ins.idx = Math.max(0, Math.min(ins.list.length - 1, ins.idx + +st.dataset.insstep)); if(ins.take) sel = ins.idx; rerender(); return; }
     if(t.closest(".dTake")){ if(sel != null) take(sel); return; }
     if(t.closest("#dGrab") || t.closest("#dPoolT")){ if(sheet && sheet.moved) return; poolSt = poolSt ? 0 : 1; rerender(); return; }
     const sg = t.closest("#dSeg button"); if(sg){ S.settings.draftPool = sg.dataset.v; S.save("settings"); rerender(); return; }
-    const pl = t.closest("[data-pool]"); if(pl){ if(pl.dataset.noclick){ delete pl.dataset.noclick; return; } openPoolIns(+pl.dataset.pool); return; }
-    const c = t.closest(".dc"); if(c){ if(c.dataset.noclick){ delete c.dataset.noclick; return; } sel = +c.dataset.i; refreshSel(); return; }
+    const pl = t.closest("[data-pool]"); if(pl){ if(Date.now() - (+pl.dataset.noclick || 0) < 600){ delete pl.dataset.noclick; return; } openPoolIns(+pl.dataset.pool); return; }
+    const c = t.closest(".dc"); if(c){ if(Date.now() - (+c.dataset.noclick || 0) < 600){ delete c.dataset.noclick; return; } sel = +c.dataset.i; refreshSel(); return; }
   });
   root.addEventListener("dblclick", e => { const c = e.target.closest(".dc"); if(c) take(+c.dataset.i); });
   root.addEventListener("pointerover", e => { if(e.pointerType !== "mouse") return; const c = e.target.closest(".dc"); const v = c ? +c.dataset.i : null; if(v !== hoverI){ hoverI = v; const pv = root.querySelector("#dPrev"); if(pv) pv.innerHTML = previewHTML(packList()[hoverI ?? sel ?? -1] || null); } });
@@ -411,7 +411,7 @@ function wire(root){
     if(e.button > 0 || ins) return;
     const c = e.target.closest(".dc"), pl = !c && e.target.closest("[data-pool]"); const el = c || pl; if(!el) return;
     press = { el, kind: c ? "pack" : "pool", i: +(c ? c.dataset.i : pl.dataset.pool), x: e.clientX, y: e.clientY, mouse: e.pointerType === "mouse", lifted: false };
-    if(press.mouse) press.timer = setTimeout(() => { if(!press || drag) return; const p = press; press = null; swallow = Date.now(); p.el.dataset.noclick = "1"; p.kind === "pack" ? openPackIns(p.i) : openPoolIns(p.i); }, 500);   // tenuto fermo col mouse: ingrandisce
+    if(press.mouse) press.timer = setTimeout(() => { if(!press || drag) return; const p = press; press = null; swallow = Date.now(); p.el.dataset.noclick = Date.now(); p.kind === "pack" ? openPackIns(p.i) : openPoolIns(p.i); }, 500);   // tenuto fermo col mouse: ingrandisce
     else press.timer = setTimeout(() => { if(!press) return; press.lifted = true; el.classList.add("lift"); el.insertAdjacentHTML("beforeend", `<span class="dTip">Rilascia per ingrandire · trascina per prendere</span>`); navigator.vibrate?.(15); }, 300);
   });
   const startDrag = (e) => {
@@ -420,7 +420,7 @@ function wire(root){
     const src = press.kind === "pack" ? press.el.querySelector("img").src : thumbUrl(replay(D).pools[0][press.i].id);
     const w = press.kind === "pack" ? r.width : 110;
     g.className = "dGhost"; g.style.width = w + "px"; g.innerHTML = `<img src="${src}" alt="">`; document.body.appendChild(g);
-    drag = { kind: press.kind, i: press.i, ghost: g, w, h: w * 1024 / 733 }; press.el.dataset.noclick = "1"; press.el.classList.remove("lift");
+    drag = { kind: press.kind, i: press.i, ghost: g, w, h: w * 1024 / 733 }; press.el.dataset.noclick = Date.now(); press.el.classList.remove("lift"); press.el.querySelector(".dTip")?.remove();
     root.querySelector(".dft")?.classList.add("dragging");
     moveGhost(e.clientX, e.clientY);
   };
@@ -438,9 +438,9 @@ function wire(root){
   });
   window.addEventListener("pointerup", e => {
     if(drag){ endDrag(e.clientX, e.clientY, true); press = null; return; }
-    if(press){ clearTimeout(press.timer); if(press.lifted){ swallow = Date.now(); press.el.classList.remove("lift"); press.el.dataset.noclick = "1"; press.kind === "pack" ? openPackIns(press.i) : openPoolIns(press.i); } press = null; }
+    if(press){ clearTimeout(press.timer); if(press.lifted){ swallow = Date.now(); press.el.classList.remove("lift"); press.el.dataset.noclick = Date.now(); press.kind === "pack" ? openPackIns(press.i) : openPoolIns(press.i); } press = null; }
   });
-  window.addEventListener("pointercancel", () => { if(drag) endDrag(0, 0, false); if(press){ clearTimeout(press.timer); press.el.classList.remove("lift"); press = null; } });
+  window.addEventListener("pointercancel", () => { if(drag) endDrag(0, 0, false); if(press){ clearTimeout(press.timer); press.el.classList.remove("lift"); press.el.querySelector(".dTip")?.remove(); press = null; } });
   // durante il trascinamento col dito la pagina non deve scorrere
   window.addEventListener("touchmove", e => { if(drag || press?.lifted || sheet?.moved) e.preventDefault(); }, { passive: false });
   window.addEventListener("keydown", e => { if(root.hidden) return; if(e.key === "Escape"){ if(ins){ ins = null; rerender(); } } if(e.key === "Enter" && sel != null && !ins) take(sel); });

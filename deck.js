@@ -263,7 +263,7 @@ function deckRowHTML(d){
   return `<div class="row" data-deck="${d.id}">
     <span class="ci" style="background:${legs[0] ? `var(--c${legs[0].color})` : "var(--line2)"}"></span>
     <div style="display:flex;gap:2px;flex:0 0 auto">${legs.map(c => `<img class="thumb" src="${thumbUrl(c.def.id)}" alt="" style="width:30px">`).join("") || `<span class="thumb"></span>`}</div>
-    <div class="nm"><b>${esc(d.name)}</b><span>${n} carte · ${legs.map(c => esc(c.name)).join(", ") || "senza Leggende"}${miss.copies ? ` · mancano ${miss.copies} copie` : " · completo in collezione"}</span></div>
+    <div class="nm"><b>${esc(d.name)}</b><span>${n} carte · ${legs.map(c => esc(c.name)).join(", ") || "senza Leggende"}${d.format === "sealed" ? "" : miss.copies ? ` · mancano ${miss.copies} copie` : " · completo in collezione"}</span></div>
     ${d.format === "sealed" ? `<span class="chip">${d.draft ? "Draft" : "Sealed"}</span>` : ""}<span class="chip ${ok ? "good" : "bad"}">${ok ? "Legale" : "Non valido"}</span>
     <button class="btn sm icon" data-ddel="${d.id}" title="Elimina" aria-label="Elimina ${esc(d.name)}" style="color:var(--bad)">✕</button>
   </div>`;
@@ -342,7 +342,7 @@ function renderEditor(){
       <div class="curve" style="margin:22px 4px 20px">${curve.map((c, i) => `<div style="height:${Math.round(c / mx * 100)}%" data-n="${c || ""}" data-c="${i === 7 ? "7+" : i}"></div>`).join("")}</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;font-size:12.5px;color:var(--ink2)">
         <span class="chip">${n} carte</span><span class="chip" title="Carte con il simbolo €$: si possono vendere per 1 Eddie">vendibili ${sellable} (${n ? Math.round(sellable / n * 100) : 0}%)</span><span class="chip">valore ${eur(deckValue(d))}</span>
-        ${miss.copies ? `<span class="chip bad">mancano ${miss.copies} copie ≈ ${eur(miss.cost)}${miss.unpriced ? " + " + miss.unpriced + " senza prezzo" : ""}</span>` : `<span class="chip good">hai tutte le carte</span>`}
+        ${d.format === "sealed" ? "" : miss.copies ? `<span class="chip bad">mancano ${miss.copies} copie ≈ ${eur(miss.cost)}${miss.unpriced ? " + " + miss.unpriced + " senza prezzo" : ""}</span>` : `<span class="chip good">hai tutte le carte</span>`}
       </div>
       <details class="deckSec" id="deckSec"${S.settings.deckOpen === false && n ? "" : " open"}><summary>${deckSumHTML(d, checks, n)}</summary>
         <div class="deckBody">${groups || `<div class="empty">Aggiungi carte dall'elenco delle carte: tocca il nome per +1, la miniatura per scegliere l'artwork.</div>`}</div>
