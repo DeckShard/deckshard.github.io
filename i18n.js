@@ -1660,5 +1660,14 @@ const EN = {
   "{1} gioca {2} come Unità ({3} potenza, con Lag).": "{1} plays {2} as a Unit ({3} power, with Lag).",
   "{1} gioca {2} come Unità ({3} potenza, con Lag, spesa).": "{1} plays {2} as a Unit ({3} power, with Lag, spent).",
   "Si gioca in campo solo una Leggenda scoperta": "Only a face-up Legend can be played to the field",
-  "{1} non ha un costo: non può entrare in campo": "{1} has no cost: it can't enter the field"
+  "{1} non ha un costo: non può entrare in campo": "{1} has no cost: it can't enter the field",
+  "Attacco": "Attack", "Abilità": "Ability", "Quando è sconfitta": "When defeated", "Unità amica sconfitta": "Friendly Unit defeated", "A fine turno": "End of turn", "A inizio turno": "Start of turn",
+  "Furto": "Steal", "Blocco": "Block", "Spesa": "Spent", "Scontro vinto": "Fight won", "Scontro perso": "Fight lost", "Effetto": "Effect",
+  "Eliminata": "Defeated", "Scartata": "Discarded", "Dal mazzo al Trash · {1}/{2}": "Deck to Trash · {1}/{2}", "In fondo al mazzo": "Bottom of deck",
+  "Bloccata: non si prepara": "Locked: won't ready", "Non può attaccare": "Can't attack", "Deve attaccare": "Must attack", "Condannata": "Doomed",
+  "Sarà sconfitta a fine turno": "Will be defeated at end of turn", "Se ruba o combatte, sarà sconfitta a fine turno": "If it steals or fights, it's defeated at end of turn",
+  "<b>Simulator</b>: gli effetti delle carte ora si vedono. Quando una carta si attiva si accende e compare un riquadro con il momento (Play, Attacco, Programma, Fine turno…), il nome e il testo; un raggio la collega alle carte su cui agisce.": "<b>Simulator</b>: card effects are now visible. When a card triggers it lights up and a panel shows the moment (Play, Attack, Program, End of turn…), its name and text; a beam links it to the cards it affects.",
+  "Ogni tipo di effetto ha la sua animazione: le Unità sconfitte vanno in frammenti nel Trash (anche tutte insieme), i Gear distrutti si staccano e la potenza dell'Unità scende, le carte scartate vengono triturate (quelle del rivale si scoprono prima), le carte mandate nel Trash dal mazzo si girano in fila, e poi spesa, potenza + e −, in fondo al mazzo, di nuovo pronta e recupero dal Trash.": "Each kind of effect has its own animation: defeated Units shatter into the Trash (all together too), destroyed Gear breaks off and the Unit's power drops, discarded cards get shredded (the rival's are revealed first), cards trashed from the deck flip over in a row, plus spend, power + and −, bottom of deck, ready again and recovery from the Trash.",
+  "Sulle carte restano i segnali degli effetti che durano: bloccata (non si prepara), non può attaccare, deve attaccare, condannata. La potenza in calo si vede in rosso. Con «Istantanea» o con le animazioni ridotte resta solo il registro.": "Lasting effects leave a marker on the card: locked (won't ready), can't attack, must attack, doomed. Lowered power shows in red. With «Instant» or reduced motion only the log remains."
+
 };

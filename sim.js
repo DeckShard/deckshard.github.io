@@ -100,7 +100,7 @@ function localRect(board, el){
 function snapBoard(board){
   if(!G || board.hidden || !animMs()) return null;
   const m = new Map();
-  for(const el of board.querySelectorAll("[data-uid]")){ const r = localRect(board, el); if(!r) continue; const img = el.querySelector(":scope > img"); m.set(+el.dataset.uid, { ...r, src: img ? img.getAttribute("src") : "", spent: el.classList.contains("spent"), back: el.classList.contains("back"), leg: !!el.dataset.legend, gear: !!el.dataset.gearOf, hand: !!el.dataset.hand, t: getComputedStyle(el).transform }); }
+  for(const el of board.querySelectorAll("[data-uid]")){ const r = localRect(board, el); if(!r) continue; const img = el.querySelector(":scope > img"); const rw = el.closest("[data-field], [data-handrow]"); m.set(+el.dataset.uid, { ...r, src: img ? img.getAttribute("src") : "", spent: el.classList.contains("spent"), back: el.classList.contains("back"), leg: !!el.dataset.legend, gear: !!el.dataset.gearOf, of: +el.dataset.gearOf || 0, row: rw ? (rw.dataset.field != null ? "f" + rw.dataset.field : "h" + rw.dataset.handrow) : null, hand: !!el.dataset.hand, t: getComputedStyle(el).transform }); }
   const g = new Map();
   for(const el of board.querySelectorAll(".die[data-gig]")){ const uid = +el.dataset.gig; if(!uid) continue; const r = localRect(board, el); const o = el.closest("[data-owner]"); if(r) g.set(uid, { ...r, owner: o ? +o.dataset.owner : null }); }
   return { m, g, hand: (animBase || {}).hand || new Map(G.players[me()].hand.map(c => [c.uid, c])), eddies: (animBase || {}).eddies || G.players.map(P => P.eddies.length), trash: (animBase || {}).trash || G.players.map(P => P.trash.length) };
@@ -181,6 +181,17 @@ function animateBoard(board, prev){
     if(shots.length) for(const h of fxHeldSteals.splice(0)){ const e2 = board.querySelector(`.die[data-gig="${h.uid}"]`); if(e2){ const now2 = localRect(board, e2); if(now2) fxSteal(board, e2, h.was, now2, h.gig, h.who, ms); } else liveDice.delete(h.uid); }   // prima il Gig rubato per primo
     for(const run of deferredSteal) run();
   };
+  // regia degli effetti: le righe «fx» nuove, divise in prima e dopo lo scontro (che ha il suo turno in mezzo)
+  const rgPlans = [];
+  { const i0 = fxLastLog ? G.log.lastIndexOf(fxLastLog) : -1, rgLog = i0 >= 0 ? G.log.slice(i0 + 1) : [];
+    let cut = shots.length ? rgLog.findIndex(e => e.kind === "fight" || e.kind === "steal") : -1; if(shots.length && cut < 0) cut = 0;
+    const evs = rgLog.map((e, k) => ({ e, k })).filter(o => o.e.kind === "fx" && o.e.d);
+    const pre = evs.filter(o => cut < 0 || o.k < cut).map(o => o.e.d), post = cut < 0 ? [] : evs.filter(o => o.k >= cut).map(o => o.e.d);
+    for(const list of [pre, post]) rgPlans.push({ plan: list.length ? rgPlan(board, prev, list, ms) : null, defer: [] });
+    for(const p of rgPlans) if(p.plan) for(const sc of p.plan.scenes) if(sc.a.src && sc.a.src.ty === "Program") p.plan.claim.add(sc.a.src.s);   // il Programma lo mostra la regia, non la vetrina
+  }
+  const rgFind = (key, k) => { for(const p of rgPlans){ if(!p.plan) continue; const v = p.plan[key].get(k); if(v !== undefined) return { p, v }; } return null; };
+  const rgClaimed = uid => rgPlans.some(p => p.plan && p.plan.claim.has(uid));
   fxLastLog = G.log[G.log.length - 1] || null;
   for(const el of board.querySelectorAll("[data-uid]")){
     const uid = +el.dataset.uid; seen.add(uid); const now = localRect(board, el); if(!now) continue;
@@ -201,11 +212,15 @@ function animateBoard(board, prev){
       if(Math.abs(dx) < 1 && Math.abs(dy) < 1 && Math.abs(sx - 1) < .02 && was.spent === el.classList.contains("spent")) continue;
       fresh.add(uid);
       const rowOwner = el.closest("[data-field]"); const kfMove = [{ transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy}) ${tf(was.t)}` }, { transform: endT }];
+      { const rw = el.closest("[data-field], [data-handrow]"), rk = rw ? (rw.dataset.field != null ? "f" + rw.dataset.field : "h" + rw.dataset.handrow) : null;
+        const hz = rgFind("hold", uid) || (rk ? rgFind("rows", rk) : null);   // la carta spesa ruota quando arriva il raggio; la fila si stringe a colpo finito
+        if(hz){ hz.p.defer.push(start => animEl(el, kfMove, { duration: ms, easing: ease, delay: start + (hz.v || 0), fill: "backwards" })); continue; } }
       if(rowOwner && hitRows.has(+rowOwner.dataset.field)) deferredFlip.push({ el, kf: kfMove, pid: +rowOwner.dataset.field });
       else animEl(el, kfMove, { duration: ms, easing: ease });
       continue;
     }
     // carta nuova: arriva dal mazzo (mia) o dalla mano/mazzo dell'avversario
+    { const hz = rgFind("hide", uid); if(hz){ fresh.add(uid); hz.p.defer.push(start => animEl(el, [{ opacity: 0 }, { opacity: 0, offset: .97 }, { opacity: 1 }], { duration: Math.max(1, start + (hz.v || 0)), fill: "backwards" })); continue; } }   // recuperata dal Trash: la porta la regia
     if(pid == null || el.dataset.legend) continue;
     if(fxOpp && +pid !== me()){
       const c = findInst(R, uid); if(!c) continue; const isGear = !!el.dataset.gearOf;
@@ -248,6 +263,7 @@ function animateBoard(board, prev){
   const grown = G.players.map((P, i) => ({ e: P.eddies.slice(prev.eddies[i]), t: P.trash.slice(prev.trash[i]) }));
   for(const [uid, was] of prev.m){
     if(seen.has(uid) || was.back) continue;
+    if(rgClaimed(uid)) continue;   // sconfitta, scartata, in fondo al mazzo da un effetto: la anima la regia
     if(G.players.some(P => P.hand.some(c => c.uid === uid))) continue;   // ancora in mano (nascosta: es. passaggio del dispositivo), non giocata
     const dPl = G.players.find(P => P.deck.some(c => c.uid === uid));   // tornata nel mazzo (mulligan, effetti che rimescolano): vola al mazzo, non è stata giocata
     if(dPl){ fly(was, anchor("deck", dPl.id), was.src, "trash"); continue; }
@@ -266,11 +282,14 @@ function animateBoard(board, prev){
     if(P.id === me()) continue;
     for(const e of grown[P.id].e){ if(fxOpp) fxShowcase(board, { src: e.pid ? thumbUrl(e.pid) : "", label: `${oppName} vende`, tag: "+1 €$", cls: "yel", to: anchor("eddies", P.id) }, ms); else fly(srcOf("handc", P.id), anchor("eddies", P.id), e.pid ? thumbUrl(e.pid) : "", "sell"); }
     for(const c of grown[P.id].t){
+      if(rgClaimed(c.uid)) continue;
       const ty = c.card ? c.card.type : "";
       if(fxOpp) fxShowcase(board, { src: c.pid ? thumbUrl(c.pid) : "", label: `${oppName} ${ty === "Program" ? "lancia" : ty === "Quick" ? "gioca" : "scarta"}`, tag: ty || "", name: c.card ? c.card.dn : "", bar: ty === "Program", to: anchor("trash", P.id) }, ms);
       else fly(srcOf("handc", P.id), anchor("trash", P.id), c.pid ? thumbUrl(c.pid) : "", ty === "Program" ? "program" : "trash"); }
   }
+  rgRun(board, rgPlans[0].plan, rgPlans[0].defer, ms);
   fireShots();
+  rgRun(board, rgPlans[1].plan, rgPlans[1].defer, ms);
 }
 
 /* ------------------------------------------------------------ grafiche avanzate (beta)
@@ -302,6 +321,15 @@ function sfx(kind, delay = 0){
     case "launch": noise(t0, .25, 600, .6, .8); tone("sawtooth", 220, 90, t0, .25, .35); break;      // partenza del missile
     case "boom": tone("sine", 60, 25, t0, .5, 1); noise(t0, .35, 300, .4, 1); noise(t0 + .05, .4, 1500, .3, .4); break;   // esplosione
     case "slam": tone("sine", 70, 30, t0, .35, 1); noise(t0, .18, 400, .5, .9); noise(t0 + .05, .3, 2200, .3, .3); break;   // Go Solo: tonfo e crepe
+    case "beam": tone("sawtooth", 1400, 380, t0, .2, .18); break;                                                // raggio di un effetto
+    case "chip": tone("sine", 1500, 1500, t0, .04, .18); tone("sine", 1900, 1900, t0 + .05, .05, .15); break;     // innesco
+    case "shatter": noise(t0, .4, 3200, .7, .8); tone("square", 260, 70, t0, .25, .2); break;                    // carta sconfitta in frammenti
+    case "shred": noise(t0, .45, 5200, 2.5, .55); noise(t0 + .1, .3, 1800, 1.5, .3); break;                       // carta triturata
+    case "emp": tone("sine", 180, 1300, t0, .28, .35); noise(t0, .22, 1500, 1, .3); break;                      // impulso che spende
+    case "powUp": tone("triangle", 520, 980, t0, .16, .4); break;
+    case "powDn": tone("triangle", 640, 240, t0, .2, .4); break;
+    case "mark": tone("square", 760, 760, t0, .06, .2); tone("square", 520, 520, t0 + .08, .09, .2); break;      // segnale sulla carta
+    case "mill": noise(t0, .09, 2600, 1, .45); break;
     case "call": noise(t0, .3, 1800, .4, .35); tone("sine", 392, 392, t0, .14, .45); tone("sine", 523, 523, t0 + .12, .14, .45); tone("sine", 784, 784, t0 + .24, .3, .5); break;   // Leggenda scoperta: accordo che sale
   }
 }
@@ -541,6 +569,338 @@ function fxSlam(board, el, ms){
     sfx("slam");
     setTimeout(() => sv.remove(), hold + 300);
   }, dur);
+}
+/* ------------------------------------------------------------ regia degli effetti
+   Il motore scrive nel registro righe «fx» (vuote, solo dati) con la carta che ha causato l'effetto (s) e su cosa
+   agisce (t, c). Qui diventano una sequenza sempre uguale: INNESCO (la carta si accende, riquadro «Play · nome ·
+   testo»), RAGGIO verso il bersaglio, IMPATTO della famiglia ed ESITO (dove finisce la carta). Le famiglie: sconfitta
+   (anche di massa, con la scansione), Gear distrutto, scarto, dal mazzo al Trash, spesa, segnale (bloccata, non
+   attacca, deve attaccare, condannata), potenza + e −, in fondo al mazzo, di nuovo pronta, recupero dal Trash.
+   Le carte colpite restano visibili come copie finché il colpo non arriva; le file non si stringono e le carte spese
+   non ruotano prima del loro momento. Tutto sta in flyLayer (sopravvive ai ridisegni) e prende il suo turno con fxSlot,
+   in fila con vetrine, dadi e scontri. Si vede con le animazioni attive (non «istantanee», non ridotte). */
+const RGC = { defeat: "#ff3b5c", gear: "#ff8a2f", trash: "#ff3bd4", ctrl: "#00e5f2", up: "#3dff8a", dn: "#ff3b5c", back: "#8a9bff", must: "#fcee0a" };
+const RG_TR = { Play: "Play", playBlue: "Play", Call: "Call", Program: "Programma", playProgram: "Programma", Attack: "Attacco", friendlyAttack: "Attacco", Spend: "Abilità", Defeated: "Quando è sconfitta", friendlyDefeated: "Unità amica sconfitta", defeatedFriendly: "Unità amica sconfitta", endTurn: "A fine turno", startTurn: "A inizio turno", steal: "Furto", friendlySteal: "Furto", firstSteal: "Furto", legendSteal: "Furto", block: "Blocco", friendlyBlock: "Blocco", hostSpent: "Spesa", spent: "Spesa", firstSpent: "Spesa", winFight: "Scontro vinto", firstWin: "Scontro vinto", loseFight: "Scontro perso", roll: "Gig", rollIn: "Gig", rivalAdjust: "Gig" };
+const MK = {
+  lock: ["Bloccata: non si prepara", '<svg viewBox="0 0 10 12"><rect x="1" y="5" width="8" height="7" rx="1" fill="currentColor"/><path d="M3 5V3.5a2 2 0 0 1 4 0V5" stroke="currentColor" fill="none" stroke-width="1.6"/></svg>', RGC.ctrl],
+  noatk: ["Non può attaccare", '<svg viewBox="0 0 12 12"><path d="M2 10 9 3M7 2.5h2.5V5" stroke="currentColor" fill="none" stroke-width="1.5"/><circle cx="6" cy="6" r="5.2" stroke="currentColor" fill="none" stroke-width="1.2"/><path d="M2.4 2.4 9.6 9.6" stroke="currentColor" stroke-width="1.2"/></svg>', RGC.ctrl],
+  must: ["Deve attaccare", '<svg viewBox="0 0 12 12"><path d="M2 10 9 3M7 2.5h2.5V5M2 8l2 2" stroke="currentColor" fill="none" stroke-width="1.6"/><path d="M10 7.5v2.2M10 11h.01" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>', RGC.must],
+  doom: ["Condannata", '<svg viewBox="0 0 12 12"><path d="M6 1.2a4.3 4.3 0 0 0-4.3 4.3c0 1.5.8 2.6 1.8 3.2V10.6h5V8.7c1-.6 1.8-1.7 1.8-3.2A4.3 4.3 0 0 0 6 1.2z" fill="currentColor"/><circle cx="4.3" cy="5.6" r="1.1" fill="#000"/><circle cx="7.7" cy="5.6" r="1.1" fill="#000"/><path d="M5 9.3v1.3M7 9.3v1.3" stroke="#000" stroke-width=".8"/></svg>', RGC.dn]
+};
+function marksHTML(x){
+  const m = [];
+  if(x.cantReady) m.push("lock");
+  if(x.lockAttackBy != null) m.push("noatk");
+  if(x.mustAttack) m.push("must");
+  if(x.doomed || x.doomIfActs) m.push("doom");
+  if(!m.length) return "";
+  const tip = k => k === "doom" ? (x.doomed ? "Sarà sconfitta a fine turno" : "Se ruba o combatte, sarà sconfitta a fine turno") : MK[k][0];
+  return `<span class="mk">${m.map(k => `<i class="mk-${k}" style="--c:${MK[k][2]}" title="${tip(k)}">${MK[k][1]}</i>`).join("")}</span>`;
+}
+let rgChip = null;   // un solo riquadro di innesco alla volta: il nuovo prende il posto del vecchio
+const rgB = ms => Math.max(260, ms);
+const rgCw = board => parseFloat(getComputedStyle(board).getPropertyValue("--cw")) || 50;
+const rgCardBox = (board, cx, cy, k = 1) => { const w = rgCw(board) * k, h = w * 1024 / 733; return { x: cx - w / 2, y: cy - h / 2, w, h, cx, cy }; };
+function rgEl(cls, css, html = ""){ const e = document.createElement("div"); e.className = cls; if(css) e.style.cssText = css; if(html) e.innerHTML = html; flyLayer.appendChild(e); return e; }
+function rgCard(r, o = {}){ return rgEl("bc rgc" + (o.back ? " back" : ""), `left:${r.x}px;top:${r.y}px;width:${r.w}px;height:${r.h}px`, o.back ? "" : o.src ? `<img src="${o.src}" alt="">` : `<div class="n">${esc(o.name || "")}</div>`); }
+const rgGone = (e, ms) => setTimeout(() => e && e.remove(), ms);
+function rgFade(e, d = 220){ if(!e || !e.isConnected) return; e.animate([{ opacity: getComputedStyle(e).opacity }, { opacity: 0 }], { duration: d, fill: "forwards" }); rgGone(e, d + 20); }
+const rgRectOf = (board, uid) => { if(!uid) return null; const el = board.querySelector(`[data-uid="${uid}"]`); return el && !el.closest("#flyLayer") ? localRect(board, el) : null; };
+const rgAnchor = (board, kind, pid) => { const el = board.querySelector(`[data-${kind}="${pid}"]`); return el ? localRect(board, el) : null; };
+/* raggio: curva dalla sorgente al bersaglio, con l'impulso che la percorre */
+function rgBeam(a, b, col, dur){
+  const ns = "http://www.w3.org/2000/svg", sv = document.createElementNS(ns, "svg"); sv.setAttribute("class", "rgbeam");
+  const dx = b.cx - a.cx, dy = b.cy - a.cy, L = Math.hypot(dx, dy) || 1, k = Math.min(70, L * .22), q = { x: (a.cx + b.cx) / 2 - dy / L * k, y: (a.cy + b.cy) / 2 + dx / L * k };
+  const d = `M${a.cx.toFixed(1)} ${a.cy.toFixed(1)} Q${q.x.toFixed(1)} ${q.y.toFixed(1)} ${b.cx.toFixed(1)} ${b.cy.toFixed(1)}`;
+  sv.innerHTML = `<path d="${d}" class="gl" stroke="${col}" pathLength="1"/><path d="${d}" class="co" stroke="${col}" pathLength="1"/>`; flyLayer.appendChild(sv);
+  for(const p of sv.querySelectorAll("path")) p.animate([{ strokeDashoffset: 1 }, { strokeDashoffset: 0 }], { duration: dur, easing: "cubic-bezier(.5,0,.3,1)", fill: "forwards" });
+  const pts = []; for(let i = 0; i <= 12; i++){ const t = i / 12; pts.push({ transform: `translate(${(1 - t) ** 2 * a.cx + 2 * (1 - t) * t * q.x + t * t * b.cx}px, ${(1 - t) ** 2 * a.cy + 2 * (1 - t) * t * q.y + t * t * b.cy}px)` }); }
+  const dot = rgEl("rgpulse", `--c:${col}`); dot.animate(pts, { duration: dur, easing: "cubic-bezier(.5,0,.3,1)", fill: "forwards" }); rgGone(dot, dur + 20);
+  sfx("beam");
+  return { sv, a: { x: a.cx, y: a.cy }, q, b: { x: b.cx, y: b.cy }, done: () => rgFade(sv, 300) };
+}
+function rgRet(r, col){ const e = rgEl("rgret", `left:${r.x - 6}px;top:${r.y - 6}px;width:${r.w + 12}px;height:${r.h + 12}px;--c:${col}`); e.animate([{ transform: "scale(1.6) rotate(10deg)", opacity: 0 }, { transform: "none", opacity: 1 }], { duration: 260, easing: fxEase, fill: "forwards" }); return e; }
+function rgStamp(r, text, col){ const e = rgEl("rgstamp", `left:${r.cx}px;top:${r.cy}px;--c:${col}`, esc(text)); e.animate([{ transform: "translate(-50%,-50%) rotate(-12deg) scale(2.4)", opacity: 0 }, { transform: "translate(-50%,-50%) rotate(-12deg) scale(.92)", opacity: 1, offset: .6 }, { transform: "translate(-50%,-50%) rotate(-12deg) scale(1)", opacity: 1 }], { duration: 280, fill: "forwards" }); return e; }
+function rgRing(r, col){ const e = rgEl("rgring", `left:${r.cx}px;top:${r.cy}px;--c:${col}`); e.animate([{ transform: "translate(-50%,-50%) scale(.3)", opacity: 1 }, { transform: "translate(-50%,-50%) scale(3.2)", opacity: 0 }], { duration: 620, easing: "cubic-bezier(.1,.8,.3,1)", fill: "forwards" }); rgGone(e, 650); }
+function rgSparks(x, y, col, n = 14){ for(let i = 0; i < n; i++){ const s = rgEl("rgspark", `left:${x}px;top:${y}px;--c:${col}`), a = Math.random() * 360, d = 24 + Math.random() * 36; s.animate([{ transform: `rotate(${a}deg) translateY(0)`, opacity: 1 }, { transform: `rotate(${a}deg) translateY(${-d}px)`, opacity: 0 }], { duration: 320 + Math.random() * 220, easing: "cubic-bezier(.1,.8,.3,1)", fill: "forwards" }); rgGone(s, 600); } }
+function rgGlitch(e, dur){
+  const kf = []; for(let i = 0; i < 9; i++) kf.push({ transform: `translate(${(Math.random() * 10 - 5).toFixed(1)}px, ${(Math.random() * 4 - 2).toFixed(1)}px) skewX(${(Math.random() * 24 - 12).toFixed(1)}deg)`, filter: `drop-shadow(3px 0 0 rgba(255,0,80,.85)) drop-shadow(-3px 0 0 rgba(0,240,255,.85)) saturate(${(.3 + Math.random() * 1.5).toFixed(2)})`, clipPath: `inset(${Math.round(Math.random() * 25)}% 0 ${Math.round(Math.random() * 25)}% 0)` });
+  kf.push({ transform: "none", filter: "grayscale(1) brightness(.7)", clipPath: "inset(0 0 0 0)" });
+  e.animate(kf, { duration: dur, easing: "linear", fill: "forwards" });
+}
+/* la copia va in frammenti che volano alla pila (to) */
+function rgShatter(e, r, to, dur){
+  if(!e || !e.isConnected) return; const C = 3, R = 4, html = e.innerHTML, back = e.classList.contains("back");
+  for(let i = 0; i < C * R; i++){
+    const row = Math.floor(i / C), col = i % C;
+    const f = rgEl("bc rgc" + (back ? " back" : ""), `left:${r.x}px;top:${r.y}px;width:${r.w}px;height:${r.h}px;filter:grayscale(1) brightness(.75);clip-path:inset(${row * 25}% ${(C - 1 - col) * 100 / C}% ${(R - 1 - row) * 25}% ${col * 100 / C}%)`, html);
+    const ox = (col - 1) * (r.w * .25 + Math.random() * r.w * .15), oy = (row - 1.5) * (r.h * .1 + Math.random() * r.h * .08), tx = to ? to.cx - r.cx : 0, ty = to ? to.cy - r.cy : r.h * .6;
+    f.animate([{ transform: "none", opacity: 1 }, { transform: `translate(${ox}px, ${oy}px) rotate(${Math.random() * 50 - 25}deg)`, opacity: 1, offset: .35 }, { transform: `translate(${tx}px, ${ty}px) rotate(${Math.random() * 180 - 90}deg) scale(.25)`, opacity: 0 }], { duration: dur, delay: i * 18, easing: "cubic-bezier(.3,.1,.3,1)", fill: "both" });
+    rgGone(f, dur + i * 18 + 40);
+  }
+  e.remove(); sfx("shatter");
+}
+/* la copia passa sotto un laser e si taglia a strisce che cadono nella pila */
+function rgShred(e, r, to, col, dur){
+  if(!e || !e.isConnected) return; const n = 7, html = e.innerHTML, base = e.style.transform || "";
+  const l = rgEl("rglaser", `left:${r.x}px;top:${r.y - 6}px;height:${r.h + 12}px;--c:${col}`); l.animate([{ transform: "translateX(0)" }, { transform: `translateX(${r.w}px)` }], { duration: dur * .25, easing: "linear", fill: "forwards" }); rgGone(l, dur * .25 + 20);
+  for(let i = 0; i < n; i++){
+    const f = rgEl("bc rgc", `left:${r.x}px;top:${r.y}px;width:${r.w}px;height:${r.h}px;clip-path:inset(0 ${(n - 1 - i) * 100 / n}% 0 ${i * 100 / n}%)`, html);
+    const tx = to ? to.cx - r.cx : 0, ty = to ? to.cy - r.cy : r.h;
+    f.animate([{ transform: `${base} translate(0,0)` }, { transform: `${base} translate(0,0)`, offset: .25 }, { transform: `${base} translate(${(i - (n - 1) / 2) * r.w * .08}px, ${r.h * (.15 + (i % 2) * .12)}px) rotate(${(i - (n - 1) / 2) * 3}deg)`, offset: .55 }, { transform: `translate(${tx}px, ${ty}px) rotate(${Math.random() * 80 - 40}deg) scale(.3)`, opacity: 0 }], { duration: dur, delay: i * 25, easing: "cubic-bezier(.4,0,.3,1)", fill: "both" });
+    rgGone(f, dur + i * 25 + 40);
+  }
+  e.remove(); sfx("shred", dur * .25);
+}
+function rgToPile(e, r, to, dur, delay = 0){ if(!e) return; const tx = to ? to.cx - r.cx : 0, ty = to ? to.cy - r.cy : 0, sc = to ? Math.min(1, to.w / r.w) * .8 : .6; e.animate([{ transform: e.style.transform || "none", opacity: 1 }, { transform: `translate(${tx}px, ${ty}px) rotate(12deg) scale(${sc})`, opacity: 0 }], { duration: dur, delay, easing: fxEase, fill: "both" }); rgGone(e, dur + delay + 30); }
+function rgFlip(e, toFace, src, base, dur){
+  e.animate([{ transform: `${base} rotateY(0deg)` }, { transform: `${base} rotateY(90deg)` }], { duration: dur / 2, easing: "ease-in", fill: "forwards" });
+  setTimeout(() => { if(!e.isConnected) return; if(toFace){ e.classList.remove("back"); e.innerHTML = src ? `<img src="${src}" alt="">` : ""; } else { e.classList.add("back"); e.innerHTML = ""; } e.animate([{ transform: `${base} rotateY(90deg)` }, { transform: `${base} rotateY(0deg)` }], { duration: dur / 2, easing: "ease-out", fill: "forwards" }); }, dur / 2);
+}
+function rgNum(bm, text, col, dur){ const n = rgEl("rgnum", `--c:${col}`, esc(text)); const pts = []; for(let i = 0; i <= 14; i++){ const t = i / 14; pts.push({ transform: `translate(${(1 - t) ** 2 * bm.a.x + 2 * (1 - t) * t * bm.q.x + t * t * bm.b.x}px, ${(1 - t) ** 2 * bm.a.y + 2 * (1 - t) * t * bm.q.y + t * t * bm.b.y}px) translate(-50%,-50%) scale(${1 + .5 * Math.sin(Math.PI * t)})` }); } pts.push({ transform: pts[pts.length - 1].transform + " scale(1.6)", opacity: 0 }); n.animate(pts, { duration: dur, easing: "cubic-bezier(.5,0,.3,1)", fill: "forwards" }); rgGone(n, dur + 20); }
+function rgChipShow(board, r, d, col, life){
+  if(rgChip) rgFade(rgChip, 180);
+  // accanto alla carta (a destra, se no a sinistra), così non copre i bersagli nelle file; se non c'è posto, sopra o sotto
+  const H = board.clientHeight, W = board.clientWidth, cw = Math.min(250, Math.max(170, W * .3)), gap = 10;
+  let pos;
+  if(r.x + r.w + gap + cw <= W - 6) pos = `left:${r.x + r.w + gap}px;top:${Math.max(6, Math.min(H - 110, r.cy - 40))}px`;
+  else if(r.x - gap - cw >= 6) pos = `left:${r.x - gap - cw}px;top:${Math.max(6, Math.min(H - 110, r.cy - 40))}px`;
+  else { const left = Math.max(8, Math.min(W - cw - 8, r.cx - cw / 2)); pos = `left:${left}px;` + (r.cy > H / 2 ? `bottom:${H - r.y + 8}px` : `top:${r.y + r.h + 8}px`); }
+  const c = rgEl("rgchip", `${pos};width:${cw}px;--c:${col}`,
+    `<div class="k">${esc(RG_TR[d.tr] || "Effetto")}</div><div class="n">${esc(d.dn)}</div>${d.x ? `<div class="x">${esc(d.x.length > 170 ? d.x.slice(0, 167) + "…" : d.x)}</div>` : ""}`);
+  c.animate([{ opacity: 0, clipPath: "inset(0 100% 0 0)" }, { opacity: 1, clipPath: "inset(0 0 0 0)" }], { duration: 260, fill: "both" });
+  rgChip = c; setTimeout(() => { if(rgChip === c) rgChip = null; rgFade(c, 260); }, life);
+  sfx("chip");
+}
+/* dove mostrare una carta che non è in plancia: a destra delle Unità in campo se c'è posto, altrimenti al centro */
+function rgSpot(board){
+  const m = fxCenter(board), w = rgCw(board) * 1.7; let right = m.x;
+  for(const e of board.querySelectorAll("[data-field] .bc, #flyLayer .rgc:not(.rgsrc)")){ const r = e.closest("#flyLayer") ? { x: parseFloat(e.style.left), w: parseFloat(e.style.width) } : localRect(board, e); if(r && r.x + r.w > right && (!e.closest("#flyLayer") || r.x < m.x + m.w * .7)) right = r.x + r.w; }   // anche le copie delle carte appena tolte
+  const cx = right + w * .8; return { cx: cx + w * .6 < m.x + m.w ? cx : m.cx, cy: m.cy };
+}
+/* nome e immagine di una carta ovunque sia (campo, Leggende, Gear, mano, Trash, mazzo) */
+function rgCardInfo(uid){
+  for(const P of G.players) for(const z of [P.field, P.legends, P.hand, P.trash, P.deck, P.eddies]) for(const c of z){ if(c.uid === uid) return c; for(const g of c.gear || []) if(g.uid === uid) return g; }
+  return null;
+}
+/* la carta che agisce: cornice accesa sopra la carta sulla plancia, oppure una copia accanto al centro se non è in plancia
+   (Programma, carta appena sconfitta, carta in mano) */
+function rgSource(board, d, life, col){
+  const on = rgRectOf(board, d.s) || (d.h && d.h !== d.s ? rgRectOf(board, d.h) : null);
+  let r = on, proxy = null;
+  if(!r){ const sp = rgSpot(board); r = rgCardBox(board, sp.cx, sp.cy, 1.7); proxy = rgCard(r, { src: d.pid ? thumbUrl(d.pid) : "", name: d.dn }); proxy.classList.add("rgsrc"); proxy.style.setProperty("--c", col); proxy.animate([{ transform: "scale(.5)", opacity: 0 }, { transform: "none", opacity: 1 }], { duration: 260, easing: fxEase, fill: "both" }); }
+  const fr = rgEl("rgframe", `left:${r.x - 4}px;top:${r.y - 4}px;width:${r.w + 8}px;height:${r.h + 8}px;--c:${col}`);
+  fr.animate([{ opacity: 0, transform: "scale(1.25)" }, { opacity: 1, transform: "none" }], { duration: 240, fill: "both" });
+  setTimeout(() => { rgFade(fr, 260); if(proxy){ const P = G && G.players.find(Q => Q.trash.some(c => c.uid === d.s)); const to = P ? rgAnchor(board, "trash", P.id) : null; if(to) rgToPile(proxy, r, to, 420); else rgFade(proxy, 260); } }, life);
+  return r;
+}
+/* piano: dagli eventi nuovi alle «scene» (un innesco e i suoi effetti), con i tempi; le carte coinvolte vengono
+   «prenotate» (claim) così le animazioni generiche non le muovono prima del tempo */
+function rgPlan(board, prev, evs, ms){
+  const B = rgB(ms), acts = [];
+  let cur = null;
+  for(const d of evs){
+    if(d.f === "src"){ if(cur && cur.src && cur.src.s === d.s && cur.src.tr === d.tr) continue; cur = { src: d, effs: [] }; acts.push(cur); continue; }
+    if(!cur || (cur.src ? cur.src.s !== d.s : cur.s !== d.s)){ cur = { src: null, s: d.s, effs: [] }; acts.push(cur); }
+    cur.effs.push(d);
+  }
+  const claim = new Set(), hold = new Map(), rows = new Map(), hide = new Map(), ghosts = new Map();
+  const onField = uid => G.players.some(P => P.field.some(u => u.uid === uid));
+  const rowKey = uid => { const w = prev.m.get(uid); return w ? w.row : null; };
+  const ghost = (uid, o = {}) => { const w = prev.m.get(uid); if(!w || ghosts.has(uid)) return ghosts.get(uid) || null; const e = rgCard(w, { src: w.src, back: w.back }); if(o.hidden) e.style.opacity = "0"; ghosts.set(uid, e); rgGone(e, 20000); return e; };
+  let t = 0;
+  const scenes = [];
+  for(const a of acts){
+    const sc = { at: t, a, steps: [] };
+    const lead = a.src ? B * (a.effs.length ? 1.3 : 2.4) : B * .3;
+    let u = lead;
+    for(const d of a.effs){
+      const st = { at: u, d }; let dur = B * 2;
+      if(d.f === "defeat"){
+        const gone = (d.t || []).filter(x => !onField(x) && prev.m.has(x));
+        st.gone = gone; st.mass = !!d.m || (d.t || []).length > 2;
+        for(const x of gone){ claim.add(x); ghost(x); const rk = rowKey(x); if(rk) rows.set(rk, null);
+          for(const [gu, w] of prev.m) if(w.of === x && !rgRectOf(board, gu)){ claim.add(gu); ghost(gu); (st.gears = st.gears || []).push(gu); } }
+        dur = st.mass ? B * 5 : B * 4;
+      } else if(d.f === "gear"){
+        if(prev.m.has(d.t) && !rgRectOf(board, d.t)){ claim.add(d.t); ghost(d.t, { hidden: true }); st.gone = [d.t]; }
+        dur = B * 3.2;
+      } else if(d.f === "discard"){
+        const mine = d.p === me(), cs = (d.c || []).slice(0, 7);
+        for(const c of d.c || []) claim.add(c.uid);
+        if(mine) for(const c of cs){ if(prev.m.has(c.uid)){ ghost(c.uid); const rk = rowKey(c.uid); if(rk) rows.set(rk, null); } }
+        st.cs = cs; st.mine = mine; dur = (mine ? B * 3.4 : B * 4.4) + cs.length * B * .25;
+      } else if(d.f === "mill"){
+        for(const c of d.c || []) claim.add(c.uid);
+        st.cs = (d.c || []).slice(0, 6); dur = B * (1.2 + st.cs.length * .45 + 1.8 + 1.3);
+      } else if(d.f === "spend" || d.f === "ready"){
+        for(const x of d.t || []) hold.set(x, null);
+        dur = d.lock ? B * 3 : B * 2.4;
+      } else if(d.f === "mark"){ dur = B * 2.4;
+      } else if(d.f === "pow"){ dur = B * 2.4;
+      } else if(d.f === "bottom"){
+        const gone = (d.t || []).filter(x => !onField(x) && prev.m.has(x)); st.gone = gone;
+        for(const x of gone){ claim.add(x); ghost(x); const rk = rowKey(x); if(rk) rows.set(rk, null); for(const [gu, w] of prev.m) if(w.of === x && !rgRectOf(board, gu)){ claim.add(gu); ghost(gu); (st.gears = st.gears || []).push(gu); } }
+        dur = B * 3.6;
+      } else if(d.f === "recover"){
+        for(const c of d.c || []){ claim.add(c.uid); if(d.p === me()) hide.set(c.uid, null); }
+        dur = B * 2.6;
+      } else continue;
+      st.dur = dur; u += dur; sc.steps.push(st);
+      // le prenotazioni dicono quando sbloccare: la fila si stringe a colpo finito, la carta spesa ruota a metà raggio
+      for(const x of st.gone || []){ const rk = rowKey(x); if(rk) rows.set(rk, Math.max(rows.get(rk) || 0, t + u)); }
+      if(d.f === "discard" && st.mine){ const rk = (st.cs[0] && rowKey(st.cs[0].uid)); if(rk) rows.set(rk, Math.max(rows.get(rk) || 0, t + u - B)); }
+      if(d.f === "spend" || d.f === "ready") for(const x of d.t || []) hold.set(x, t + st.at + B * 1.2);
+      if(d.f === "recover") for(const c of d.c || []) if(hide.has(c.uid)) hide.set(c.uid, t + u - B * .3);
+    }
+    sc.dur = u + B * .4; t += sc.dur; scenes.push(sc);
+  }
+  return { scenes, dur: t, claim, hold, rows, hide, ghosts, B };
+}
+/* esecuzione: prende il turno (fxSlot) e fa partire ogni scena al suo tempo */
+function rgRun(board, plan, defer, ms){
+  if(!plan || !plan.scenes.length){ for(const f of defer) f(0); return; }
+  const start = fxSlot(plan.dur), B = plan.B;
+  for(const f of defer) f(start);
+  for(const sc of plan.scenes) setTimeout(() => rgScene(sc, plan, B), start + sc.at);
+}
+function rgScene(sc, plan, B){
+  const board = $("#board"); if(!board || board.hidden || !G) return;
+  board.appendChild(flyLayer);
+  const a = sc.a, col = a.effs.length ? rgCol(a.effs[0]) : "var(--acc)";
+  let src = null;
+  if(a.src){ src = rgSource(board, a.src, sc.dur + B * 1.5, col); rgChipShow(board, src, a.src, col, sc.dur + B * 4); }
+  else { const c = rgCardInfo(a.s); src = c ? rgSource(board, { s: a.s, pid: c.pid, dn: c.card.dn }, sc.dur + B * .8, col) : null; }   // seguito di un effetto già annunciato (dopo una scelta): solo la cornice
+  for(const st of sc.steps) setTimeout(() => { try{ rgStep(board, st, src, plan, B); }catch(e){ console.warn(e); } }, st.at);
+}
+const rgCol = d => d.f === "defeat" ? RGC.defeat : d.f === "gear" ? RGC.gear : d.f === "discard" || d.f === "mill" ? RGC.trash : d.f === "pow" ? (d.n >= 0 ? RGC.up : RGC.dn) : d.f === "bottom" ? RGC.back : d.f === "ready" || d.f === "recover" ? RGC.up : d.f === "mark" && d.k === "must" ? RGC.must : d.f === "mark" && d.k === "doom" ? RGC.dn : RGC.ctrl;
+function rgStep(board, st, src, plan, B){
+  const d = st.d, col = rgCol(d), owner = uid => G.players.find(P => P.trash.some(c => c.uid === uid) || P.deck.some(c => c.uid === uid) || P.hand.some(c => c.uid === uid));
+  const beamTo = (r, dur = B) => src && r && Math.hypot(src.cx - r.cx, src.cy - r.cy) > 8 ? rgBeam(src, r, col, dur) : null;
+  const ghostRect = uid => { const g = plan.ghosts.get(uid); return g ? { x: parseFloat(g.style.left), y: parseFloat(g.style.top), w: parseFloat(g.style.width), h: parseFloat(g.style.height), get cx(){ return this.x + this.w / 2; }, get cy(){ return this.y + this.h / 2; } } : null; };
+  if(d.f === "defeat" || d.f === "bottom"){
+    const list = (d.t || []).map(x => ({ x, r: ghostRect(x) || rgRectOf(board, x), gone: (st.gone || []).includes(x) })).filter(o => o.r);
+    const bottom = d.f === "bottom";
+    if(st.mass && list.length){   // scansione da sinistra a destra: ogni carta si guasta quando la riga la passa
+      const W = board.clientWidth, sw = rgEl("rgsweep", `--c:${col}`); sw.animate([{ transform: "translateX(0)", opacity: 0 }, { transform: `translateX(${W * .05}px)`, opacity: 1, offset: .05 }, { transform: `translateX(${W * .95}px)`, opacity: 1, offset: .95 }, { transform: `translateX(${W}px)`, opacity: 0 }], { duration: B * 2.6, easing: "linear", fill: "forwards" }); rgGone(sw, B * 2.6 + 30);
+      sfx("emp");
+      for(const o of list){ const at = Math.max(0, o.r.cx / W) * B * 2.6; setTimeout(() => { const g = plan.ghosts.get(o.x); if(g) rgGlitch(g, B * .8); else rgRing(o.r, col); }, at); }
+      setTimeout(() => { for(const o of list) if(o.gone) rgFinish(board, o.x, o.r, plan, bottom, B, col); for(const gu of st.gears || []){ const r = ghostRect(gu); if(r) rgFinish(board, gu, r, plan, bottom, B, col); } }, B * 2.9);
+      return;
+    }
+    for(const o of list){
+      const bm = beamTo(o.r);
+      setTimeout(() => {
+        if(bm) bm.done();
+        if(!o.gone){ rgRing(o.r, col); return; }   // salvata (Gear sacrificato, Leggenda che si mette in mezzo): solo il colpo
+        const g = plan.ghosts.get(o.x);
+        if(bottom){ rgRing(o.r, col); setTimeout(() => rgFinish(board, o.x, o.r, plan, true, B, col), B * .4); }
+        else { const ret = rgRet(o.r, col), stp = rgStamp(o.r, "Eliminata", col); if(g) rgGlitch(g, B * 1.1); sfx("hit"); setTimeout(() => { rgFade(ret); rgFade(stp); rgFinish(board, o.x, o.r, plan, false, B, col); }, B * 1.3); }
+        for(const gu of st.gears || []){ const r = ghostRect(gu); if(r) setTimeout(() => rgFinish(board, gu, r, plan, bottom, B, col), B * 1.3); }
+      }, bm ? B : 0);
+    }
+    return;
+  }
+  if(d.f === "gear"){
+    const g = plan.ghosts.get(d.t), r = ghostRect(d.t), host = rgRectOf(board, d.h);
+    const tgt = r || host; if(!tgt) return;
+    const bm = beamTo(tgt);
+    setTimeout(() => {
+      if(bm) bm.done(); rgSparks(tgt.cx, tgt.y + tgt.h * .2, col, 16); const ret = rgRet(tgt, col); sfx("hit");
+      if(g){ g.style.opacity = "1"; g.animate([{ transform: "none" }, { transform: "translate(-3px,-6%) rotate(-5deg)" }, { transform: "translate(3px,-14%) rotate(6deg)" }, { transform: "translate(-6px,-38%) rotate(-12deg)" }], { duration: B * .9, easing: "linear", fill: "forwards" }); g.style.transform = "translate(-6px,-38%) rotate(-12deg)"; }
+      if(host && d.n){ const b = rgEl("fxpw hot rgpw", `left:${host.cx}px;top:${host.y}px`, `<em>−${d.n}</em>`); b.animate([{ opacity: 0, transform: "translate(-50%,-50%) scale(.6)" }, { opacity: 1, transform: "translate(-50%,-90%) scale(1.1)", offset: .25 }, { opacity: 0, transform: "translate(-50%,-180%)" }], { duration: B * 2.4, fill: "forwards" }); rgGone(b, B * 2.4 + 30); }
+      setTimeout(() => { rgFade(ret); const P = owner(d.t); if(g && r) rgToPile(g, r, P ? rgAnchor(board, "trash", P.id) : null, B * 1.2); }, B * 1);
+    }, bm ? B : 0);
+    return;
+  }
+  if(d.f === "discard"){
+    const P = G.players[d.p], to = rgAnchor(board, "trash", d.p);
+    if(st.mine){
+      st.cs.forEach((c, i) => setTimeout(() => {
+        const g = plan.ghosts.get(c.uid), r = ghostRect(c.uid); if(!g || !r) return;
+        g.animate([{ transform: "none" }, { transform: "translateY(-22%) scale(1.08)" }], { duration: B * .5, easing: fxEase, fill: "forwards" }); g.style.transform = "translateY(-22%) scale(1.08)";
+        const rr = { ...r, y: r.y - r.h * .22, cy: r.cy - r.h * .22 }, stp = rgStamp(rr, "Scartata", col);
+        setTimeout(() => { rgFade(stp); rgShred(g, r, to, col, B * 2.2); }, B * 1.1);
+      }, i * B * .25));
+    } else {
+      const hc = rgAnchor(board, "handc", d.p) || rgAnchor(board, "deck", d.p); if(!hc) return;
+      const m = fxCenter(board), n = st.cs.length, cw = rgCw(board) * 1.5, gap = cw * 1.12;
+      const bm = beamTo(hc);
+      setTimeout(() => { if(bm) bm.done();
+        st.cs.forEach((c, i) => {
+          const r = rgCardBox(board, hc.cx, hc.cy, 1), spot = rgCardBox(board, m.cx + (i - (n - 1) / 2) * gap, m.y + m.h * .32, 1.5);
+          const g = rgCard(r, { back: true }), mv = `translate(${spot.cx - r.cx}px, ${spot.cy - r.cy}px) scale(1.5)`;
+          g.animate([{ transform: "scale(.6)", opacity: 0 }, { transform: mv, opacity: 1 }], { duration: B * .8, easing: fxEase, fill: "forwards" }); g.style.transform = mv;
+          setTimeout(() => rgFlip(g, true, c.pid ? thumbUrl(c.pid) : "", mv, B * .6), B * .8 + i * 80);
+          setTimeout(() => { const stp = rgStamp(spot, "Scartata", col); setTimeout(() => { rgFade(stp); rgShred(g, r, to, col, B * 2.2); }, B * 1.2); }, B * 1.5 + i * 80);
+        });
+      }, bm ? B * .8 : 0);
+    }
+    return;
+  }
+  if(d.f === "mill"){
+    const dk = rgAnchor(board, "deck", d.p), to = rgAnchor(board, "trash", d.p); if(!dk) return;
+    const m = fxCenter(board), n = st.cs.length, cw = rgCw(board) * 1.3, gap = cw * 1.1, ty = m.cy;
+    const cnt = rgEl("rgcount", `left:${m.cx}px;top:${ty - cw * 1.4 / 2 * 1.3 - 18}px;--c:${col}`, esc(`Dal mazzo al Trash · 0/${n}`));
+    st.cs.forEach((c, i) => setTimeout(() => {
+      const r = rgCardBox(board, dk.cx, dk.cy, 1), spot = rgCardBox(board, m.cx + (i - (n - 1) / 2) * gap, ty, 1.3), mv = `translate(${spot.cx - r.cx}px, ${spot.cy - r.cy}px) scale(1.3)`;
+      const g = rgCard(r, { back: true }); g.animate([{ transform: "none" }, { transform: mv }], { duration: B * .6, easing: fxEase, fill: "forwards" }); g.style.transform = mv;
+      setTimeout(() => rgFlip(g, true, c.pid ? thumbUrl(c.pid) : "", mv, B * .5), B * .35);
+      setTimeout(() => { cnt.textContent = `Dal mazzo al Trash · ${i + 1}/${n}`; }, B * .6); sfx("mill");
+      setTimeout(() => rgToPile(g, r, to, B * 1.1, i * B * .15), B * (n - i) * .45 + B * 1.8);
+    }, i * B * .45));
+    setTimeout(() => rgFade(cnt), B * (n * .45 + 1.9));
+    return;
+  }
+  if(d.f === "spend" || d.f === "ready" || d.f === "mark" || d.f === "pow"){
+    (d.t || []).forEach((x, i) => {
+      const r = rgRectOf(board, x); if(!r) return;
+      const bm = beamTo(r);
+      if(d.f === "pow" && bm) rgNum(bm, (d.n > 0 ? "+" : "−") + Math.abs(d.n), col, B * 1.1);
+      setTimeout(() => {
+        if(bm) bm.done(); const r2 = rgRectOf(board, x) || r;
+        if(d.f === "spend"){ rgRing(r2, col); const s = rgEl("rgstatic", `left:${r2.x}px;top:${r2.y}px;width:${r2.w}px;height:${r2.h}px`); rgGone(s, B * 1.3); sfx("emp");
+          if(d.lock) setTimeout(() => rgMark(board, x, "lock"), B * 1.4); }
+        else if(d.f === "ready"){ rgRing(r2, col); sfx("powUp"); }
+        else if(d.f === "mark"){ rgRing(r2, col); rgMark(board, x, d.k); }
+        else { rgRing(r2, col); const pw = board.querySelector(`[data-uid="${x}"] > .pw`); const pr = pw ? localRect(board, pw) : null; if(pr){ const b = rgEl("rgpop", `left:${pr.cx}px;top:${pr.cy}px;--c:${col}`, esc(pw.textContent)); b.animate([{ transform: "translate(-50%,-50%) scale(2.6)", opacity: 0 }, { transform: "translate(-50%,-50%) scale(1)", opacity: 1, offset: .35 }, { transform: "translate(-50%,-50%) scale(1)", opacity: 1, offset: .8 }, { opacity: 0 }], { duration: B * 1.6, fill: "forwards" }); rgGone(b, B * 1.6 + 30); } sfx(d.n >= 0 ? "powUp" : "powDn"); }
+      }, (bm ? B * 1.1 : 0) + i * 60);
+    });
+    return;
+  }
+  if(d.f === "recover"){
+    const from = rgAnchor(board, "trash", d.p); if(!from) return;
+    (d.c || []).slice(0, 4).forEach((c, i) => setTimeout(() => {
+      const el = d.p === me() ? board.querySelector(`[data-hand][data-uid="${c.uid}"]`) : null, to = el ? localRect(board, el) : rgAnchor(board, "handc", d.p) || rgAnchor(board, "deck", d.p);
+      const r = rgCardBox(board, from.cx, from.cy, 1), g = rgCard(r, { src: c.pid ? thumbUrl(c.pid) : "", name: c.dn }); g.classList.add("rgglow"); g.style.setProperty("--c", col);
+      const m = fxCenter(board), mid = `translate(${(m.cx - r.cx) * .5}px, ${(m.cy - r.cy) * .5}px) scale(1.35)`;
+      const fin = to ? `translate(${to.cx - r.cx}px, ${to.cy - r.cy}px) scale(${Math.min(1.2, to.w / r.w)})` : "scale(.6)";
+      g.animate([{ transform: "scale(.6)", opacity: 0 }, { transform: mid, opacity: 1, offset: .4 }, { transform: mid, opacity: 1, offset: .6 }, { transform: fin, opacity: to && el ? 1 : 0 }], { duration: B * 2.2, easing: fxEase, fill: "forwards" }); rgGone(g, B * 2.2 + 40);
+      sfx("powUp");
+    }, i * B * .3));
+  }
+}
+/* esito di una carta tolta dal campo: in frammenti nel Trash, oppure coperta e sotto al mazzo (o fuori dal gioco) */
+function rgFinish(board, uid, r, plan, bottom, B, col){
+  const g = plan.ghosts.get(uid); if(!g) return;
+  const P = G.players.find(Q => Q.trash.some(c => c.uid === uid) || Q.deck.some(c => c.uid === uid));
+  if(bottom && P && P.deck.some(c => c.uid === uid)){
+    const dk = rgAnchor(board, "deck", P.id);
+    rgFlip(g, false, "", "", B * .5);
+    setTimeout(() => { if(!dk){ rgFade(g); return; } g.animate([{ transform: "none", opacity: 1 }, { transform: `translate(${dk.cx - r.cx}px, ${dk.cy - r.cy}px) scale(${Math.min(1, dk.w / r.w)})`, opacity: 1, offset: .8 }, { transform: `translate(${dk.cx - r.cx}px, ${dk.cy - r.cy + dk.h * .2}px) scale(${Math.min(1, dk.w / r.w) * .9})`, opacity: 0 }], { duration: B * 1.4, easing: fxEase, fill: "forwards" }); rgGone(g, B * 1.4 + 30);
+      const lab = rgEl("rgcount", `left:${dk.cx}px;top:${dk.y - 14}px;--c:${col}`, esc("In fondo al mazzo")); rgGone(lab, B * 3); lab.animate([{ opacity: 0 }, { opacity: 1, offset: .15 }, { opacity: 1, offset: .8 }, { opacity: 0 }], { duration: B * 3, fill: "forwards" }); }, B * .5);
+    return;
+  }
+  if(P && P.trash.some(c => c.uid === uid)){ rgShatter(g, r, rgAnchor(board, "trash", P.id), B * 1.8); return; }
+  // fuori dal gioco (Leggenda in Go Solo) o già altrove: si dissolve
+  g.animate([{ opacity: 1, filter: "none" }, { opacity: 0, filter: "blur(4px) brightness(2)" }], { duration: B * 1.2, fill: "forwards" }); rgGone(g, B * 1.2 + 30);
+}
+/* segnale nuovo: l'icona grande sulla carta, poi si posa al suo posto (il segnale vero è già nella carta) */
+function rgMark(board, uid, k){
+  const r = rgRectOf(board, uid); if(!r || !MK[k]) return;
+  const e = rgEl("rgmark", `left:${r.cx}px;top:${r.cy}px;--c:${MK[k][2]}`, `${MK[k][1]}<b>${esc(MK[k][0])}</b>`);
+  e.animate([{ transform: "translate(-50%,-50%) scale(2)", opacity: 0 }, { transform: "translate(-50%,-50%) scale(1)", opacity: 1, offset: .2 }, { transform: "translate(-50%,-50%) scale(1)", opacity: 1, offset: .8 }, { transform: `translate(-50%,-50%) translate(${-r.w * .38}px, ${-r.h * .15}px) scale(.3)`, opacity: 0 }], { duration: 1500, easing: fxEase, fill: "forwards" }); rgGone(e, 1550);
+  sfx("mark");
 }
 /* fascia di cambio turno */
 let fxTurnKey = null;
@@ -1030,7 +1390,7 @@ function cardHTML(x, cls = "", extra = ""){
   const pw = shownPower(x), base = x.card.power ?? 0, gear = x.gear || [];
   const c = cls + (x.spent ? " spent" : "") + (x.lag ? " lag" : "") + (sel === x.uid ? " sel" : "") + (flashUids.has(x.uid) ? " justnow" : "") + (gear.length ? " host" : "");
   const card = `<div class="bc ${c}" data-uid="${x.uid}" title="${esc(x.card.dn)}${gear.length ? " · " + gear.map(g => esc(g.card.dn)).join(", ") : ""}">${x.pid ? `<img src="${thumbUrl(x.pid)}" alt="">` : `<div class="n">${esc(x.card.dn)}</div>`}
-    ${x.card.type === "Unit" || x.isLegend ? `<span class="pw${pw !== base ? " mod" : ""}">${pw}</span>` : ""}${extra}${gear.length ? `<span class="gn" aria-hidden="true">⚙${gear.length}</span>` : ""}</div>`;
+    ${x.card.type === "Unit" || x.isLegend ? `<span class="pw${pw !== base ? " mod" + (pw < base ? " dn" : "") : ""}">${pw}</span>` : ""}${marksHTML(x)}${extra}${gear.length ? `<span class="gn" aria-hidden="true">⚙${gear.length}</span>` : ""}</div>`;
   if(!gear.length) return card;
   const open = gearOpen === x.uid;
   return `<div class="bcw${open ? " open" : ""}${x.spent ? " hspent" : ""}" data-w="${x.uid}" style="--gn:${gear.length}">${card}${gear.map((g, i) => `<div class="bc gearc${flashUids.has(g.uid) ? " justnow" : ""}" data-uid="${g.uid}" data-gear-of="${x.uid}" style="--gi:${i + 1}" title="${esc(g.card.dn)} (Gear)">${g.pid ? `<img src="${thumbUrl(g.pid)}" alt="">` : `<div class="n">${esc(g.card.dn)}</div>`}</div>`).join("")}</div>`;
@@ -1079,7 +1439,7 @@ function render(){
   const payTxt = pm ? `<b style="color:var(--acc2)">Paga ${pm.ctx.cost} €$ (${pm.ctx.paid}/${pm.ctx.cost}): tocca un Eddie o una Leggenda</b>` : "";
   const waitMull = G.phase === "mulligan" && gmode === "online" && G.players[me()].mulliganed;
   const status = G.winner != null ? `Fine: ${esc(G.reason)}` : G.phase === "roll" ? (G.pending && G.pending.ctx && G.pending.ctx.pickFirst ? "Chi inizia?" : G.pending && human[G.pending.player] ? "Hai vinto il tiro: scegli chi inizia" : `${esc(G.players[G.pending ? G.pending.player : 0].name)} ha vinto il tiro e sceglie…`) : waitMull ? `Mulligan: in attesa di ${esc(R.name)}` : myTurn ? "Il tuo turno" : human[G.active] || gmode === "online" ? `Turno di ${esc(G.players[G.active].name)}` : "Turno dell'IA…";
-  const last = G.log.slice(-1)[0];
+  let last = null; for(let k = G.log.length - 1; k >= 0; k--) if(G.log[k].kind !== "fx"){ last = G.log[k]; break; }
   if(gmode === "hot"){ const need = hotNeeded(); handoff = need != null && need !== holder ? need : false; }
   const ob = handoff !== false ? null : onBoardAsk();   // reazione o bersaglio da scegliere toccando la plancia
   // misura delle carte dall'altezza disponibile: 2 righe rivale + campo + pile + mano (1,15×) + barra e margini
@@ -1116,7 +1476,7 @@ function render(){
         ${mine ? "" : `<div class="rhand" data-handc="${P.id}" title="Carte in mano">${"<i></i>".repeat(Math.min(10, P.hand.length))}<span>${P.hand.length} in mano</span></div>`}
       </div>`;
   const rivalFieldHTML = `<div class="brow field" data-field="${R.id}"><span class="lbl">${esc(R.name)}</span>${R.field.map(u => cardHTML(u, (targeting && targeting.kind === "attack" && u.spent) ? "target" : "")).join("") || `<span style="color:var(--mute)">nessuna Unità</span>`}</div>`;
-  const logPanelHTML = logW ? `<div class="logpanel"><h4>Registro</h4><div class="lgl">${G.log.slice(-60).map(e => `<div class="e ${e.kind}">${esc(e.text)}</div>`).join("")}</div>${gmode === "online" ? `<button class="btn sm" id="bChat2">💬 Chat del tavolo${ON.T.chatUnread && !chatOpen() ? ` (${ON.T.chatUnread})` : ""}</button>` : ""}</div>` : "";
+  const logPanelHTML = logW ? `<div class="logpanel"><h4>Registro</h4><div class="lgl">${G.log.filter(e => e.kind !== "fx").slice(-60).map(e => `<div class="e ${e.kind}">${esc(e.text)}</div>`).join("")}</div>${gmode === "online" ? `<button class="btn sm" id="bChat2">💬 Chat del tavolo${ON.T.chatUnread && !chatOpen() ? ` (${ON.T.chatUnread})` : ""}</button>` : ""}</div>` : "";
   board.innerHTML = `${feed.length ? `<div id="oppFeed" role="status" aria-live="polite">${feed.map(t => `<div>${esc(t)}</div>`).join("")}</div>` : ""}
     ${rail ? `<div class="railbox">${railSideHTML(R, false)}${railSideHTML(M, true)}</div>` : ""}
     <div class="bmain">
@@ -1144,7 +1504,7 @@ function render(){
     </div>
     ${logPanelHTML}
     ${tutorialActive() ? tutorialBarHTML(G, me(), fxOn()) : ""}
-    ${showLog ? `<div id="simLog"><div style="display:flex;justify-content:space-between;align-items:center"><b>Registro</b><button class="btn sm icon" id="bLogClose">✕</button></div>${G.log.slice(-80).map(e => `<div class="e ${e.kind}">${esc(e.text)}</div>`).join("")}</div>` : ""}
+    ${showLog ? `<div id="simLog"><div style="display:flex;justify-content:space-between;align-items:center"><b>Registro</b><button class="btn sm icon" id="bLogClose">✕</button></div>${G.log.filter(e => e.kind !== "fx").slice(-80).map(e => `<div class="e ${e.kind}">${esc(e.text)}</div>`).join("")}</div>` : ""}
     ${handoff !== false ? "" : mulliganPending() != null ? mulliganHTML() : pm || ob ? "" : G.pending && human[G.pending.player] ? askHTML() : ""}
     ${G.winner != null ? `<div class="winbox"><div class="box"><h2>${G.winner === -1 ? "PATTA" : G.winner === me() ? "VITTORIA" : gmode === "hot" ? "VINCE " + esc(G.players[G.winner].name).toUpperCase() : "SCONFITTA"}</h2><p class="wflav">${G.winner === -1 ? "Stavolta la città non è di nessuno." : G.winner === me() || gmode === "hot" ? "Night City ricorderà il tuo nome." : "Flatline. Rialzati, choom."}</p><p>${esc(G.reason)}</p><p style="color:var(--mute)">${G.turn} turni</p>${gmode === "online" ? seriesHTML() : ""}<div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">${gmode === "online" ? `<button class="btn" id="bChat2">💬 Chat</button>${series && series.next ? `<button class="btn acc2" id="bNextGame">Partita successiva</button>` : ""}<button class="btn yel" id="bExit">Torna alla lobby</button>` : `<button class="btn yel" id="bAgain">Rivincita</button><button class="btn" id="bExit">Esci</button>`}</div></div></div>` : ""}
     ${gmode === "online" ? drawOfferHTML() : ""}

@@ -83,6 +83,10 @@ export function mulligan(G, pi, doIt){
 
 /* ------------------------------------------------------------ fasi */
 function say(G, text, kind = "info", d){ G.log.push({ t: G.turn, p: G.active, text, kind, ...(d ? { d } : {}) }); if(G.log.length > 400) G.log.shift(); }
+/* regia del tavolo: chi ha causato un effetto e su cosa agisce. Sono solo dati nel registro (riga vuota, kind "fx"):
+   la plancia li anima, il motore non li rilegge mai, quindi non cambiano le regole né il rigioco online */
+const fxCard = c => ({ uid: c.uid, pid: c.pid, dn: c.card.dn, ty: c.card.type });
+function fxEv(G, f, d){ say(G, "", "fx", { f, ...d }); }
 export const rival = (G, P) => G.players[1 - P.id];
 export const streetCred = P => P.gigs.reduce((a, g) => a + g.value, 0);
 export const power = u => Math.max(0, (u.card.power ?? 0) + (u.gear || []).reduce((a, g) => a + (g.card.power ?? 0), 0) + (u.mod || 0));
@@ -350,7 +354,7 @@ export function play(G, pi, uid, targetUid){
       t.gear = t.gear || []; t.gear.push(c);
       P.playedGearCls = P.playedGearCls || {}; for(const k of card.cls || []) P.playedGearCls[k.toUpperCase()] = true;
       say(G, `${P.name} equipaggia ${card.dn} a ${t.card.dn}.`, "play");
-      runEffects(G, P, t, c.fx.play, "Play");
+      runEffects(G, P, t, c.fx.play, "Play", null, { srcCard: c });
     });
     return true;
   }
@@ -403,7 +407,7 @@ export function spendAbility(G, pi, uid, done, reaction = false){
   x.spent = true;
   payAsk(G, P, costM, () => {
     say(G, `${P.name} spende ${x.card.dn} per l'abilità.`, "play");
-    runEffects(G, P, x, s.fx.spend, "Spend", () => onSpent(G, P, x, done), { holder: x, srcName: s.card.dn });
+    runEffects(G, P, x, s.fx.spend, "Spend", () => onSpent(G, P, x, done), { holder: x, srcName: s.card.dn, srcCard: s });
   }, () => { x.spent = false; done && done(); });
   return true;
 }
@@ -599,7 +603,7 @@ export function defeat(G, P, u, done){
   else { P.trash.push(u); for(const g of u.gear || []) P.trash.push(g); }
   const gears = (u.gear || []).slice();
   runEffects(G, P, u, u.fx.defeated, "Defeated", () => {
-    const run = k => { if(k >= gears.length){ fireEvent(G, P, "friendlyDefeated", { unit: u, equipped: wasEquipped }, () => fireEvent(G, P, "defeatedFriendly", { unit: u, equipped: wasEquipped }, done)); return; } runEffects(G, P, u, gears[k].fx.defeated, "Defeated", () => run(k + 1)); };
+    const run = k => { if(k >= gears.length){ fireEvent(G, P, "friendlyDefeated", { unit: u, equipped: wasEquipped }, () => fireEvent(G, P, "defeatedFriendly", { unit: u, equipped: wasEquipped }, done)); return; } runEffects(G, P, u, gears[k].fx.defeated, "Defeated", () => run(k + 1), { srcCard: gears[k] }); };
     run(0);
   });
 }
@@ -700,7 +704,7 @@ function fireEvent(G, P, name, ctx, done){
       if(name === "spent" && e.equippedOnly && !(ctx.unit.gear || []).length) continue;
       if(name === "playProgram" && e.cls && !(ctx.card.card.cls || []).some(k => k.toUpperCase() === e.cls)) continue;
       if(name === "endTurn" && G.active !== P.id) continue;
-      tasks.push(cb => { if(e.once){ store._once[name + ":" + e.text] = G.turn; } say(G, `⚡ ${store.card.dn}: ${e.text}`, "trigger"); runEffects(G, P, src, e.ops, name, cb, { ...ctx, holder }); });
+      tasks.push(cb => { if(e.once){ store._once[name + ":" + e.text] = G.turn; } say(G, `⚡ ${store.card.dn}: ${e.text}`, "trigger"); runEffects(G, P, src, e.ops, name, cb, { ...ctx, holder, srcCard: store }); });
     }
   };
   for(const h of hosts){
@@ -727,6 +731,9 @@ function runEffects(G, P, src, ops, trigger, done, ctx = {}){
   const queue = ops.slice();
   let cur = null;
   const askE = (pi, kind, options, cb, extra = {}) => ask(G, pi, kind, options, cb, { src: ctx.srcName || src.card.dn, srcPid: src.pid, text: cur && cur.text, ...extra });
+  const sc = ctx.srcCard || src, S_ = sc.uid;   // la carta che porta il testo (un Gear, una Leggenda, un Programma) e la sua posizione
+  let srcSent = false;   // l'innesco si annuncia solo quando un'operazione parte davvero (non se le condizioni la saltano tutte)
+  const sendSrc = () => { if(srcSent || !sc.card) return; srcSent = true; const x = [...new Set(ops.map(o => o.text).filter(Boolean))].join(" "); fxEv(G, "src", { p: P.id, s: S_, h: src.uid, pid: sc.pid, dn: sc.card.dn, ty: sc.card.type, tr: trigger, x }); };
   let last = null;   // ultima Unità bersagliata ("give it +2 power", "it can attack…")
   let prev = null;   // operazione precedente ("you may defeat 2 instead")
   const next = () => {
@@ -736,24 +743,25 @@ function runEffects(G, P, src, ops, trigger, done, ctx = {}){
     const cctx = () => ({ ...ctx, last: last || ctx.last });
     if(o.skipIf && testCond(G, P, src, o.skipIf, cctx())){ next(); return; }
     if(o.cond){ const ok = testCond(G, P, src, o.cond, cctx()); if(ok === !!o.negate){ next(); return; } }
+    sendSrc();
     const times = o.per ? count(G, P, src, o.per) : 1;
     const nTimes = o.n != null && o.per ? o.n * times : o.n;
     switch(o.op){
       case "draw": if(nTimes > 0) draw(G, P, nTimes); next(); break;
-      case "mill": { const n = Math.min(o.n, P.deck.length); const ms = P.deck.splice(0, n); P.trash.push(...ms); P.lastMilled = ms; say(G, `${P.name} manda ${n} carte nel trash (${ms.map(c => c.card.dn).join(", ") || "nessuna"}).`); next(); break; }
-      case "mayMillTop": { if(!P.deck.length){ next(); break; } const c = P.deck[0]; askE(P.id, "yesno", [{ label: `Trash ${c.card.dn}`, v: true }, { label: "Lasciala", v: false }], o2 => { if(o2 && o2.v){ P.deck.shift(); P.trash.push(c); say(G, `${P.name} manda ${c.card.dn} nel trash.`); } next(); }); break; }
+      case "mill": { const n = Math.min(o.n, P.deck.length); const ms = P.deck.splice(0, n); P.trash.push(...ms); P.lastMilled = ms; if(ms.length) fxEv(G, "mill", { p: P.id, s: S_, c: ms.map(fxCard) }); say(G, `${P.name} manda ${n} carte nel trash (${ms.map(c => c.card.dn).join(", ") || "nessuna"}).`); next(); break; }
+      case "mayMillTop": { if(!P.deck.length){ next(); break; } const c = P.deck[0]; askE(P.id, "yesno", [{ label: `Trash ${c.card.dn}`, v: true }, { label: "Lasciala", v: false }], o2 => { if(o2 && o2.v){ P.deck.shift(); P.trash.push(c); fxEv(G, "mill", { p: P.id, s: S_, c: [fxCard(c)] }); say(G, `${P.name} manda ${c.card.dn} nel trash.`); } next(); }); break; }
       case "sellTop": { if(!P.deck.length){ next(); break; } const c = P.deck.shift(); P.eddies.push({ ...c, spent: false }); say(G, `${P.name} vende la prima carta del mazzo (ora ${P.eddies.length} €$).`, "eddie"); next(); break; }
       case "readyEddies": { let k = 0; for(const e of P.eddies) if(e.spent && k < o.n){ e.spent = false; k++; } say(G, `${P.name} prepara ${k} Eddie.`); next(); break; }
-      case "readySelf": { const u = ctx.holder || src; if(u.spent){ u.spent = false; say(G, `${u.card.dn} è di nuovo pronta.`); } next(); break; }
-      case "readyHost": { const u = ctx.holder || src; if(u.spent){ u.spent = false; say(G, `${u.card.dn} è di nuovo pronta.`); } next(); break; }
+      case "readySelf": { const u = ctx.holder || src; if(u.spent){ u.spent = false; fxEv(G, "ready", { s: S_, t: [u.uid] }); say(G, `${u.card.dn} è di nuovo pronta.`); } next(); break; }
+      case "readyHost": { const u = ctx.holder || src; if(u.spent){ u.spent = false; fxEv(G, "ready", { s: S_, t: [u.uid] }); say(G, `${u.card.dn} è di nuovo pronta.`); } next(); break; }
       case "readyUnits": { let k = 0; const one = () => { const pool = P.field.filter(u => u.spent); if(k++ >= o.n || !pool.length){ next(); return; }
-          askE(P.id, "target", [...unitOpts(G, pool), { label: "Basta così", unit: null }], o2 => { if(o2 && o2.unit){ o2.unit.spent = false; say(G, `${o2.unit.card.dn} è di nuovo pronta.`); one(); } else next(); }); }; one(); break; }
+          askE(P.id, "target", [...unitOpts(G, pool), { label: "Basta così", unit: null }], o2 => { if(o2 && o2.unit){ o2.unit.spent = false; fxEv(G, "ready", { s: S_, t: [o2.unit.uid] }); say(G, `${o2.unit.card.dn} è di nuovo pronta.`); one(); } else next(); }); }; one(); break; }
       case "readyLegends": { let k = 0; const one = () => { const pool = P.legends.filter(l => l.faceUp && l.spent && !l.removed && !l.onField && (!o.cls || (l.card.cls || []).some(x => x.toUpperCase() === o.cls))); if(k++ >= o.n || !pool.length){ next(); return; }
-          askE(P.id, "target", [...pool.map(l => ({ label: l.card.dn, unit: l })), { label: "Basta così", unit: null }], o2 => { if(o2 && o2.unit){ o2.unit.spent = false; say(G, `${o2.unit.card.dn} è di nuovo pronta.`); one(); } else next(); }); }; one(); break; }
-      case "readyUnitPower": { const v = ctx.gig ? ctx.gig.value : -1; askE(P.id, "target", unitOpts(G, P.field.filter(u => u !== src && u.spent && power(u) === v)), o2 => { if(o2){ o2.unit.spent = false; say(G, `${o2.unit.card.dn} è di nuovo pronta.`); } next(); }); break; }
+          askE(P.id, "target", [...pool.map(l => ({ label: l.card.dn, unit: l })), { label: "Basta così", unit: null }], o2 => { if(o2 && o2.unit){ o2.unit.spent = false; fxEv(G, "ready", { s: S_, t: [o2.unit.uid] }); say(G, `${o2.unit.card.dn} è di nuovo pronta.`); one(); } else next(); }); }; one(); break; }
+      case "readyUnitPower": { const v = ctx.gig ? ctx.gig.value : -1; askE(P.id, "target", unitOpts(G, P.field.filter(u => u !== src && u.spent && power(u) === v)), o2 => { if(o2){ o2.unit.spent = false; fxEv(G, "ready", { s: S_, t: [o2.unit.uid] }); say(G, `${o2.unit.card.dn} è di nuovo pronta.`); } next(); }); break; }
       case "fromTrash": {
         const pool = (o.milled ? (P.lastMilled || []) : P.trash).filter(c => c !== src && (!o.type || o.type === "Card" || c.card.type === o.type) && (!o.cls || (c.card.cls || []).some(k => k.toUpperCase() === o.cls)));
-        askE(P.id, "pickcard", [...pool.map(c => ({ label: c.card.dn, c })), { label: "Nessuna", c: null }], o2 => { if(o2 && o2.c){ P.trash.splice(P.trash.indexOf(o2.c), 1); P.hand.push(o2.c); say(G, `${P.name} recupera ${o2.c.card.dn} dal trash.`); } next(); }, { verb: "Recupera", info: ["Carte nel tuo trash che puoi riprendere in mano."] }); break; }
+        askE(P.id, "pickcard", [...pool.map(c => ({ label: c.card.dn, c })), { label: "Nessuna", c: null }], o2 => { if(o2 && o2.c){ P.trash.splice(P.trash.indexOf(o2.c), 1); P.hand.push(o2.c); fxEv(G, "recover", { p: P.id, s: S_, c: [fxCard(o2.c)] }); say(G, `${P.name} recupera ${o2.c.card.dn} dal trash.`); } next(); }, { verb: "Recupera", info: ["Carte nel tuo trash che puoi riprendere in mano."] }); break; }
       case "searchTop": {
         const top = P.deck.splice(0, Math.min(o.n, P.deck.length)); const taken = [];
         const k = o.perMin ? o.k + P.gigs.filter(isMin).length : o.k;
@@ -781,18 +789,18 @@ function runEffects(G, P, src, ops, trigger, done, ctx = {}){
           else { if(o.elseTake){ P.deck.shift(); P.hand.push(c); say(G, `${c.card.dn} va in mano.`); } next(); } }); break; }
       case "mayDefeatGearDraw": {
         const pool = []; for(const h of [...P.field, ...P.legends.filter(l => l.faceUp && !l.removed && !l.onField)]) for(const g of h.gear || []) pool.push({ label: `${g.card.dn} su ${h.card.dn}`, g, h });
-        askE(P.id, "pickcard", [...pool, { label: `Nessuno (pesca ${o.no})`, g: null }], o2 => { if(o2 && o2.g){ o2.h.gear.splice(o2.h.gear.indexOf(o2.g), 1); P.trash.push(o2.g); say(G, `${P.name} sconfigge ${o2.g.card.dn}.`); draw(G, P, o.yes); } else draw(G, P, o.no); next(); }); break; }
+        askE(P.id, "pickcard", [...pool, { label: `Nessuno (pesca ${o.no})`, g: null }], o2 => { if(o2 && o2.g){ o2.h.gear.splice(o2.h.gear.indexOf(o2.g), 1); P.trash.push(o2.g); fxEv(G, "gear", { s: S_, t: o2.g.uid, h: o2.h.uid, n: o2.g.card.power ?? 0 }); say(G, `${P.name} sconfigge ${o2.g.card.dn}.`); draw(G, P, o.yes); } else draw(G, P, o.no); next(); }); break; }
       case "mayDo": {
         const go = () => runEffects(G, P, src, o.then, trigger, next, ctx);
         if(o.kind === "pay"){ if(!canPay(P, o.n)){ next(); break; } askE(P.id, "yesno", [{ label: `Paga ${o.n} €$`, v: true }, { label: "No", v: false }], o2 => { if(o2 && o2.v) payAsk(G, P, o.n, go, next); else next(); }); break; }
         if(o.kind === "discard"){ if(P.hand.length < o.n){ next(); break; }
-          let k = 0; const one = () => { if(k >= o.n){ ctx.did = true; go(); return; } askE(P.id, "discard", [...P.hand.map(c => ({ label: c.card.dn, c })), ...(k ? [] : [{ label: "Non scartare", c: null }])], o2 => { if(o2 && o2.c){ P.hand.splice(P.hand.indexOf(o2.c), 1); P.trash.push(o2.c); say(G, `${P.name} scarta ${o2.c.card.dn}.`); k++; one(); } else next(); }); }; one(); break; }
+          let k = 0; const one = () => { if(k >= o.n){ ctx.did = true; go(); return; } askE(P.id, "discard", [...P.hand.map(c => ({ label: c.card.dn, c })), ...(k ? [] : [{ label: "Non scartare", c: null }])], o2 => { if(o2 && o2.c){ P.hand.splice(P.hand.indexOf(o2.c), 1); P.trash.push(o2.c); fxEv(G, "discard", { p: P.id, s: S_, c: [fxCard(o2.c)] }); say(G, `${P.name} scarta ${o2.c.card.dn}.`); k++; one(); } else next(); }); }; one(); break; }
         if(o.kind === "discardPrograms"){ const progs = P.hand.filter(c => c.card.type === "Program"); if(progs.length < o.n){ next(); break; }
-          let k = 0; const one = () => { if(k >= o.n){ go(); return; } askE(P.id, "discard", [...P.hand.filter(c => c.card.type === "Program").map(c => ({ label: c.card.dn, c })), ...(k ? [] : [{ label: "Non scartare", c: null }])], o2 => { if(o2 && o2.c){ P.hand.splice(P.hand.indexOf(o2.c), 1); P.trash.push(o2.c); say(G, `${P.name} scarta ${o2.c.card.dn}.`); k++; one(); } else next(); }); }; one(); break; }
+          let k = 0; const one = () => { if(k >= o.n){ go(); return; } askE(P.id, "discard", [...P.hand.filter(c => c.card.type === "Program").map(c => ({ label: c.card.dn, c })), ...(k ? [] : [{ label: "Non scartare", c: null }])], o2 => { if(o2 && o2.c){ P.hand.splice(P.hand.indexOf(o2.c), 1); P.trash.push(o2.c); fxEv(G, "discard", { p: P.id, s: S_, c: [fxCard(o2.c)] }); say(G, `${P.name} scarta ${o2.c.card.dn}.`); k++; one(); } else next(); }); }; one(); break; }
         if(o.kind === "defeatFriendlyGear" || o.kind === "defeatAnyGear"){
           const pool = []; const hostsP = [...P.field, ...P.legends.filter(l => l.faceUp && !l.removed && !l.onField)]; const hosts = o.kind === "defeatAnyGear" ? [...hostsP, ...R.field, ...R.legends.filter(l => l.faceUp && !l.removed && !l.onField)] : hostsP;
           for(const h of hosts) for(const g of h.gear || []) pool.push({ label: `${g.card.dn} su ${h.card.dn}`, g, h, owner: hostsP.includes(h) ? P : R });
-          askE(P.id, "pickcard", [...pool, { label: "Nessuno", g: null }], o2 => { if(o2 && o2.g){ o2.h.gear.splice(o2.h.gear.indexOf(o2.g), 1); o2.owner.trash.push(o2.g); say(G, `${o2.g.card.dn} sconfitto.`); ctx.card = o2.g; go(); } else next(); }); break; }
+          askE(P.id, "pickcard", [...pool, { label: "Nessuno", g: null }], o2 => { if(o2 && o2.g){ o2.h.gear.splice(o2.h.gear.indexOf(o2.g), 1); o2.owner.trash.push(o2.g); fxEv(G, "gear", { s: S_, t: o2.g.uid, h: o2.h.uid, n: o2.g.card.power ?? 0 }); say(G, `${o2.g.card.dn} sconfitto.`); ctx.card = o2.g; go(); } else next(); }); break; }
         next(); break; }
       case "freeCall": {
         const fd = o.peeked ? (ctx.peeked && !ctx.peeked.faceUp && !ctx.peeked.removed ? [ctx.peeked] : []) : P.legends.filter(l => !l.faceUp && !l.removed);
@@ -847,18 +855,18 @@ function runEffects(G, P, src, ops, trigger, done, ctx = {}){
           const run = k => { if(k >= o.alts.length){ next(); return; } runEffects(G, P, src, o.alts[k].ops, trigger, () => run(k + 1), { ...ctx, last }); }; run(0); break; }
         askE(chooser, "choice", o.alts.map(a => ({ label: a.text, alt: a })), o2 => { if(o2){ say(G, `${G.players[chooser].name} sceglie: «${o2.alt.text}»`); runEffects(G, P, src, o2.alt.ops, trigger, next, { ...ctx, last }); } else next(); }); break; }
       case "rivalChooses": ctx.rivalChooses = true; say(G, `${R.name} sceglierà l'effetto al posto di ${P.name}.`); next(); break;
-      case "discard": { let k = 0; const one = () => { if(k++ >= (o.n || 1) || !P.hand.length){ next(); return; } askE(P.id, "discard", P.hand.map(c => ({ label: c.card.dn, c })), o2 => { if(o2){ P.hand.splice(P.hand.indexOf(o2.c), 1); P.trash.push(o2.c); ctx.card = o2.c; ctx.did = true; say(G, `${P.name} scarta ${o2.c.card.dn}.`); } one(); }); }; one(); break; }
+      case "discard": { let k = 0; const one = () => { if(k++ >= (o.n || 1) || !P.hand.length){ next(); return; } askE(P.id, "discard", P.hand.map(c => ({ label: c.card.dn, c })), o2 => { if(o2){ P.hand.splice(P.hand.indexOf(o2.c), 1); P.trash.push(o2.c); ctx.card = o2.c; ctx.did = true; fxEv(G, "discard", { p: P.id, s: S_, c: [fxCard(o2.c)] }); say(G, `${P.name} scarta ${o2.c.card.dn}.`); } one(); }); }; one(); break; }
       case "rivalDiscard": {
-        let k = 0; const one = () => { if(k++ >= o.n || !R.hand.length){ next(); return; } askE(R.id, "discard", R.hand.map(c => ({ label: c.card.dn, c })), o2 => { if(o2){ R.hand.splice(R.hand.indexOf(o2.c), 1); R.trash.push(o2.c); ctx.card = o2.c; say(G, `${R.name} scarta ${o2.c.card.dn}.`); } one(); }); }; one(); break; }
-      case "eachRedraw": { for(const Q of G.players){ const n = Q.hand.length; Q.trash.push(...Q.hand); Q.hand = []; say(G, `${Q.name} scarta ${n} carte.`); ctx.discarded = (ctx.discarded || 0) + n; }
+        let k = 0; const one = () => { if(k++ >= o.n || !R.hand.length){ next(); return; } askE(R.id, "discard", R.hand.map(c => ({ label: c.card.dn, c })), o2 => { if(o2){ R.hand.splice(R.hand.indexOf(o2.c), 1); R.trash.push(o2.c); ctx.card = o2.c; fxEv(G, "discard", { p: R.id, s: S_, c: [fxCard(o2.c)] }); say(G, `${R.name} scarta ${o2.c.card.dn}.`); } one(); }); }; one(); break; }
+      case "eachRedraw": { for(const Q of G.players){ const n = Q.hand.length; if(n) fxEv(G, "discard", { p: Q.id, s: S_, c: Q.hand.map(fxCard) }); Q.trash.push(...Q.hand); Q.hand = []; say(G, `${Q.name} scarta ${n} carte.`); ctx.discarded = (ctx.discarded || 0) + n; }
         let i = 0; const one = () => { if(i >= 2){ next(); return; } const Q = G.players[(P.id + i) % 2]; i++; askE(Q.id, "yesno", [{ label: `Pesca ${o.n}`, v: true }, { label: "Non pescare", v: false }], o2 => { if(o2 && o2.v) draw(G, Q, o.n); one(); }); }; one(); break; }
-      case "eachDefeats": { let i = 0; const one = () => { if(i >= 2){ next(); return; } const Q = G.players[(P.id + i) % 2]; i++; if(!Q.field.length){ one(); return; } askE(Q.id, "target", unitOpts(G, Q.field), o2 => { if(o2){ say(G, `${Q.name} sconfigge ${o2.unit.card.dn}.`, "fight"); defeat(G, Q, o2.unit, one); } else one(); }); }; one(); break; }
+      case "eachDefeats": { let i = 0; const one = () => { if(i >= 2){ next(); return; } const Q = G.players[(P.id + i) % 2]; i++; if(!Q.field.length){ one(); return; } askE(Q.id, "target", unitOpts(G, Q.field), o2 => { if(o2){ fxEv(G, "defeat", { s: S_, t: [o2.unit.uid] }); say(G, `${Q.name} sconfigge ${o2.unit.card.dn}.`, "fight"); defeat(G, Q, o2.unit, one); } else one(); }); }; one(); break; }
       case "buff": {
         const n = o.n * (o.per ? 0 : 1);
         const pool = o.equipped ? P.field.filter(u => (u.gear || []).length) : P.field;
-        askE(P.id, "target", unitOpts(G, pool), o2 => { if(o2){ const add = o.per ? o.n * count(G, P, o2.unit, o.per) : o.n; o2.unit.mod = (o2.unit.mod || 0) + add; last = o2.unit; say(G, `${o2.unit.card.dn} +${add} potenza fino a fine turno.`); } next(); }); break; }
-      case "buffSelf": { const u = ctx.holder || src; if(P.field.includes(u) || u.isLegend || P.legends.includes(u)){ const add = o.eq === "maxGig" ? Math.max(0, ...vals(P)) : o.eq === "revealedCost" ? (ctx.card ? ctx.card.card.cost ?? 0 : 0) : o.per ? o.n * count(G, P, u, o.per) : o.n; u.mod = (u.mod || 0) + add; say(G, `${u.card.dn} +${add} potenza fino a fine turno.`); } next(); break; }
-      case "buffLast": { const u = last || ctx.last || ctx.unit; if(u){ u.mod = (u.mod || 0) + o.n; say(G, `${u.card.dn} +${o.n} potenza fino a fine turno.`); } next(); break; }
+        askE(P.id, "target", unitOpts(G, pool), o2 => { if(o2){ const add = o.per ? o.n * count(G, P, o2.unit, o.per) : o.n; o2.unit.mod = (o2.unit.mod || 0) + add; last = o2.unit; fxEv(G, "pow", { s: S_, t: [o2.unit.uid], n: add }); say(G, `${o2.unit.card.dn} +${add} potenza fino a fine turno.`); } next(); }); break; }
+      case "buffSelf": { const u = ctx.holder || src; if(P.field.includes(u) || u.isLegend || P.legends.includes(u)){ const add = o.eq === "maxGig" ? Math.max(0, ...vals(P)) : o.eq === "revealedCost" ? (ctx.card ? ctx.card.card.cost ?? 0 : 0) : o.per ? o.n * count(G, P, u, o.per) : o.n; u.mod = (u.mod || 0) + add; if(add) fxEv(G, "pow", { s: S_, t: [u.uid], n: add }); say(G, `${u.card.dn} +${add} potenza fino a fine turno.`); } next(); break; }
+      case "buffLast": { const u = last || ctx.last || ctx.unit; if(u){ u.mod = (u.mod || 0) + o.n; fxEv(G, "pow", { s: S_, t: [u.uid], n: o.n }); say(G, `${u.card.dn} +${o.n} potenza fino a fine turno.`); } next(); break; }
       case "gig": {
         const pick = o.ctx && ctx.gig ? [{ label: `d${ctx.gig.sides} = ${ctx.gig.value}`, gig: ctx.gig }] : P.gigs.map(g => ({ label: `d${g.sides} = ${g.value}`, gig: g }));
         if(!pick.length){ next(); break; }
@@ -875,51 +883,51 @@ function runEffects(G, P, src, ops, trigger, done, ctx = {}){
         const maxC = o.maxFrom === "discarded" ? (ctx.card ? ctx.card.card.cost ?? 0 : -1) : o.max;
         const friendlyMax = Math.max(-1, ...P.field.map(u => power(u)));
         const pool = (o.any ? [...P.field, ...R.field] : R.field).filter(u => (!o.spentOnly || u.spent) && (o.by === "power" ? power(u) <= maxP : o.by === "cost" ? (u.card.cost ?? 0) <= maxC : true) && (!o.lessThanFriendly || power(u) < friendlyMax));
-        askE(P.id, "target", [...unitOpts(G, pool), ...(o.may ? [{ label: "Nessuna", unit: null }] : [])], o2 => { if(o2 && o2.unit){ const owner = P.field.includes(o2.unit) ? P : R; say(G, `${o2.unit.card.dn} sconfitta da ${src.card.dn}.`, "fight"); defeat(G, owner, o2.unit, next); } else next(); }); break; }
+        askE(P.id, "target", [...unitOpts(G, pool), ...(o.may ? [{ label: "Nessuna", unit: null }] : [])], o2 => { if(o2 && o2.unit){ const owner = P.field.includes(o2.unit) ? P : R; fxEv(G, "defeat", { s: S_, t: [o2.unit.uid] }); say(G, `${o2.unit.card.dn} sconfitta da ${src.card.dn}.`, "fight"); defeat(G, owner, o2.unit, next); } else next(); }); break; }
       case "repeatPrev": { if(prev && prev.op === "defeat"){ for(let k = 0; k < o.n; k++) queue.unshift({ ...prev, may: true, cond: null }); } next(); break; }
-      case "defeatOpponent": { const opp = ctx.opponent; const owner = opp && (P.field.includes(opp) ? P : R.field.includes(opp) ? R : null); if(owner){ say(G, `${opp.card.dn} sconfitta.`, "fight"); defeat(G, owner, opp, next); } else next(); break; }
+      case "defeatOpponent": { const opp = ctx.opponent; const owner = opp && (P.field.includes(opp) ? P : R.field.includes(opp) ? R : null); if(owner){ fxEv(G, "defeat", { s: S_, t: [opp.uid] }); say(G, `${opp.card.dn} sconfitta.`, "fight"); defeat(G, owner, opp, next); } else next(); break; }
       case "defeatGear": {
         const pool = []; for(const u of R.field) for(const g of u.gear || []) if((g.card.power ?? 0) <= o.max) pool.push({ label: `${g.card.dn} su ${u.card.dn}`, g, u });
-        askE(P.id, "target", pool, o2 => { if(o2){ o2.u.gear.splice(o2.u.gear.indexOf(o2.g), 1); R.trash.push(o2.g); say(G, `${o2.g.card.dn} sconfitto.`); } next(); }); break; }
-      case "defeatAllOther": { const all = [...P.field.filter(x => x !== src), ...R.field]; say(G, "Tutte le altre Unità sono sconfitte."); const run = k => { if(k >= all.length){ next(); return; } const u = all[k], owner = P.field.includes(u) ? P : R; defeat(G, owner, u, () => run(k + 1)); }; run(0); break; }
-      case "spendAll": { const now = R.field.filter(u => !u.spent); for(const u of now) u.spent = true; say(G, `Tutte le Unità di ${R.name} sono spese.`); spentChain(G, R, now, next); break; }
-      case "spend": { let k = 0; const K = o.per ? times : 1; const one = () => { if(k++ >= K){ next(); return; } askE(P.id, "target", unitOpts(G, R.field.filter(u => !u.spent && (o.max == null || (u.card.cost ?? 0) <= o.max))), o2 => { if(o2){ o2.unit.spent = true; last = o2.unit; if(o.lock) o2.unit.cantReady = true; say(G, `${o2.unit.card.dn} viene spesa${o.lock ? " e non si prepara al prossimo turno" : ""}.`); onSpent(G, R, o2.unit, one); } else next(); }); }; one(); break; }
-      case "spendLock": askE(P.id, "target", unitOpts(G, R.field), o2 => { if(o2){ o2.unit.cantReady = true; say(G, `${o2.unit.card.dn} non si preparerà al prossimo turno.`); } next(); }); break;
-      case "lockLast": if(last){ last.cantReady = true; } next(); break;
-      case "cantAttackUntil": askE(P.id, "target", unitOpts(G, o.any ? [...R.field, ...P.field] : R.field), o2 => { if(o2){ o2.unit.lockAttackBy = P.id; say(G, `${o2.unit.card.dn} non può attaccare fino al prossimo turno di ${P.name}.`); } next(); }); break;
-      case "mustAttack": askE(P.id, "target", unitOpts(G, R.field), o2 => { if(o2){ o2.unit.mustAttack = true; say(G, `${o2.unit.card.dn} dovrà attaccare nel prossimo turno di ${R.name}, se può.`); } next(); }); break;
+        askE(P.id, "target", pool, o2 => { if(o2){ o2.u.gear.splice(o2.u.gear.indexOf(o2.g), 1); R.trash.push(o2.g); fxEv(G, "gear", { s: S_, t: o2.g.uid, h: o2.u.uid, n: o2.g.card.power ?? 0 }); say(G, `${o2.g.card.dn} sconfitto.`); } next(); }); break; }
+      case "defeatAllOther": { const all = [...P.field.filter(x => x !== src), ...R.field]; if(all.length) fxEv(G, "defeat", { s: S_, t: all.map(u => u.uid), m: 1 }); say(G, "Tutte le altre Unità sono sconfitte."); const run = k => { if(k >= all.length){ next(); return; } const u = all[k], owner = P.field.includes(u) ? P : R; defeat(G, owner, u, () => run(k + 1)); }; run(0); break; }
+      case "spendAll": { const now = R.field.filter(u => !u.spent); for(const u of now) u.spent = true; if(now.length) fxEv(G, "spend", { s: S_, t: now.map(u => u.uid) }); say(G, `Tutte le Unità di ${R.name} sono spese.`); spentChain(G, R, now, next); break; }
+      case "spend": { let k = 0; const K = o.per ? times : 1; const one = () => { if(k++ >= K){ next(); return; } askE(P.id, "target", unitOpts(G, R.field.filter(u => !u.spent && (o.max == null || (u.card.cost ?? 0) <= o.max))), o2 => { if(o2){ o2.unit.spent = true; last = o2.unit; if(o.lock) o2.unit.cantReady = true; fxEv(G, "spend", { s: S_, t: [o2.unit.uid], lock: o.lock ? 1 : 0 }); say(G, `${o2.unit.card.dn} viene spesa${o.lock ? " e non si prepara al prossimo turno" : ""}.`); onSpent(G, R, o2.unit, one); } else next(); }); }; one(); break; }
+      case "spendLock": askE(P.id, "target", unitOpts(G, R.field), o2 => { if(o2){ o2.unit.cantReady = true; fxEv(G, "mark", { s: S_, t: [o2.unit.uid], k: "lock" }); say(G, `${o2.unit.card.dn} non si preparerà al prossimo turno.`); } next(); }); break;
+      case "lockLast": if(last){ last.cantReady = true; fxEv(G, "mark", { s: S_, t: [last.uid], k: "lock" }); } next(); break;
+      case "cantAttackUntil": askE(P.id, "target", unitOpts(G, o.any ? [...R.field, ...P.field] : R.field), o2 => { if(o2){ o2.unit.lockAttackBy = P.id; fxEv(G, "mark", { s: S_, t: [o2.unit.uid], k: "noatk" }); say(G, `${o2.unit.card.dn} non può attaccare fino al prossimo turno di ${P.name}.`); } next(); }); break;
+      case "mustAttack": askE(P.id, "target", unitOpts(G, R.field), o2 => { if(o2){ o2.unit.mustAttack = true; fxEv(G, "mark", { s: S_, t: [o2.unit.uid], k: "must" }); say(G, `${o2.unit.card.dn} dovrà attaccare nel prossimo turno di ${R.name}, se può.`); } next(); }); break;
       case "debuff": { const pool = R.field.slice().sort((a, b) => (b === G.attacker) - (a === G.attacker)); const n = o.eq === "selfPower" ? power(ctx.holder || src) : o.n;
-        askE(P.id, "target", unitOpts(G, pool), o2 => { if(o2){ o2.unit.mod = (o2.unit.mod || 0) - n; last = o2.unit; say(G, `${o2.unit.card.dn} -${n} potenza fino a fine turno (ora ${power(o2.unit)}).`); } next(); }); break; }
-      case "debuffAll": for(const u of R.field){ u.mod = (u.mod || 0) - o.n; } say(G, `Tutte le Unità di ${R.name} hanno -${o.n} potenza fino a fine turno.`); next(); break;
-      case "bottomDeckAll": { const list = R.field.filter(u => power(u) <= o.maxPower); for(const u of list) bottomDeckUnit(G, R, u); if(!list.length) say(G, `Nessuna Unità rivale con potenza ${o.maxPower}.`); next(); break; }
+        askE(P.id, "target", unitOpts(G, pool), o2 => { if(o2){ o2.unit.mod = (o2.unit.mod || 0) - n; last = o2.unit; fxEv(G, "pow", { s: S_, t: [o2.unit.uid], n: -n }); say(G, `${o2.unit.card.dn} -${n} potenza fino a fine turno (ora ${power(o2.unit)}).`); } next(); }); break; }
+      case "debuffAll": for(const u of R.field){ u.mod = (u.mod || 0) - o.n; } if(R.field.length) fxEv(G, "pow", { s: S_, t: R.field.map(u => u.uid), n: -o.n }); say(G, `Tutte le Unità di ${R.name} hanno -${o.n} potenza fino a fine turno.`); next(); break;
+      case "bottomDeckAll": { const list = R.field.filter(u => power(u) <= o.maxPower); if(list.length) fxEv(G, "bottom", { s: S_, t: list.map(u => u.uid) }); for(const u of list) bottomDeckUnit(G, R, u); if(!list.length) say(G, `Nessuna Unità rivale con potenza ${o.maxPower}.`); next(); break; }
       case "stealLess": { const pool = R.field.slice().sort((a, b) => (b === G.attacker) - (a === G.attacker));
         askE(P.id, "target", unitOpts(G, pool), o2 => { if(o2){ o2.unit.stealLess = (o2.unit.stealLess || 0) + o.n; ctx.unit = o2.unit; say(G, `${o2.unit.card.dn} ruba ${o.n} Gig in meno in questo turno.`); } next(); }); break; }
       case "goSoloDiscount": P.goSoloDiscount = { n: o.n, min: o.min }; say(G, `Il prossimo Go Solo di ${P.name} costa -${o.n} €$ (minimo ${o.min}) in questo turno.`); next(); break;
       case "nextProgramDiscount": P.programDiscountMin = o.n; say(G, `Il prossimo Programma di ${P.name} costa -${o.n} €$ per ogni Gig al minimo (minimo ${o.min}).`); next(); break;
       case "flag": P[o.flag] = o.n || true; say(G, `${P.name}: «${o.text}»`); next(); break;
-      case "doomLast": { const u = last || ctx.last; if(u){ u.doomIfActs = true; say(G, `${u.card.dn}: se ruba o combatte, sarà sconfitta a fine turno.`); } next(); break; }
+      case "doomLast": { const u = last || ctx.last; if(u){ u.doomIfActs = true; fxEv(G, "mark", { s: S_, t: [u.uid], k: "doom" }); say(G, `${u.card.dn}: se ruba o combatte, sarà sconfitta a fine turno.`); } next(); break; }
       case "stealLimit": P.stealLimit = { ...(P.stealLimit || {}), [o.who]: o.mode }; say(G, `${P.name}: «${o.text}»`); next(); break;
-      case "readyEquipped": { let k = 0; for(const x of [...P.field, ...P.legends.filter(l => l.faceUp && !l.removed && !l.onField)]) if((x.gear || []).length && x.spent){ x.spent = false; k++; } say(G, `${P.name} prepara ${k} Unità/Leggende equipaggiate.`); next(); break; }
+      case "readyEquipped": { let k = 0; const rd = []; for(const x of [...P.field, ...P.legends.filter(l => l.faceUp && !l.removed && !l.onField)]) if((x.gear || []).length && x.spent){ x.spent = false; k++; rd.push(x.uid); } if(rd.length) fxEv(G, "ready", { s: S_, t: rd }); say(G, `${P.name} prepara ${k} Unità/Leggende equipaggiate.`); next(); break; }
       case "rerollOnce": { const g = ctx.gig; if(!g){ next(); break; }
         askE(P.id, "yesno", [{ label: `Ritira il d${g.sides} (ora ${g.value})`, v: true }, { label: `Tieni ${g.value}`, v: false }], o2 => { if(o2 && o2.v){ const v = rollDie(g.sides, G.rng); say(G, `${P.name} ritira il d${g.sides}: ${v} (era ${g.value}).`, "gig"); g.value = v; } next(); }, { reroll: g }); break; }
       case "revealRivalChoice": { const top = P.deck.splice(0, Math.min(o.n, P.deck.length)); if(!top.length){ next(); break; }
         say(G, `${P.name} rivela ${top.map(c => c.card.dn).join(", ")}.`);
         askE(R.id, "choice", [{ label: `${P.name} le aggiunge alla mano`, v: "hand" }, { label: `Vanno nel trash e ${P.name} pesca ${o.draw}`, v: "trash" }], o2 => {
-          if(o2 && o2.v === "trash"){ P.trash.push(...top); say(G, `${R.name} le manda nel trash.`); draw(G, P, o.draw); } else { P.hand.push(...top); say(G, `${R.name} le lascia andare in mano a ${P.name}.`); } next(); }, { reveal: top }); break; }
+          if(o2 && o2.v === "trash"){ P.trash.push(...top); fxEv(G, "mill", { p: P.id, s: S_, c: top.map(fxCard) }); say(G, `${R.name} le manda nel trash.`); draw(G, P, o.draw); } else { P.hand.push(...top); say(G, `${R.name} le lascia andare in mano a ${P.name}.`); } next(); }, { reveal: top }); break; }
       case "searchTrash": { const top = P.deck.splice(0, Math.min(o.n, P.deck.length)); if(!top.length){ next(); break; }
         say(G, `${P.name} guarda le prime ${top.length} carte del mazzo.`); let k = 0;
         const one = () => { const pool = top.filter(c => !P.trash.includes(c)); if(k >= o.k || !pool.length){ P.deck.unshift(...pool); next(); return; }
-          askE(P.id, "pickcard", pool.map(c => ({ label: `Trash ${c.card.dn}`, c })), o2 => { if(o2){ P.trash.push(o2.c); say(G, `${P.name} manda ${o2.c.card.dn} nel trash.`); k++; } one(); },
+          askE(P.id, "pickcard", pool.map(c => ({ label: `Trash ${c.card.dn}`, c })), o2 => { if(o2){ P.trash.push(o2.c); fxEv(G, "mill", { p: P.id, s: S_, c: [fxCard(o2.c)] }); say(G, `${P.name} manda ${o2.c.card.dn} nel trash.`); k++; } one(); },
             { verb: "Manda nel trash", info: [`Prime ${top.length} carte del tuo mazzo.`, `Scegline ${o.k - k} da mandare nel trash.`, "Le altre restano in cima al mazzo, nello stesso ordine."] }); }; one(); break; }
       case "chooseTypeReveal": { if(!P.deck.length){ next(); break; }
         askE(P.id, "choice", ["Unit", "Gear", "Program"].map(t => ({ label: t, v: t })), o2 => { const t = o2 ? o2.v : "Unit"; const c = P.deck.shift(); say(G, `${P.name} sceglie «${t}» e rivela ${c.card.dn} (${c.card.type}).`);
-          if(c.card.type === t){ P.hand.push(c); let k = 0; for(const e of P.eddies) if(e.spent && k < o.eddies){ e.spent = false; k++; } say(G, `${c.card.dn} va in mano e ${P.name} prepara ${k} Eddie.`); } else { P.trash.push(c); say(G, `${c.card.dn} va nel trash.`); } next(); }, { typeChoice: true }); break; }
+          if(c.card.type === t){ P.hand.push(c); let k = 0; for(const e of P.eddies) if(e.spent && k < o.eddies){ e.spent = false; k++; } say(G, `${c.card.dn} va in mano e ${P.name} prepara ${k} Eddie.`); } else { P.trash.push(c); fxEv(G, "mill", { p: P.id, s: S_, c: [fxCard(c)] }); say(G, `${c.card.dn} va nel trash.`); } next(); }, { typeChoice: true }); break; }
       case "bottomDeck": {
         const Q = o.who === "rival" ? R : P;
         let pool = Q.field.filter(u => (!o.unequipped || !(u.gear || []).length) && (!o.spentOnly || u.spent) && (!o.readyOnly || !u.spent) && (o.maxPower == null || power(u) <= o.maxPower));
         if(o.lowest && pool.length){ const m = Math.min(...pool.map(power)); pool = pool.filter(u => power(u) === m); }
-        askE(P.id, "target", unitOpts(G, pool), o2 => { if(o2){ bottomDeckUnit(G, Q, o2.unit); if(o.then) runEffects(G, P, src, o.then, trigger, next, ctx); else next(); } else next(); }); break; }
-      case "bottomDeckSelf": { const u = ctx.holder || src; if(P.field.includes(u)) bottomDeckUnit(G, P, u); next(); break; }
+        askE(P.id, "target", unitOpts(G, pool), o2 => { if(o2){ fxEv(G, "bottom", { s: S_, t: [o2.unit.uid] }); bottomDeckUnit(G, Q, o2.unit); if(o.then) runEffects(G, P, src, o.then, trigger, next, ctx); else next(); } else next(); }); break; }
+      case "bottomDeckSelf": { const u = ctx.holder || src; if(P.field.includes(u)){ fxEv(G, "bottom", { s: S_, t: [u.uid] }); bottomDeckUnit(G, P, u); } next(); break; }
       case "bounceSelf": { const u = ctx.holder || src; const i = P.field.indexOf(u); if(i >= 0){ P.field.splice(i, 1); for(const g of u.gear || []) P.trash.push(g); const c = { uid: u.uid, cid: u.cid, pid: u.pid, card: u.card, fx: u.fx }; P.hand.push(c); say(G, `${u.card.dn} torna in mano.`); } next(); break; }
       case "moveGear": { const l = ctx.holder || src; const gears = l.gear || []; const targets = P.field.filter(u => !(u.gear || []).length);
         if(!gears.length || !targets.length){ next(); break; }
@@ -947,7 +955,7 @@ function playFreeCard(G, P, c, how, done, o = {}){
   if(c.card.type === "Gear"){
     const hosts = [...P.field, ...P.legends.filter(l => l.faceUp && !l.removed && !l.onField)].filter(h => !o.cls || h !== o.excludeHost);
     if(!hosts.length){ P.hand.push(c); done(); return; }
-    ask(G, P.id, "target", hosts.map(h => ({ label: h.card.dn, unit: h })), o3 => { if(o3){ o3.unit.gear = o3.unit.gear || []; o3.unit.gear.push(c); say(G, `${P.name} equipaggia ${c.card.dn} a ${o3.unit.card.dn} ${how}.`, "play"); runEffects(G, P, o3.unit, c.fx.play, "Play", done); } else { P.hand.push(c); done(); } });
+    ask(G, P.id, "target", hosts.map(h => ({ label: h.card.dn, unit: h })), o3 => { if(o3){ o3.unit.gear = o3.unit.gear || []; o3.unit.gear.push(c); say(G, `${P.name} equipaggia ${c.card.dn} a ${o3.unit.card.dn} ${how}.`, "play"); runEffects(G, P, o3.unit, c.fx.play, "Play", done, { srcCard: c }); } else { P.hand.push(c); done(); } });
     return;
   }
   putInPlay(G, P, c, how, done, o);

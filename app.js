@@ -14,14 +14,14 @@ import { renderChatTab, openChatWith } from "./social.js";
 import { initI18n } from "./i18n.js";
 import { bootCloud, state as cloudState } from "./cloud.js";
 
-export const APP_VERSION = "1.9.35";
+export const APP_VERSION = "1.9.36";
 // tappetini del Simulator: id → nome (le immagini sono mat-<id>.svg e la miniatura mat-<id>-t.svg (immagini dentro un svg: jpg e webp non arrivano sul sito))
 export const PLAYMATS = [["skyline", "Night City"], ["corpo", "Torre corporativa"], ["badlands", "Badlands"], ["pacifica", "Lungomare"], ["wall", "Il Muro"]];
 /* novità mostrate alla prima apertura dopo un aggiornamento (solo l'ultima versione; chi installa da zero non le vede) */
-const NEWS = { v: "1.9.35", items: [
-  "<b>Simulator</b>: gli sconti sul costo (Nocturne con il fixer vuoto, Octant, Trauma Team Operatives, MaxTac Heavy, Zetatech Berserk e simili) ora valgono anche quando giochi la carta dalla mano. Il costo scontato si vede in verde sulla carta.",
-  "Sistemati altri effetti: Sandayu Oda attacca le Unità rivali appena giocato, Panam Palmer (Unità) rende gratis la Chiamata nel tuo turno, Lucyna Kushinada pesca 2 con due Gig al minimo, e le Unità che possono attaccare solo Unità o solo Gig appena giocate mostrano solo i bersagli giusti.",
-  "Le Leggende con un costo si possono anche <b>giocare come Unità</b> senza Go Solo, come da regolamento: entrano con il Lag, e spese se si pagano da sole. Serve quando il Go Solo costa di più per il Gear del rivale."
+const NEWS = { v: "1.9.36", items: [
+  "<b>Simulator</b>: gli effetti delle carte ora si vedono. Quando una carta si attiva si accende e compare un riquadro con il momento (Play, Attacco, Programma, Fine turno…), il nome e il testo; un raggio la collega alle carte su cui agisce.",
+  "Ogni tipo di effetto ha la sua animazione: le Unità sconfitte vanno in frammenti nel Trash (anche tutte insieme), i Gear distrutti si staccano e la potenza dell'Unità scende, le carte scartate vengono triturate (quelle del rivale si scoprono prima), le carte mandate nel Trash dal mazzo si girano in fila, e poi spesa, potenza + e −, in fondo al mazzo, di nuovo pronta e recupero dal Trash.",
+  "Sulle carte restano i segnali degli effetti che durano: bloccata (non si prepara), non può attaccare, deve attaccare, condannata. La potenza in calo si vede in rosso. Con «Istantanea» o con le animazioni ridotte resta solo il registro."
 ] };
 // chi usava già l'app prima che esistesse seenVer: ha dati salvati (letti prima che l'avvio scriva qualcosa)
 const HAD_DATA = (() => { try{ return ["settings", "decks", "coll", "record", "recent"].some(k => localStorage.getItem("ncd:" + k) != null); }catch(e){ return false; } })();

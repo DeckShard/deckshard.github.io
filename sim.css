@@ -723,3 +723,37 @@ h3 .dAlpha{font-size:9.5px}
   .dCol{margin-top:6px} .dCol.none{display:none}
   .dInsBox{max-height:96dvh;width:min(760px,96vw)} .dInsGrid{grid-template-columns:150px 1fr;grid-template-areas:"img info" "img txt"}
 }
+/* ---- regia degli effetti: innesco, raggio, impatto, esito ---- */
+#flyLayer .rgc{position:absolute;margin:0;transform-origin:center;box-shadow:0 6px 18px rgba(0,0,0,.6);backface-visibility:visible;pointer-events:none}
+#flyLayer .rgsrc{box-shadow:0 0 0 2px var(--c),0 0 26px var(--c),0 10px 30px rgba(0,0,0,.8)}
+#flyLayer .rgglow{box-shadow:0 0 0 2px var(--c),0 0 20px var(--c)}
+#flyLayer .rgframe{position:absolute;border-radius:7px;box-shadow:0 0 0 2px var(--c),0 0 18px var(--c),inset 0 0 12px color-mix(in srgb,var(--c) 40%,transparent);pointer-events:none}
+#flyLayer .rgchip{position:absolute;z-index:3;background:rgba(10,4,6,.93);border:1px solid color-mix(in srgb,var(--c) 55%,transparent);border-left:3px solid var(--c);padding:5px 9px 6px;box-shadow:0 0 18px color-mix(in srgb,var(--c) 35%,transparent),0 6px 20px rgba(0,0,0,.6);clip-path:polygon(0 0,100% 0,100% calc(100% - 9px),calc(100% - 9px) 100%,0 100%);pointer-events:none;color:#f3ebe8}
+#flyLayer .rgchip .k{font:700 9px var(--display);letter-spacing:.24em;color:var(--c);text-transform:uppercase}
+#flyLayer .rgchip .n{font:700 13px var(--font);letter-spacing:.04em;text-transform:uppercase;line-height:1.15}
+#flyLayer .rgchip .x{font:500 12.5px/1.25 var(--font);color:#cdbdbb;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+#flyLayer svg.rgbeam{position:absolute;left:0;top:0;width:100%;height:100%;overflow:visible;pointer-events:none}
+#flyLayer svg.rgbeam path{fill:none;stroke-linecap:round;stroke-dasharray:1;stroke-dashoffset:1}
+#flyLayer svg.rgbeam .gl{stroke-width:7;opacity:.35;filter:blur(3px)} #flyLayer svg.rgbeam .co{stroke-width:2}
+#flyLayer .rgpulse{position:absolute;left:0;top:0;width:10px;height:10px;margin:-5px 0 0 -5px;border-radius:50%;background:#fff;box-shadow:0 0 10px 4px var(--c)}
+#flyLayer .rgret{position:absolute;border:2px solid var(--c);filter:drop-shadow(0 0 6px var(--c));clip-path:polygon(0 0,22% 0,22% 2px,2px 2px,2px 22%,0 22%,0 100%,22% 100%,22% calc(100% - 2px),2px calc(100% - 2px),2px 78%,0 78%,0 0,100% 0,100% 22%,calc(100% - 2px) 22%,calc(100% - 2px) 2px,78% 2px,78% 0,100% 0,100% 100%,78% 100%,78% calc(100% - 2px),calc(100% - 2px) calc(100% - 2px),calc(100% - 2px) 78%,100% 78%)}
+#flyLayer .rgstamp{position:absolute;z-index:2;font:700 10px var(--display);letter-spacing:.16em;text-transform:uppercase;color:var(--c);border:2px solid var(--c);background:rgba(0,0,0,.75);padding:2px 6px;white-space:nowrap;text-shadow:0 0 8px var(--c);box-shadow:0 0 12px color-mix(in srgb,var(--c) 50%,transparent)}
+#flyLayer .rgring{position:absolute;width:40px;height:40px;border-radius:50%;border:2px solid var(--c);box-shadow:0 0 14px var(--c),inset 0 0 10px var(--c)}
+#flyLayer .rgspark{position:absolute;width:2px;height:9px;margin:-4px 0 0 -1px;background:#fff;box-shadow:0 0 6px 1px var(--c);border-radius:1px}
+#flyLayer .rglaser{position:absolute;width:2px;background:#fff;box-shadow:0 0 8px 2px var(--c)}
+#flyLayer .rgsweep{position:absolute;top:0;bottom:0;left:0;width:3px;background:#fff;box-shadow:0 0 14px 4px var(--c),0 0 40px 10px color-mix(in srgb,var(--c) 40%,transparent)}
+#flyLayer .rgnum{position:absolute;left:0;top:0;z-index:2;font:800 18px var(--display);color:var(--c);text-shadow:0 0 10px var(--c),0 0 2px #000;white-space:nowrap}
+#flyLayer .rgpop{position:absolute;z-index:2;font:800 15px var(--display);color:var(--c);background:#0b0b0e;border:1px solid var(--c);border-radius:6px;padding:0 6px;box-shadow:0 0 14px var(--c)}
+#flyLayer .rgcount{position:absolute;z-index:2;transform:translate(-50%,-50%);font:700 9px var(--display);letter-spacing:.16em;text-transform:uppercase;color:var(--c);background:rgba(0,0,0,.82);border:1px solid var(--c);padding:3px 7px;white-space:nowrap;box-shadow:0 0 10px color-mix(in srgb,var(--c) 40%,transparent)}
+#flyLayer .rgstatic{position:absolute;border-radius:5px;background:repeating-linear-gradient(0deg,rgba(0,229,242,.4) 0 1px,transparent 1px 3px),repeating-linear-gradient(90deg,rgba(255,255,255,.14) 0 2px,transparent 2px 5px);mix-blend-mode:screen;animation:rgst .08s steps(2) infinite}
+@keyframes rgst{50%{background-position:0 2px,3px 0}}
+#flyLayer .rgmark{position:absolute;z-index:2;display:flex;align-items:center;gap:6px;color:var(--c);background:rgba(0,0,0,.85);border:1px solid var(--c);border-radius:6px;padding:4px 8px;box-shadow:0 0 14px var(--c);white-space:nowrap}
+#flyLayer .rgmark svg{width:18px;height:18px} #flyLayer .rgmark b{font:700 10px var(--display);letter-spacing:.1em;text-transform:uppercase}
+#flyLayer .rgpw{z-index:2}
+html[data-theme="light"] #flyLayer .rgchip{background:rgba(255,255,255,.96);color:#1a1012} html[data-theme="light"] #flyLayer .rgchip .x{color:#4a3a3c}
+/* segnali che restano sulla carta: bloccata, non può attaccare, deve attaccare, condannata */
+.bc .mk{position:absolute;left:2px;top:24%;display:flex;flex-direction:column;gap:2px;z-index:1;pointer-events:none}
+.bc .mk i{display:grid;place-items:center;width:15px;height:15px;background:rgba(0,0,0,.85);border:1px solid var(--c);border-radius:4px;color:var(--c);box-shadow:0 0 6px color-mix(in srgb,var(--c) 60%,transparent)}
+.bc .mk svg{width:10px;height:10px}
+#board .bc .mk i{width:calc(15px * var(--bz,1));height:calc(15px * var(--bz,1))} #board .bc .mk svg{width:calc(10px * var(--bz,1));height:calc(10px * var(--bz,1))}
+.bc .pw.mod.dn{color:#ff5470}
