@@ -268,14 +268,17 @@ export function sell(G, pi, uid){
 }
 function err(G, m){ G.lastError = m; return false; }
 
+/* costo della Chiamata: 1 €$, gratis nel proprio turno con Panam Palmer (Strength Through Family) in campo */
+export function callCost(G, P){ return G.active === P.id && P.field.some(u => u.fx.freeCallAnytime) ? 0 : 1; }
 export function callLegend(G, pi, idx, done){
   const P = G.players[pi]; if(G.pending || P.called) return err(G, "Hai già chiamato una Leggenda in questo turno");
   const faceDown = P.legends.filter(l => !l.faceUp && !l.removed);
   if(!faceDown.length) return err(G, "Nessuna Leggenda coperta");
-  if(!canPay(P, 1)) return err(G, "Serve 1 €$");
+  const cc = callCost(G, P);
+  if(!canPay(P, cc)) return err(G, "Serve 1 €$");
   // non puoi guardarle prima: la scelta è di fatto casuale
   const l = idx != null && P.legends[idx] && !P.legends[idx].faceUp ? P.legends[idx] : faceDown[Math.floor(G.rng() * faceDown.length)];
-  payAsk(G, P, 1, () => {
+  payAsk(G, P, cc, () => {
     if(l.spent && !l.faceUp){ /* ha pagato spendendo proprio questa Leggenda coperta: vale lo stesso */ }
     l.faceUp = true; P.called = true;
     say(G, `${P.name} chiama ${l.card.dn}!`, "call");
@@ -300,6 +303,29 @@ export function goSolo(G, pi, idx){
     say(G, `${P.name} manda ${l.card.dn} in Go Solo (${power(u)} potenza).`, "play");
     runEffects(G, P, u, u.fx.play, "Play");
   });
+  return true;
+}
+
+/* giocata normale di una Leggenda (regole 4.5 e 5.7.5): paghi il costo stampato (niente sconto di Nocturne né
+   sovrapprezzo sul Go Solo) ed entra come Unità con il Lag, nello stesso orientamento che aveva nell'area Leggende:
+   se si è spesa da sola per pagare, entra spesa. Se lascia il campo esce dal gioco (4.4.1). */
+export function legendPlay(G, pi, idx){
+  const P = G.players[pi]; if(G.active !== pi || G.phase !== "main" || G.pending) return false;
+  const l = P.legends[idx]; if(!l || l.removed || l.onField) return err(G, "Leggenda non disponibile");
+  if(!l.faceUp) return err(G, "Si gioca in campo solo una Leggenda scoperta");
+  if(l.card.cost == null) return err(G, `${l.card.dn} non ha un costo: non può entrare in campo`);
+  const total = l.card.cost;
+  if(!canPay(P, total)) return err(G, `Servono ${total} €$`);
+  // se bastano le altre risorse, la Leggenda non paga sé stessa (entrerebbe spesa): la si tiene fuori dal pagamento
+  const keep = !l.spent && ready(P) - 1 >= total; if(keep) l.onField = true;
+  payAsk(G, P, total, () => {
+    const spent = !!l.spent;
+    l.onField = true; l.spent = false;
+    const u = { ...l, spent, lag: true, mod: 0, isLegend: true, legendRef: l }; delete u.onField;
+    P.field.push(u);
+    say(G, `${P.name} gioca ${l.card.dn} come Unità (${power(u)} potenza, con Lag${spent ? ", spesa" : ""}).`, "play");
+    runEffects(G, P, u, u.fx.play, "Play");
+  }, () => { if(keep) l.onField = false; });
   return true;
 }
 
@@ -337,7 +363,7 @@ function putInPlay(G, P, c, how = "", done, o = {}){
   if(card.type === "Unit"){
     const adrenaline = hasKw(c, "Adrenaline") || (c.fx.adrenalineIf && testCond(G, P, c, c.fx.adrenalineIf));
     const u = { ...c, spent: false, lag: !adrenaline, mod: 0, gear: [], lagRival: true };
-    if(o.noLagUnits){ u.lag = false; u.onlyUnitsThisTurn = true; }
+    if(o.noLagUnits || u.fx.noLagUnits){ u.lag = false; u.onlyUnitsThisTurn = true; }   // «può attaccare Unità rivali nel turno in cui è giocata»
     if(u.fx.noLagGigsIf && testCond(G, P, u, u.fx.noLagGigsIf)){ u.lag = false; u.onlyGigsThisTurn = true; }
     P.field.push(u);
     say(G, `${P.name} gioca ${card.dn} (${power(u)})${how ? " " + how : ""}.`, "play");
@@ -417,6 +443,7 @@ export function attack(G, pi, uid, target){
   if(!canAttack(G, P, u)) return err(G, `${u.card.dn} non può attaccare`);
   let tu = null;
   if(target.kind === "unit"){
+    if(u.onlyGigsThisTurn) return err(G, `${u.card.dn} in questo turno può attaccare solo l'area Gig`);
     tu = R.field.find(x => x.uid === target.uid); if(!tu) return err(G, "Bersaglio non trovato");
     const readyOk = (hasKw(tu, "Blocker") && u.fx.attackReadyBlockersIf && testCond(G, P, u, u.fx.attackReadyBlockersIf)) || u.attackReady;
     if(!tu.spent && !readyOk) return err(G, "Puoi attaccare solo Unità spese");
@@ -449,7 +476,7 @@ function reactionWindow(G, R, au, tu, proceed){
   const unblockable = au.fx.unblockableIf && testCond(G, G.players[1 - R.id], au, au.fx.unblockableIf);
   if(!unblockable) for(const b of R.field) if(!b.spent && !b.lag && (hasKw(b, "Blocker") || b.kwBlockerThisTurn) && b !== tu) opts.push({ label: `Blocca con ${b.card.dn} (${power(b)})`, kind: "block", uid: b.uid, unit: b });
   if(!R.called && canPay(R, 1)) R.legends.forEach((l, i) => { if(!l.faceUp && !l.removed) opts.push({ label: `Chiama la Leggenda ${i + 1} (1 €$)`, kind: "call", idx: i }); });
-  for(const c of R.hand) if(c.fx.quick && c.card.type === "Program" && canPay(R, c.card.cost ?? 0)) opts.push({ label: `Quick: ${c.card.dn} (${c.card.cost ?? 0} €$)`, kind: "quick", uid: c.uid, c });
+  for(const c of R.hand){ const qc = costOf(G, R, c); if(c.fx.quick && c.card.type === "Program" && canPay(R, qc)) opts.push({ label: `Quick: ${c.card.dn} (${qc} €$)`, kind: "quick", uid: c.uid, c }); }
   for(const x of [...R.field, ...R.legends.filter(l => l.faceUp && !l.removed && !l.onField)]) if(spendSrc(x) && spendSrc(x).fx.quick && !x.spent && !x.lag && ready(R) - (R.legends.includes(x) ? 1 : 0) >= spendCost(G, R, x)) opts.push({ label: `Quick: abilità di ${spendSrc(x).card.dn}`, kind: "qspend", uid: x.uid });
   if(opts.length === 1){ proceed(null); return; }
   ask(G, R.id, "block", opts, o => {
@@ -613,6 +640,7 @@ export function testCond(G, P, src, cond, ctx = {}){
     case "credLess": return streetCred(P) < cond.n;
     case "d4Min": return P.gigs.some(g => g.sides === 4 && g.value === 1);
     case "fixerEmpty": return P.fixer.length === 0;
+    case "minGigsCount": return P.gigs.filter(isMin).length >= cond.n;
     case "did": return !!ctx.did;
     case "discardedEqualsGig": return ctx.discarded != null && v.includes(ctx.discarded);
     case "peekedTag": return !!ctx.peeked && ((ctx.peeked.card.cls || []).some(k => k.toUpperCase() === cond.cls) || (ctx.peeked.card.kw || []).includes(cond.kw));
@@ -948,13 +976,15 @@ export function legalActions(G, pi){
     if(c.card.type === "Gear"){ for(const t of [...P.field, ...P.legends.filter(l => l.faceUp && !l.removed && !l.onField)]) acts.push({ t: "play", uid: c.uid, card: c, target: t.uid, targetObj: t }); }
     else acts.push({ t: "play", uid: c.uid, card: c });
   }
-  if(!P.called && canPay(P, 1) && P.legends.some(l => !l.faceUp && !l.removed)) acts.push({ t: "call" });
+  if(!P.called && canPay(P, callCost(G, P)) && P.legends.some(l => !l.faceUp && !l.removed)) acts.push({ t: "call" });
   P.legends.forEach((l, i) => { if(!l.removed && !l.onField && l.faceUp && (l.card.kw || []).includes("Go Solo") && l.card.cost != null && canPay(P, goSoloCost(G, P, l))) acts.push({ t: "gosolo", idx: i, legend: l }); });
+  P.legends.forEach((l, i) => { if(!l.removed && !l.onField && l.faceUp && l.card.cost != null && canPay(P, l.card.cost)) acts.push({ t: "legendplay", idx: i, legend: l }); });
   for(const x of [...P.field, ...P.legends.filter(l => l.faceUp && !l.removed && !l.onField)]) if(hasSpend(x) && !x.spent && !x.lag && ready(P) - (P.legends.includes(x) ? 1 : 0) >= spendCost(G, P, x)) acts.push({ t: "spend", uid: x.uid, obj: x, src: spendSrc(x) });
   for(const u of P.field){
     if(!canAttack(G, P, u)) continue;
-    for(const t of R.field) if(t.spent) acts.push({ t: "attack", uid: u.uid, unit: u, target: { kind: "unit", uid: t.uid }, targetObj: t });
-    if(R.gigs.length && !u.fx.onlyUnits && (power(u) >= 1 || u.fx.attack.length)) acts.push({ t: "attack", uid: u.uid, unit: u, target: { kind: "gigs" } });
+    // bersagli: Unità spese (o pronte, con gli effetti che lo consentono) e area Gig, nel rispetto dei limiti «solo Unità» / «solo Gig» di questo turno
+    if(!u.onlyGigsThisTurn) for(const t of R.field){ const readyOk = (hasKw(t, "Blocker") && u.fx.attackReadyBlockersIf && testCond(G, P, u, u.fx.attackReadyBlockersIf)) || u.attackReady; if(t.spent || readyOk) acts.push({ t: "attack", uid: u.uid, unit: u, target: { kind: "unit", uid: t.uid }, targetObj: t }); }
+    if(R.gigs.length && !u.fx.onlyUnits && !u.onlyUnitsThisTurn && (power(u) >= 1 || u.fx.attack.length)) acts.push({ t: "attack", uid: u.uid, unit: u, target: { kind: "gigs" } });
   }
   acts.push({ t: "end" });
   return acts;
@@ -965,6 +995,7 @@ export function doAction(G, pi, a){
     case "play": return play(G, pi, a.uid, a.target);
     case "call": return callLegend(G, pi, a.idx);
     case "gosolo": return goSolo(G, pi, a.idx);
+    case "legendplay": return legendPlay(G, pi, a.idx);
     case "spend": return spendAbility(G, pi, a.uid);
     case "attack": return attack(G, pi, a.uid, a.target);
     case "end": return endTurn(G);

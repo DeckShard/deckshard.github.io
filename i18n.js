@@ -1647,5 +1647,18 @@ const EN = {
   "stampe non aperte": "unopened printings",
   "✘ {1}": "✘ {1}",
   "✔ Legale": "✔ Legal",
-  "Rilascia per ingrandire · trascina per prendere": "Release to zoom · drag to take"
+  "Rilascia per ingrandire · trascina per prendere": "Release to zoom · drag to take",
+  "<b>Simulator</b>: gli sconti sul costo (Nocturne con il fixer vuoto, Octant, Trauma Team Operatives, MaxTac Heavy, Zetatech Berserk e simili) ora valgono anche quando giochi la carta dalla mano. Il costo scontato si vede in verde sulla carta.": "<b>Simulator</b>: cost discounts (Nocturne with an empty fixer, Octant, Trauma Team Operatives, MaxTac Heavy, Zetatech Berserk and the like) now also apply when you play the card from your hand. The discounted cost shows in green on the card.",
+  "Sistemati altri effetti: Sandayu Oda attacca le Unità rivali appena giocato, Panam Palmer (Unità) rende gratis la Chiamata nel tuo turno, Lucyna Kushinada pesca 2 con due Gig al minimo, e le Unità che possono attaccare solo Unità o solo Gig appena giocate mostrano solo i bersagli giusti.": "More effects fixed: Sandayu Oda attacks rival Units the turn it's played, Panam Palmer (Unit) makes your Call free during your turn, Lucyna Kushinada draws 2 with two min Gigs, and Units that can only attack Units or only Gigs the turn they're played now show just the right targets.",
+  "Chiama questa Leggenda (gratis)": "Call this Legend (free)",
+  "Scontata: {1} → {2} €$": "Discounted: {1} → {2} €$",
+  "{1} in questo turno può attaccare solo l'area Gig": "{1} can only attack the Gig area this turn",
+  "Le Leggende con un costo si possono anche <b>giocare come Unità</b> senza Go Solo, come da regolamento: entrano con il Lag, e spese se si pagano da sole. Serve quando il Go Solo costa di più per il Gear del rivale.": "Legends with a cost can also be <b>played as Units</b> without Go Solo, as the rules allow: they enter with Lag, and spent if they pay for themselves. Handy when a rival's Gear makes Go Solo cost more.",
+  "Gioca come Unità ({1} €$): entra con il Lag": "Play as a Unit ({1} €$): enters with Lag",
+  "Gioca come Unità ({1} €$): entra con il Lag, spesa": "Play as a Unit ({1} €$): enters with Lag, spent",
+  "Gioca come Unità ({1} €$): entra con il Lag, spesa perché paga sé stessa": "Play as a Unit ({1} €$): enters with Lag, spent because it pays for itself",
+  "{1} gioca {2} come Unità ({3} potenza, con Lag).": "{1} plays {2} as a Unit ({3} power, with Lag).",
+  "{1} gioca {2} come Unità ({3} potenza, con Lag, spesa).": "{1} plays {2} as a Unit ({3} power, with Lag, spent).",
+  "Si gioca in campo solo una Leggenda scoperta": "Only a face-up Legend can be played to the field",
+  "{1} non ha un costo: non può entrare in campo": "{1} has no cost: it can't enter the field"
 };

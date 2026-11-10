@@ -14,15 +14,14 @@ import { renderChatTab, openChatWith } from "./social.js";
 import { initI18n } from "./i18n.js";
 import { bootCloud, state as cloudState } from "./cloud.js";
 
-export const APP_VERSION = "1.9.34";
+export const APP_VERSION = "1.9.35";
 // tappetini del Simulator: id → nome (le immagini sono mat-<id>.svg e la miniatura mat-<id>-t.svg (immagini dentro un svg: jpg e webp non arrivano sul sito))
 export const PLAYMATS = [["skyline", "Night City"], ["corpo", "Torre corporativa"], ["badlands", "Badlands"], ["pacifica", "Lungomare"], ["wall", "Il Muro"]];
 /* novità mostrate alla prima apertura dopo un aggiornamento (solo l'ultima versione; chi installa da zero non le vede) */
-const NEWS = { v: "1.9.33", items: [
-  "<b>Draft contro l'IA</b> (alpha), nel Simulator → Prerelease e draft: tavolo da 8 con 7 bot, giro delle Leggende, 4 buste da 12 carte, poi costruisci il mazzo e sfidi 3 bot del tavolo. Le carte del draft non entrano nella collezione.",
-  "Nel draft: tasto destro o pressione lunga per <b>ingrandire</b> le carte, <b>sideboard</b> (ci trascini le carte anche dalla busta), conteggio delle <b>vendibili</b>, tendina del pool da trascinare (anche a metà) e, a fine draft, un mazzo già proposto con tutto il pool tranne la sideboard.",
-  "<b>Deckbuilder</b>: il mazzo diventa la sezione <b>Deck</b>, richiudibile, con il riepilogo e tutti i motivi se non è in regola. Sul telefono, mentre scorri l'elenco, il Deck resta agganciato in alto.",
-  "Un solo elenco <b>Aggiungi carte</b>: una carta resta lì finché non ne metti 3 (nei mazzi Prerelease e draft finché ne avanzano nel pool), con − e + sulla riga e <b>×3</b> per mettere subito il massimo."
+const NEWS = { v: "1.9.35", items: [
+  "<b>Simulator</b>: gli sconti sul costo (Nocturne con il fixer vuoto, Octant, Trauma Team Operatives, MaxTac Heavy, Zetatech Berserk e simili) ora valgono anche quando giochi la carta dalla mano. Il costo scontato si vede in verde sulla carta.",
+  "Sistemati altri effetti: Sandayu Oda attacca le Unità rivali appena giocato, Panam Palmer (Unità) rende gratis la Chiamata nel tuo turno, Lucyna Kushinada pesca 2 con due Gig al minimo, e le Unità che possono attaccare solo Unità o solo Gig appena giocate mostrano solo i bersagli giusti.",
+  "Le Leggende con un costo si possono anche <b>giocare come Unità</b> senza Go Solo, come da regolamento: entrano con il Lag, e spese se si pagano da sole. Serve quando il Go Solo costa di più per il Gear del rivale."
 ] };
 // chi usava già l'app prima che esistesse seenVer: ha dati salvati (letti prima che l'avvio scriva qualcosa)
 const HAD_DATA = (() => { try{ return ["settings", "decks", "coll", "record", "recent"].some(k => localStorage.getItem("ncd:" + k) != null); }catch(e){ return false; } })();

@@ -4,7 +4,7 @@
 import { DATA, imgUrl, thumbUrl } from "./data.js";
 import { S, saveDeck } from "./store.js";
 import { $, $$, esc, toast, openLens, openCard } from "./ui.js";
-import { createGame, mulligan, resolve, legalActions, doAction, applyMoveAs, moveOf, power, powerIn, ready, readyEddies, streetCred, canAttack, canPay, manual, rival, hasKw, hasSpend } from "./engine.js";
+import { createGame, mulligan, resolve, legalActions, doAction, applyMoveAs, moveOf, power, powerIn, ready, readyEddies, streetCred, canAttack, canPay, manual, rival, hasKw, hasSpend, costOf, goSoloCost, callCost } from "./engine.js";
 import { botDecide, botStep } from "./bot.js";
 import { starterDeck, isLegal, validate, deckSize, openDeck } from "./deck.js";
 import { prereleaseSetupHTML, wirePrerelease, verifySealed, sealedOpponents } from "./prerelease.js";
@@ -1072,8 +1072,8 @@ function render(){
   const acts = myTurn && human[M.id] ? legalActions(G, M.id) : [];
   const canSell = acts.some(a => a.t === "sell"), canCall = acts.some(a => a.t === "call");
   const handHTML = M.hand.map(c => {
-    const cost = c.card.cost ?? 0, afford = canPay(M, cost);
-    return `<div class="bc big${sel === c.uid ? " sel" : ""}" data-uid="${c.uid}" data-hand="1" title="${esc(c.card.dn)}"><img src="${thumbUrl(c.pid)}" alt=""><span class="co${afford ? "" : " no"}">${cost}</span>${c.card.eddiable ? `<span class="ed" title="Vendibile per 1 €$">€$</span>` : ""}</div>`;
+    const cost = costOf(G, M, c), afford = canPay(M, cost), disc = cost < (c.card.cost ?? 0);   // costo effettivo: sconti e costi condizionati
+    return `<div class="bc big${sel === c.uid ? " sel" : ""}" data-uid="${c.uid}" data-hand="1" title="${esc(c.card.dn)}"><img src="${thumbUrl(c.pid)}" alt=""><span class="co${afford ? "" : " no"}${disc ? " disc" : ""}"${disc ? ` title="Scontata: ${c.card.cost ?? 0} → ${cost} €$"` : ""}>${cost}</span>${c.card.eddiable ? `<span class="ed" title="Vendibile per 1 €$">€$</span>` : ""}</div>`;
   }).join("");
   const pendingTxt = pm ? "" : G.pending ? (human[G.pending.player] ? `${G.players[G.pending.player].name} deve scegliere…` : gmode === "online" ? `${G.players[G.pending.player].name} sta decidendo…` : "l'IA decide…") : "";
   const payTxt = pm ? `<b style="color:var(--acc2)">Paga ${pm.ctx.cost} €$ (${pm.ctx.paid}/${pm.ctx.cost}): tocca un Eddie o una Leggenda</b>` : "";
@@ -1184,7 +1184,7 @@ function onBoardAsk(){
       if(o.kind === "none"){ extra.push({ i, label: o.label, cls: "yel" }); return; }
       if(o.kind === "block") marks.push({ i, uid: o.uid, label: "Blocca" });
       else if(o.kind === "call"){ const l = P.legends[o.idx]; if(l) marks.push({ i, uid: l.uid, label: "Chiama", cost: "1 €$", cls: "yel" }); else extra.push({ i, label: o.label }); }
-      else if(o.kind === "quick") marks.push({ i, uid: o.uid, label: "Quick", cost: `${(o.c && o.c.card.cost) || 0} €$` });
+      else if(o.kind === "quick") marks.push({ i, uid: o.uid, label: "Quick", cost: `${o.c ? costOf(G, P, o.c) : 0} €$` });
       else if(o.kind === "qspend") marks.push({ i, uid: o.uid, label: "Quick", cost: "abilità" });
       else extra.push({ i, label: o.label });
     });
@@ -1288,7 +1288,7 @@ function after(okv){ if(okv === false && G.lastError){ note(G.lastError); G.last
 function handCard(el, P){
   const c = P.hand.find(x => x.uid === +el.dataset.uid); if(!c) return;
   const myTurn = G.active === P.id && G.phase === "main" && !G.pending && G.winner == null && human[P.id];
-  const cost = c.card.cost ?? 0, items = [];
+  const cost = costOf(G, P, c), items = [];
   if(myTurn){
     const okPlay = tutorialAllows("play", c), okSell = tutorialAllows("sell", c);
     if(c.card.type === "Gear") items.push({ label: `Equipaggia (${cost} €$) → scegli l'Unità`, cls: "acc", disabled: !canPay(P, cost) || !okPlay, fn: () => { targeting = { kind: "gear", uid: c.uid }; sel = c.uid; render(); note("Tocca l'Unità o la Leggenda scoperta da equipaggiare"); } });
@@ -1335,8 +1335,9 @@ function legendCard(el, owner){
   if(targeting && targeting.kind === "gear" && mine && l.faceUp && !l.onField && !l.removed && myTurn){ after(act(M.id, { t: "play", uid: targeting.uid, target: l.uid })); return; }
   const items = [], idx = P.legends.indexOf(l);
   if(mine && myTurn && !l.removed && !l.onField){
-    if(!l.faceUp) items.push({ label: "Chiama questa Leggenda (1 €$)", cls: "acc", disabled: P.called || !canPay(P, 1) || !tutorialAllows("call"), fn: () => after(act(M.id, { t: "call", idx })) });
-    if(l.faceUp && (l.card.kw || []).includes("Go Solo") && l.card.cost != null) items.push({ label: `Go Solo (${l.card.cost} €$): entra come Unità pronta${l.spent ? "" : ", può pagare 1 €$ da sé"}`, disabled: !canPay(P, l.card.cost) || !tutorialAllows("gosolo"), fn: () => after(act(M.id, { t: "gosolo", idx })) });
+    if(!l.faceUp) items.push({ label: callCost(G, P) ? "Chiama questa Leggenda (1 €$)" : "Chiama questa Leggenda (gratis)", cls: "acc", disabled: P.called || !canPay(P, callCost(G, P)) || !tutorialAllows("call"), fn: () => after(act(M.id, { t: "call", idx })) });
+    if(l.faceUp && (l.card.kw || []).includes("Go Solo") && l.card.cost != null) items.push({ label: `Go Solo (${goSoloCost(G, P, l)} €$): entra come Unità pronta${l.spent ? "" : ", può pagare 1 €$ da sé"}`, disabled: !canPay(P, goSoloCost(G, P, l)) || !tutorialAllows("gosolo"), fn: () => after(act(M.id, { t: "gosolo", idx })) });
+    if(l.faceUp && l.card.cost != null) items.push({ label: `Gioca come Unità (${l.card.cost} €$): entra con il Lag${l.spent ? ", spesa" : ready(P) - 1 >= l.card.cost ? "" : ", spesa perché paga sé stessa"}`, disabled: !canPay(P, l.card.cost) || !tutorialAllows("gosolo"), fn: () => after(act(M.id, { t: "legendplay", idx })) });
     if(l.faceUp && l.fx.spend.length) items.push({ label: "Abilità {Spend}", disabled: l.spent || !tutorialAllows("spend"), fn: () => after(act(M.id, { t: "spend", uid: l.uid })) });
     if(MANUAL) items.push({ label: l.spent ? "Prepara (manuale)" : "Spendi come 1 €$ (manuale)", fn: () => { manual.toggleSpent(G, owner, l.uid); after(); } });
     if(MANUAL && !l.faceUp) items.push({ label: "Scopri senza chiamare (manuale)", fn: () => { manual.flip(G, owner, idx); after(); } });

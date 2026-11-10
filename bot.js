@@ -2,7 +2,7 @@
    gioca le Unità più forti che può permettersi, attacca dove conviene,
    blocca solo quando vince lo scontro o quando sta per perdere i Gig.   */
 
-import { legalActions, doAction, power, powerIn, ready, rival, streetCred, canAttack, hasKw, costOf } from "./engine.js";
+import { legalActions, doAction, power, powerIn, ready, rival, streetCred, canAttack, hasKw, costOf, goSoloCost } from "./engine.js";
 
 const val = c => (c.card.power ?? 0) + (c.card.type === "Program" ? 2 : 0) + (c.card.type === "Gear" ? (c.card.power ?? 0) + 1 : 0);
 
@@ -133,6 +133,8 @@ export function botStep(G, pi){
   }
   // 5) Go Solo quando il campo è vuoto e c'è denaro
   const solo = by("gosolo"); if(solo.length && P.field.length <= 1 && ready(P) >= (solo[0].legend.card.cost ?? 0) + 1){ go(solo[0]); return true; }
+  // 5b) giocata normale (con Lag) solo se il Go Solo è rincarato dal Gear del rivale e costerebbe di più
+  const lp = by("legendplay").find(a => goSoloCost(G, P, a.legend) > (a.legend.card.cost ?? 0)); if(lp && P.field.length <= 1 && ready(P) >= (lp.legend.card.cost ?? 0) + 2){ go(lp); return true; }
   // 6) abilità {Spend} interpretabili
   const sp = by("spend").filter(a => a.src.fx.spend.some(o => o.op !== "manual") && !(P.field.includes(a.obj) && canAttack(G, P, a.obj)));
   if(sp.length){ go(sp[0]); return true; }

@@ -51,6 +51,7 @@
 .bc .pw.mod{color:#ffd21f}
 .bc .co{position:absolute;left:2px;top:2px;background:rgba(0,0,0,.78);color:#fff;font-weight:800;font-size:11px;padding:1px 4px;border-radius:5px}
 .bc .co.no{color:#ff5a67}
+.bc .co.disc{background:#0f7a3a;color:#fff;box-shadow:0 0 6px rgba(61,220,132,.7)}
 .bc .ed{position:absolute;right:2px;top:2px;background:#fcee0a;color:#0b0b0e;font-weight:800;font-size:9px;padding:1px 4px;border-radius:4px;line-height:1.3}
 .bc .g{position:absolute;left:0;right:0;bottom:0;display:flex;gap:1px;padding:1px}
 .bc .g img{width:14px;height:20px;border-radius:2px;object-fit:cover;border:1px solid #fff}

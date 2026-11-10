@@ -16,6 +16,7 @@ const CONDS = [
   [/^you control a value-pair( of gigs)?$/i, () => ({ c: "valuePair" })],
   [/^you control (\d+) or more gigs with different values$/i, m => ({ c: "distinctGigs", n: +m[1] })],
   [/^you control (?:a|at least one) (?:friendly )?min gig$/i, () => ({ c: "minGig" })],
+  [/^you control (\d+) or more (?:friendly )?min gigs$/i, m => ({ c: "minGigsCount", n: +m[1] })],
   [/^you control 2 or more gigs with 8\+ value$/i, () => ({ c: "gigsAtLeastCount", v: 8, n: 2 })],
   [/^you have (more|less) ☆ than a rival$/i, m => ({ c: "credCmp", d: m[1].toLowerCase() })],
   [/^your ☆ is an even number$/i, () => ({ c: "credEven" })],
@@ -274,6 +275,7 @@ function parseStatics(text, out){
   const clean = text.replace(/\([^)]*\)/g, " ").replace(/\[[^\]]*\]/g, " ").replace(/\s+/g, " ").trim();
   if(/this unit can't attack\b(?! unless)/i.test(clean)) out.cantAttack = true;
   if(/can only attack rival units/i.test(clean)) out.onlyUnits = true;
+  if(/^this unit can attack rival units the turn it's played\.?$/im.test(text.replace(/\([^)]*\)/g, ""))) out.noLagUnits = true;   // Sandayu Oda: statico, non legato a {Play}
   if(/\{Quick\}/.test(text)) out.quick = true;
   if(/this unit can't attack unless you played a program this turn/i.test(clean)) out.needsProgram = true;
   let m;
