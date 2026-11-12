@@ -335,8 +335,25 @@ input.inp.wide{width:100%}
 /* lente */
 #lens{position:fixed;inset:0;z-index:80;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.9);touch-action:none}
 #lens.on{display:flex}
-#lens img{max-width:96vw;max-height:94dvh;border-radius:14px;box-shadow:0 10px 50px rgba(0,0,0,.7);transform-origin:center;will-change:transform;user-select:none;-webkit-user-drag:none}
+#lens img{display:block;max-width:96vw;max-height:94dvh;border-radius:14px;box-shadow:0 10px 50px rgba(0,0,0,.7);transform-origin:center;will-change:transform;user-select:none;-webkit-user-drag:none}
+#lens .lcard{position:relative;transform-origin:center;will-change:transform}
+/* testo italiano sopra il riquadro stampato: stessi colori, carattere stretto, parole chiave nei loro riquadri */
+#lens .ltx{position:absolute;left:5.4%;right:9.6%;pointer-events:none;overflow:hidden;color:#f4f1ee;font-family:var(--font);clip-path:polygon(0 0,100% 0,100% 100%,0 100%)}
+#lens .ltx.fa{background:linear-gradient(rgba(8,7,12,.7),rgba(8,7,12,.9) 22%,rgba(8,7,12,.92));-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);border-radius:3px}
+#lens .ltx .in{padding:0 12.5% 0 1.2%;font-weight:600;line-height:1.24;letter-spacing:.005em;text-shadow:0 0 1px rgba(0,0,0,.6)}
+#lens .ltx p,#lens .ltxcap p{margin:0 0 .45em}
+#lens .ltx p:last-child,#lens .ltxcap p:last-child{margin:0}
+#lens .ltx i,#lens .ltxcap i{font-style:italic;font-weight:500;opacity:.92}
+#lens .ck{display:inline-block;background:#f7ee0c;color:#0b0b0e;font-weight:800;font-style:normal;padding:0 .3em;margin-right:.1em;line-height:1.15;letter-spacing:.02em;border-radius:1px}
+#lens .ck.mg{background:#e32286;color:#0b0b0e}
+#lens .ck.sp{background:none;color:inherit;border:1px solid currentColor;padding:0 .18em;font-weight:700}
+#lens .sc{font-weight:800}
+#lens .ltxcap{position:absolute;left:50%;bottom:44px;transform:translateX(-50%);width:min(92vw,520px);background:rgba(16,8,10,.94);border:1px solid rgba(255,255,255,.18);border-left:3px solid var(--acc2Fill);padding:10px 12px;color:#f4f1ee;font:600 15px/1.35 var(--font);pointer-events:none}
+#lens .ltog{position:absolute;top:12px;right:12px;background:rgba(0,0,0,.6);color:#ddd;border:1px solid rgba(255,255,255,.3);border-radius:4px;font:700 11px var(--font);letter-spacing:.1em;text-transform:uppercase;padding:5px 9px;cursor:pointer}
+#lens .ltog[aria-pressed="true"]{color:var(--acc2Fill);border-color:var(--acc2Fill)}
 #lens .hint{position:absolute;bottom:18px;left:0;right:0;text-align:center;color:#ddd;font-size:12px;letter-spacing:.08em;text-transform:uppercase}
+/* telefono in orizzontale: la carta prende tutta l'altezza, l'aiuto va di fianco invece che sopra il bordo della carta */
+@media (orientation:landscape) and (max-height:560px){#lens .hint{top:50%;bottom:auto;right:auto;left:14px;transform:translateY(-50%);width:max(120px,calc((100vw - 70dvh) / 2 - 28px));text-align:left;line-height:1.5;font-size:11px}}
 
 /* ---------- deckbuilder ---------- */
 .deckhead{display:flex;flex-wrap:wrap;gap:10px;align-items:center}

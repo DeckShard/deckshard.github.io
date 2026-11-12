@@ -128,7 +128,7 @@ export const LESSONS = [
       bot: [[{ t: "play", c: "Swordwise Huscle" }]],
       steps: [
         { t: "Situazione: hai 6 Gig, l'IA 5. Si vince iniziando il proprio turno con 7 Gig: ti manca un furto.", info: true, hl: HL.dice },
-        { t: "Attacca l'area Gig con Psycho Squad (potenza 6 = un Gig) e scegli quale rubare.", only: "attack", done: G => me0(G).gigs.length >= 7 },
+        { t: "Attacca l'area Gig con Psycho Squad (potenza 6 = un Gig) e scegli quale rubare.", only: "attack", to: "gigs", done: G => me0(G).gigs.length >= 7 },
         { t: "Hai 7 Gig, ma non hai ancora vinto: devi arrivarci all'inizio del tuo prossimo turno. Nel suo turno l'IA proverà a riprenderne uno.", info: true, hl: HL.dice },
         { bar: "bottom", t: "Premi «Fine turno». L'IA non ha Unità pronte per attaccare: guarda cosa fa.", only: "end", done: G => G.winner != null },
         { t: "Vittoria! Hai iniziato il turno con 7 Gig. Ora l'overtime: «Avanti».", info: true, next: true },
@@ -139,7 +139,7 @@ export const LESSONS = [
                rival: { field: [{ n: "Swordwise Huscle", spent: true }], eddies: [4, 0], gigs: [[4, 1], [6, 3], [8, 2], [10, 7], [12, 4], [20, 15]], fixer: [], turns: 8 } },
       steps: [
         { t: "Overtime: dopo il 7º turno di entrambi la partita va a morte improvvisa. Chi arriva a 7 Gig vince subito, senza aspettare il proprio turno.", info: true, hl: HL.strip },
-        { t: "Siete 6 a 6 e i fixer sono vuoti: i Gig si fanno solo rubando. Attacca l'area Gig con Psycho Squad.", hl: HL.rdice, only: "attack", done: G => G.winner != null },
+        { t: "Siete 6 a 6 e i fixer sono vuoti: i Gig si fanno solo rubando. Attacca l'area Gig con Psycho Squad.", hl: HL.rdice, only: "attack", to: "gigs", done: G => G.winner != null },
         { t: "Vittoria immediata. Ricorda anche il deck-out: chi deve pescare da un mazzo vuoto perde. Lezione finita!", info: true, last: true },
       ] }] },
 
@@ -151,8 +151,8 @@ export const LESSONS = [
                rival: { field: [{ n: "Ruthless Lowlife", spent: true }], eddies: [3, 0], gigs: [[4, 2], [6, 6], [8, 5]], fixer: [10, 12, 20], turns: 4 } },
       steps: [
         { t: "Più potenza, più Gig: un attacco all'area Gig ne ruba 1 con potenza 1–9, 2 con 10–19, 3 con 20 o più. Animals Wrecker ha 10.", info: true, hl: HL.field },
-        { t: "Attacca l'area Gig con Animals Wrecker e ruba due Gig.", only: "attack", onlyUnit: "Animals Wrecker", done: G => me0(G).gigs.length >= 4 },
-        { t: "Ora uno scontro: il Ruthless Lowlife del rivale è speso, quindi attaccabile. Attaccalo con Psycho Squad (6 contro 4): vince la potenza più alta e chi perde viene sconfitto.", hl: HL.rfield, only: "attack", onlyUnit: "Psycho Squad", done: G => !fieldHas(ai(G), "Ruthless Lowlife") },
+        { t: "Attacca l'area Gig con Animals Wrecker e ruba due Gig.", only: "attack", to: "gigs", onlyUnit: "Animals Wrecker", done: G => me0(G).gigs.length >= 4 },
+        { t: "Ora uno scontro: il Ruthless Lowlife del rivale è speso, quindi attaccabile. Attaccalo con Psycho Squad (6 contro 4): vince la potenza più alta e chi perde viene sconfitto.", hl: HL.rfield, only: "attack", to: "unit", onlyUnit: "Psycho Squad", done: G => !fieldHas(ai(G), "Ruthless Lowlife") },
         { t: "Evelyn Parker ha potenza 0: può attaccare, ma un'Unità a 0 non ruba Gig e in uno scontro perde contro chiunque abbia almeno 1. Le Unità a 0 servono per i loro effetti.", info: true, next: true },
       ] }, {
       decks: DATA => [namedDeck(DATA, "Tu", ["V: Corporate Exile", "Viktor Vektor", "Jackie Welles: Pour One Out"], [["Corpo Security", 1], ["Reboot Optics", 1], ["Dexter DeShawn", 1]]),
@@ -173,7 +173,7 @@ export const LESSONS = [
       steps: [
         { t: "Go Solo: alcune Leggende possono entrare in campo come Unità. Prima va scoperta: chiama la tua Leggenda coperta (1 €$). È Goro Takemura.", only: "call", done: G => me0(G).legends.some(l => l.faceUp && l.card.dn.startsWith("Goro")) },
         { t: "Ora trascina Goro sul campo (o toccalo → «Go Solo»): paghi il suo costo e entra pronto, senza Lag. Se lascia il campo viene rimosso dal gioco.", only: "gosolo", done: G => me0(G).field.some(u => u.isLegend) },
-        { t: "Goro può attaccare subito: attacca l'area Gig.", only: "attack", done: G => me0(G).gigs.length >= 4 },
+        { t: "Goro può attaccare subito: attacca l'area Gig.", only: "attack", to: "gigs", done: G => me0(G).gigs.length >= 4 },
         { t: "Ecco il Go Solo: una Leggenda forte in campo dal turno stesso. Avanti per l'ultimo caso.", info: true, next: true },
       ] }, {
       decks: DATA => [namedDeck(DATA, "Tu", ["Wakako Okada", "Viktor Vektor", "Jackie Welles: Pour One Out"], [["Dexter DeShawn", 1]]),
@@ -232,8 +232,8 @@ export function ensureHand(G, me){
   }
 }
 /* azioni permesse nel passo corrente: nei passi «fai X» si può fare solo X (e pagare); nelle lezioni
-   «da guardare» niente; altrimenti tutto. obj: la carta (o l'Unità che attacca) */
-export function tutorialAllows(kind, obj){
+   «da guardare» niente; altrimenti tutto. obj: la carta (o l'Unità che attacca); to: il bersaglio dell'attacco */
+export function tutorialAllows(kind, obj, to){
   if(!active) return true;
   const s = curStep(), P = lessonPart();
   if(kind === "pay") return true;
@@ -242,7 +242,7 @@ export function tutorialAllows(kind, obj){
   const only = s.only; if(!only) return !s.react;   // durante una reazione guidata non si fa altro
   if(only === "playUnit") return kind === "play" && obj && obj.card.type === "Unit" && (obj.card.power ?? 0) >= 1;
   if(only === "playBlocker") return kind === "sell" || (kind === "play" && obj && obj.card.type === "Unit" && hasKw(obj, "Blocker"));
-  if(only === "attack" && kind === "attack" && s.onlyUnit) return !obj || obj.card.dn.startsWith(s.onlyUnit);
+  if(only === "attack" && kind === "attack") return (!s.onlyUnit || !obj || obj.card.dn.startsWith(s.onlyUnit)) && (!s.to || !to || to === s.to);   // to: "gigs" o "unit", se il passo chiede un bersaglio preciso
   return kind === only;
 }
 /* nelle reazioni guidate si accetta solo l'opzione del passo (call, quick, block, none) */

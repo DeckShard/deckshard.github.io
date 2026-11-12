@@ -13,16 +13,18 @@ import { renderHome, wireHome } from "./home.js";
 import { renderChatTab, openChatWith } from "./social.js";
 import { initI18n, currentLang } from "./i18n.js";
 import { setCardTextPref } from "./cardtext.js";
-setCardTextPref(() => currentLang() === "it" && S.settings.cardText !== "en");   // testo delle carte in italiano (Impostazioni → Lingua)
+setCardTextPref(() => currentLang() === "it" && S.settings.cardText === "it");   // testo delle carte in italiano: solo se scelto (Impostazioni → Lingua); di base l'originale
 import { bootCloud, state as cloudState } from "./cloud.js";
 
-export const APP_VERSION = "1.9.37";
+export const APP_VERSION = "1.9.38";
 // tappetini del Simulator: id → nome (le immagini sono mat-<id>.svg e la miniatura mat-<id>-t.svg (immagini dentro un svg: jpg e webp non arrivano sul sito))
 export const PLAYMATS = [["skyline", "Night City"], ["corpo", "Torre corporativa"], ["badlands", "Badlands"], ["pacifica", "Lungomare"], ["wall", "Il Muro"]];
 /* novità mostrate alla prima apertura dopo un aggiornamento (solo l'ultima versione; chi installa da zero non le vede) */
-const NEWS = { v: "1.9.37", items: [
-  "<b>Testo delle carte in italiano</b>: nella scheda della carta, nel Draft e nel Simulator (finestre di scelta e riquadro degli effetti) il testo delle regole ora è tradotto. È una traduzione non ufficiale: l'originale inglese è sempre a un tocco con «Mostra l'originale», e in Impostazioni → Lingua puoi tornare al testo originale ovunque. La ricerca della Collection trova le carte anche con le parole italiane.",
-  "<b>Scanner</b>: riconosce meglio le Leggende (Goro Takemura e le altre carte dello stesso personaggio non si scambiano più, e la scritta «LEGEND» non fa più pensare ad Adam Smasher: Ender of Legends); quando il testo letto è quasi pari decide l'illustrazione. La riga sotto la fotocamera va a capo senza finire sotto i pulsanti."
+const NEWS = { v: "1.9.38", items: [
+  "<b>Testo delle carte</b>: di base resta l'originale inglese. Chi sceglie l'italiano in Impostazioni → Lingua lo trova anche sulle carte ingrandite: il testo tradotto prende il posto di quello stampato, con gli stessi colori (sulle stampe Nova Rare e Iconic su un velo scuro), e «Originale» in alto lo rimette com'era.",
+  "<b>Simulator</b>: il riquadro dell'effetto sparisce con la sua animazione (e con un tocco), i Gig rubati insieme arrivano uno dopo l'altro, il dado lanciato con un colpo veloce parte anche se il dito resta sul pannello, e una carta spesa resta girata mentre risponde al fuoco. Nel Tutorial un attacco al bersaglio sbagliato non blocca più la lezione.",
+  "<b>IA più furba</b>: toglie di mezzo le Unità spese che tornerebbero a rubarle Gig e tiene le carte Quick di difesa (Reboot Optics, Floor It…) per il tuo turno. Con The Heist ora vince molto più spesso.",
+  "<b>Deckbuilder</b>: i filtri dell'elenco delle carte sono separati per i mazzi costruiti, Prerelease e draft."
 ] };
 // chi usava già l'app prima che esistesse seenVer: ha dati salvati (letti prima che l'avvio scriva qualcosa)
 const HAD_DATA = (() => { try{ return ["settings", "decks", "coll", "record", "recent"].some(k => localStorage.getItem("ncd:" + k) != null); }catch(e){ return false; } })();

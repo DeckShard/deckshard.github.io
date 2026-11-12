@@ -6,7 +6,7 @@ import { S, saveDeck } from "./store.js";
 import { $, $$, esc, toast, openLens, openCard } from "./ui.js";
 import { createGame, mulligan, resolve, legalActions, doAction, applyMoveAs, moveOf, power, powerIn, ready, readyEddies, streetCred, canAttack, canPay, manual, rival, hasKw, hasSpend, costOf, goSoloCost, callCost } from "./engine.js";
 import { botDecide, botStep } from "./bot.js";
-import { cardText } from "./cardtext.js";
+import { cardText, cardTextFor } from "./cardtext.js";
 import { starterDeck, isLegal, validate, deckSize, openDeck } from "./deck.js";
 import { prereleaseSetupHTML, wirePrerelease, verifySealed, sealedOpponents } from "./prerelease.js";
 import * as ON from "./online.js";
@@ -340,7 +340,7 @@ const fxEase = "cubic-bezier(.2,.7,.2,1)";
 /* gli effetti al centro si mettono in fila: ognuno parte quando il precedente è uscito (fascia, dado,
    vetrina), così nessuno copre l'altro; se la fila si allunga troppo (più di 3 s) si sovrappongono */
 let fxBusyUntil = 0, fxAskUntil = 0, fxLastLog = null, fxHeld = [], fxHeldSteals = [];   // fxLastLog: ultima riga del registro già vista (per gli attacchi); fxHeld: colpi rimandati
-function fxSlot(dur){ const now = performance.now(), start = Math.min(Math.max(now, fxBusyUntil), now + 3000); fxBusyUntil = start + dur; return start - now; }
+function fxSlot(dur, cap = 3000){ const now = performance.now(), start = Math.min(Math.max(now, fxBusyUntil), now + cap); fxBusyUntil = Math.max(fxBusyUntil, start + dur); return start - now; }   // cap: oltre questa attesa si sovrappone (i Gig rubati invece aspettano sempre il loro turno)
 /* carta in vetrina: entra al centro, resta, poi scivola dove è finita (to). L'elemento vero (hideEl)
    resta invisibile finché la copia non arriva, così il ridisegno non la mostra in anticipo. */
 function fxShowcase(board, o, ms){
@@ -394,6 +394,12 @@ function fxRollNow(board, el, gig, who, ms){
   setTimeout(() => { g.remove(); applyDice(board); }, total + 60);
   g.animate([{ opacity: 0, transform: "scale(.6)" }, { opacity: 1, transform: "none" }], { duration: Math.max(150, ms * .5), easing: fxEase });
 }
+/* scossa di una carta colpita: si somma alla sua posizione (una carta spesa resta girata mentre vibra e risponde al fuoco;
+   «composite: add» non basta su tutti i browser, quindi la trasformazione di partenza entra in ogni fotogramma) */
+function shakeEl(el, pts, dur){
+  const base = getComputedStyle(el).transform, b = base && base !== "none" ? base + " " : "";
+  el.animate(pts.map(([x, y]) => ({ transform: `${b}translate(${x}px, ${y}px)` })), { duration: dur, easing: "linear" });
+}
 /* scontro: l'Unità che attacca spara al bersaglio (Unità o fila dei Gig) con la pistola gialla a contorno neon; se il
    bersaglio è un'Unità risponde con la pistola rossa, oppure, se ha potenza 0, con la mano a pistola (gesto di
    scherno, olografico). Traccianti, vampa e impatto; chi è colpito vibra. Tutto disegno nostro.
@@ -439,7 +445,7 @@ function fxMissile(board, a, t, pw, dur, col, targetEl, withBadge, pd){
   const im = sv.querySelector(".im"); im.animate([{ opacity: 0, transform: `translate(${tx}px, ${ty}px) scale(.2)` }, { opacity: 0, offset: land }, { opacity: 1, transform: `translate(${tx}px, ${ty}px) scale(.5)`, offset: land + .02 }, { opacity: 1, transform: `translate(${tx}px, ${ty}px) scale(1.15)`, offset: land + .22 }, { opacity: 0, transform: `translate(${tx}px, ${ty}px) scale(1.5)` }], { duration: dur, fill: "forwards" });
   sv.querySelector(".fl2").animate([{ opacity: 0 }, { opacity: 0, offset: land }, { opacity: 1, offset: land + .02 }, { opacity: 0, offset: land + .12 }], { duration: dur, fill: "forwards" });
   sfx("launch", dur * launch); sfx("boom", dur * land);
-  if(targetEl) setTimeout(() => { if(!targetEl.isConnected) return; targetEl.animate([{ transform: "translate(0,0)" }, { transform: "translate(-6px,3px)" }, { transform: "translate(6px,-3px)" }, { transform: "translate(-4px,-2px)" }, { transform: "translate(4px,2px)" }, { transform: "translate(-2px,1px)" }, { transform: "translate(0,0)" }], { duration: 480, easing: "linear", composite: "add" }); targetEl.animate([{ boxShadow: `0 0 0 4px ${col}, 0 0 30px ${col}` }, { boxShadow: "0 0 0 0 transparent" }], { duration: 800 }); const main = board.querySelector(".bmain") || board; main.animate([{ transform: "translate(0,0)" }, { transform: "translate(-3px,2px)" }, { transform: "translate(3px,-2px)" }, { transform: "translate(0,0)" }], { duration: 260, easing: "linear" }); }, dur * land);
+  if(targetEl) setTimeout(() => { if(!targetEl.isConnected) return; shakeEl(targetEl, [[0,0],[-6,3],[6,-3],[-4,-2],[4,2],[-2,1],[0,0]], 480); targetEl.animate([{ boxShadow: `0 0 0 4px ${col}, 0 0 30px ${col}` }, { boxShadow: "0 0 0 0 transparent" }], { duration: 800 }); const main = board.querySelector(".bmain") || board; main.animate([{ transform: "translate(0,0)" }, { transform: "translate(-3px,2px)" }, { transform: "translate(3px,-2px)" }, { transform: "translate(0,0)" }], { duration: 260, easing: "linear" }); }, dur * land);
   let badge = null;
   if(withBadge){
     const bx = (ax + tx) / 2 + 36, by = (ay + ty) / 2;
@@ -483,7 +489,7 @@ function fxShotNow(board, a, t, pw, dur, col, mode, targetEl, withBadge, pd){
     sv.querySelector(".fl").animate([{ opacity: 0 }, { opacity: 0, offset: .22 }, { opacity: 1, offset: .26 }, { opacity: 0, offset: .4 }, { opacity: 1, offset: .44 }, { opacity: 0, offset: .55 }], { duration: dur, fill: "forwards" });
     sv.querySelectorAll(".bl").forEach((b, i) => b.animate([{ transform: "translateX(0)", opacity: 0 }, { opacity: 0, offset: .22 + i * .05 }, { transform: "translateX(0)", opacity: 1, offset: .23 + i * .05 }, { transform: `translateX(${tr}px)`, opacity: 1, offset: impactAt + i * .05 }, { opacity: 0, offset: impactAt + .01 + i * .05 }], { duration: dur, fill: "forwards" }));
     sv.querySelector(".im").animate([{ opacity: 0, transform: `translate(${tx}px, ${ty}px) scale(.3)` }, { opacity: 0, offset: impactAt }, { opacity: 1, transform: `translate(${tx}px, ${ty}px) scale(.6)`, offset: impactAt + .02 }, { opacity: 1, transform: `translate(${tx}px, ${ty}px) scale(1.1)`, offset: impactAt + .2 }, { opacity: 0, transform: `translate(${tx}px, ${ty}px) scale(1.4)` }], { duration: dur, fill: "forwards" });
-    if(targetEl) setTimeout(() => { if(!targetEl.isConnected) return; targetEl.animate([{ transform: "translate(0,0)" }, { transform: "translate(-4px,2px)" }, { transform: "translate(4px,-2px)" }, { transform: "translate(-3px,-1px)" }, { transform: "translate(3px,1px)" }, { transform: "translate(0,0)" }], { duration: 320, easing: "linear", composite: "add" }); targetEl.animate([{ boxShadow: `0 0 0 3px ${col}, 0 0 24px ${col}` }, { boxShadow: "0 0 0 0 transparent" }], { duration: 600 }); }, dur * impactAt);
+    if(targetEl) setTimeout(() => { if(!targetEl.isConnected) return; shakeEl(targetEl, [[0,0],[-4,2],[4,-2],[-3,-1],[3,1],[0,0]], 320); targetEl.animate([{ boxShadow: `0 0 0 3px ${col}, 0 0 24px ${col}` }, { boxShadow: "0 0 0 0 transparent" }], { duration: 600 }); }, dur * impactAt);
   }
   let badge = null;
   if(withBadge){
@@ -507,7 +513,7 @@ function fxPower(board, hostEl, base, plus, delay, ms){
 /* Gig rubato: il dado lascia la fila del rivale, passa ingrandito dal centro e si posa nella fila di chi lo ha rubato */
 function fxSteal(board, el, was, now, gig, who, ms){
   const uid = +el.dataset.gig, main = fxCenter(board), S_ = Math.max(70, Math.min(170, main.h * .45)), dw = Math.round(S_ * .5);
-  const hold = Math.max(500, ms * 1.6), leg = Math.max(260, ms * 1.1), total = leg + hold + leg, wait = fxSlot(total);
+  const hold = Math.max(500, ms * 1.6), leg = Math.max(260, ms * 1.1), total = leg + hold + leg, wait = fxSlot(total, 15000);   // più Gig rubati insieme: uno dopo l'altro, mai sovrapposti
   liveDice.set(uid, { until: performance.now() + wait + total, big: true }); el.style.visibility = "hidden";
   setTimeout(() => {
     const g = document.createElement("div"); g.className = "fxdie steal"; g.style.cssText = `left:${main.cx - S_ / 2}px;top:${main.cy - S_ / 2}px;width:${S_}px;height:${S_}px`;
@@ -668,9 +674,11 @@ function rgChipShow(board, r, d, col, life){
   else if(r.x - gap - cw >= 6) pos = `left:${r.x - gap - cw}px;top:${Math.max(6, Math.min(H - 110, r.cy - 40))}px`;
   else { const left = Math.max(8, Math.min(W - cw - 8, r.cx - cw / 2)); pos = `left:${left}px;` + (r.cy > H / 2 ? `bottom:${H - r.y + 8}px` : `top:${r.y + r.h + 8}px`); }
   const c = rgEl("rgchip", `${pos};width:${cw}px;--c:${col}`,
-    `<div class="k">${esc(RG_TR[d.tr] || "Effetto")}</div><div class="n">${esc(d.dn)}</div>${d.x ? (x => `<div class="x">${esc(x.length > 170 ? x.slice(0, 167) + "…" : x)}</div>`)(cardText(d.x)) : ""}`);
+    `<div class="k">${esc(RG_TR[d.tr] || "Effetto")}</div><div class="n">${esc(d.dn)}</div>${d.x ? (x => `<div class="x">${esc(x.length > 170 ? x.slice(0, 167) + "…" : x)}</div>`)(cardTextFor(d.x, d.pid && DATA.byPrint.get(d.pid) ? DATA.byPrint.get(d.pid).card.text : "")) : ""}`);
   c.animate([{ opacity: 0, clipPath: "inset(0 100% 0 0)" }, { opacity: 1, clipPath: "inset(0 0 0 0)" }], { duration: 260, fill: "both" });
   rgChip = c; setTimeout(() => { if(rgChip === c) rgChip = null; rgFade(c, 260); }, life);
+  const off = () => { if(rgChip === c){ rgChip = null; rgFade(c, 150); } };   // un tocco sulla plancia lo toglie subito
+  setTimeout(() => document.addEventListener("pointerdown", off, { once: true, capture: true }), 150);
   sfx("chip");
 }
 /* dove mostrare una carta che non è in plancia: a destra delle Unità in campo se c'è posto, altrimenti al centro */
@@ -770,7 +778,7 @@ function rgScene(sc, plan, B){
   board.appendChild(flyLayer);
   const a = sc.a, col = a.effs.length ? rgCol(a.effs[0]) : "var(--acc)";
   let src = null;
-  if(a.src){ src = rgSource(board, a.src, sc.dur + B * 1.5, col); rgChipShow(board, src, a.src, col, sc.dur + B * 4); }
+  if(a.src){ src = rgSource(board, a.src, sc.dur + B * .5, col); rgChipShow(board, src, a.src, col, sc.dur + B * .8); }   // il riquadro sparisce con la scena: non resta sopra il resto della plancia
   else { const c = rgCardInfo(a.s); src = c ? rgSource(board, { s: a.s, pid: c.pid, dn: c.card.dn }, sc.dur + B * .8, col) : null; }   // seguito di un effetto già annunciato (dopo una scelta): solo la cornice
   for(const st of sc.steps) setTimeout(() => { try{ rgStep(board, st, src, plan, B); }catch(e){ console.warn(e); } }, st.at);
 }
@@ -1673,8 +1681,8 @@ function fieldCard(el, owner){
   if(mine && myTurn){
     const can = canAttack(G, M, u) && tutorialAllows("attack", u);
     const apw = powerIn(G, M, u, { attacking: true });
-    items.push({ label: apw < 1 ? "Attacca l'area Gig (potenza 0: non ruba, ma attiva gli effetti)" : `Attacca l'area Gig (${1 + Math.floor(apw / 10)} Gig)`, cls: "acc", disabled: !can || !rival(G, M).gigs.length || u.fx.onlyUnits, fn: () => after(act(M.id, { t: "attack", uid: u.uid, target: { kind: "gigs" } })) });
-    items.push({ label: "Attacca un'Unità spesa →", disabled: !can || !rival(G, M).field.some(x => x.spent), fn: () => { targeting = { kind: "attack", uid: u.uid }; sel = u.uid; render(); note("Tocca l'Unità rivale spesa da attaccare"); } });
+    items.push({ label: apw < 1 ? "Attacca l'area Gig (potenza 0: non ruba, ma attiva gli effetti)" : `Attacca l'area Gig (${1 + Math.floor(apw / 10)} Gig)`, cls: "acc", disabled: !can || !tutorialAllows("attack", u, "gigs") || !rival(G, M).gigs.length || u.fx.onlyUnits, fn: () => after(act(M.id, { t: "attack", uid: u.uid, target: { kind: "gigs" } })) });
+    items.push({ label: "Attacca un'Unità spesa →", disabled: !can || !tutorialAllows("attack", u, "unit") || !rival(G, M).field.some(x => x.spent), fn: () => { targeting = { kind: "attack", uid: u.uid }; sel = u.uid; render(); note("Tocca l'Unità rivale spesa da attaccare"); } });
     if(hasSpend(u)) items.push({ label: "Abilità {Spend}", disabled: u.spent || u.lag || !tutorialAllows("spend"), fn: () => after(act(M.id, { t: "spend", uid: u.uid })) });
   }
   if(MANUAL && human[M.id] && G.winner == null){
@@ -1842,9 +1850,16 @@ function wire(){
   }, true);
   const ddEnd = e => {
     if(!dd || e.pointerId !== dd.id) return; const d = dd; dd = null; if(!d.ghost) return;
+    // dove e con che velocità il dito ha lasciato il dado (con pointercancel le coordinate dell'evento non valgono: l'ultimo punto noto)
+    const lp = d.hist[d.hist.length - 1] || { x: d.x, y: d.y }, ex = e.type === "pointercancel" ? lp.x : e.clientX, ey = e.type === "pointercancel" ? lp.y : e.clientY;
+    const rec = d.hist.filter(p => performance.now() - p.t < 130), p0 = rec[0], p1 = rec[rec.length - 1];
+    const speed = p0 && p1 && p1.t > p0.t ? Math.hypot(p1.x - p0.x, p1.y - p0.y) / (p1.t - p0.t) : 0;   // px/ms negli ultimi istanti
     const box = d.btn.closest("#simAsk .box"), br = box && box.getBoundingClientRect();
-    const inPanel = br && e.clientX >= br.left && e.clientX <= br.right && e.clientY >= br.top && e.clientY <= br.bottom;   // riportato nel pannello: si annulla
-    const dx = e.clientX - d.x, dy = e.clientY - d.y, far = Math.hypot(dx, dy) > 40 && e.type !== "pointercancel" && !inPanel;
+    const inPanel = br && ex >= br.left && ex <= br.right && ey >= br.top && ey <= br.bottom;
+    // si lancia se il dito era in movimento quando l'ha lasciato (anche dentro il pannello o con un colpo corto), oppure se l'ha
+    // portato fuori dal pannello; si annulla solo se il dado viene riportato piano nel pannello o appena spostato
+    const dx = ex - d.x, dy = ey - d.y, dist = Math.hypot(dx, dy), far = (speed > .25 && dist > 16) || (dist > 40 && !inPanel);
+    window.__ddLast = { speed: +speed.toFixed(2), dist: Math.round(dist), inPanel: !!inPanel, far, type: e.type };   // per i collaudi
     ddThrown = Date.now();
     if(!far){ const back = d.ghost.animate([{ transform: d.ghost.style.transform, opacity: 1 }, { transform: "none", opacity: .2 }], { duration: 180, easing: "ease-out" }); back.onfinish = () => d.ghost.remove(); return; }
     if(!(G && G.pending && G.pending.kind === "die") || document.documentElement.dataset.motion === "reduce"){ d.ghost.remove(); ddThrown = 0; if(d.btn.isConnected && G && G.pending) d.btn.click(); return; }

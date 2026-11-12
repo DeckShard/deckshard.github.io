@@ -13,7 +13,9 @@ Cosa fa, in ordine:
   4. scarica le Regole Complete ufficiali (Comprehensive Rules) dalla stessa
      API che le pubblica su cyberpunktcg.com/comprehensive-rules;
   5. pubblica in public/: cards.json, prices.json, rules.json, meta.json e le
-     immagini.
+     immagini;
+  6. per le stampe nuove ricava dove sta il testo sull'immagine (cardbox.py →
+     public/cardbox.json), per il testo italiano sulle carte ingrandite.
 
 Nessuna dipendenza oltre a Pillow (per le miniature).
 
@@ -487,6 +489,13 @@ def main():
         {"generated": now, "cards": len(cards), "printings": nprints, "sets": len(sets),
          "priced": len(prices), "images": sum(1 for c in cards for p in c["prints"] if p["img"])},
         separators=(",", ":")), encoding="utf-8")
+    # riquadro del testo delle stampe nuove (testo italiano sulle carte ingrandite): cardbox.py, solo Pillow
+    try:
+        import cardbox
+        tried, found = cardbox.update(cards, PUBLIC)
+        print(f"Riquadri del testo: {tried} stampe nuove lette, {found} in cardbox.json")
+    except Exception as e:
+        print(f"Riquadri del testo non aggiornati: {e}", file=sys.stderr)
     kb = lambda p: (PUBLIC / p).stat().st_size // 1024
     print(f"Pubblicati: cards.json {kb('cards.json')} KB · prices.json {kb('prices.json')} KB"
           + (f" · rules.json {kb('rules.json')} KB" if (PUBLIC / 'rules.json').exists() else ""))

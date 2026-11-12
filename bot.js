@@ -1,6 +1,7 @@
 /* Bot: avversario euristico. Vende per crescere, chiama le Leggende presto,
-   gioca le Unità più forti che può permettersi, attacca dove conviene,
-   blocca solo quando vince lo scontro o quando sta per perdere i Gig.   */
+   gioca le Unità più forti che può permettersi, attacca dove conviene (e toglie di mezzo le Unità
+   spese che tornerebbero a rubare), blocca solo quando vince lo scontro o quando sta per perdere
+   i Gig, e tiene le carte Quick di difesa per il turno del rivale.   */
 
 import { legalActions, doAction, power, powerIn, ready, rival, streetCred, canAttack, hasKw, costOf, goSoloCost } from "./engine.js";
 
@@ -13,6 +14,7 @@ export function botDecide(G, pi, kind, options, ctx){
     case "die": return options.reduce((a, b) => b.sides > a.sides ? b : a);                   // dado più grande = più Street Cred
     case "block": {
       const att = ctx.attacker, pa = powerIn(G, G.players[G.active], att, { attacking: true });
+      const q = quickReaction(G, P, options, att, ctx.target, pa); if(q) return q;
       const winners = options.filter(o => o.unit && power(o.unit) > pa);
       if(winners.length) return winners.reduce((a, b) => power(a.unit) < power(b.unit) ? a : b);  // vince col blocker più economico
       const ties = options.filter(o => o.unit && power(o.unit) === pa && (o.unit.card.cost ?? 0) <= (att.card.cost ?? 0));
@@ -54,6 +56,32 @@ export function botDecide(G, pi, kind, options, ctx){
   }
 }
 
+/* carte Quick nella finestra di reazione: si giocano quando cambiano davvero l'esito dell'attacco */
+const qops = c => (c.fx.passive || []).map(o => o.op);
+function quickReaction(G, P, options, att, tu, pa){
+  const qs = options.filter(o => o.kind === "quick" && o.c); if(!qs.length || !att) return null;
+  const has = op => qs.find(o => qops(o.c).includes(op));
+  const debuff = qs.find(o => (o.c.fx.passive || []).some(x => x.op === "debuff" && x.n));
+  const dn = debuff ? debuff.c.fx.passive.find(x => x.op === "debuff").n : 0;
+  const worth = u => (u.card.cost ?? 0) + power(u) / 2;
+  if(tu){   // attaccano una nostra Unità spesa
+    const pt = power(tu);
+    if(pa < pt) return null;                                                   // vinciamo già
+    if(debuff && pa - dn < pt) return debuff;                                   // con il -N vinciamo noi
+    const save = has("flag") && qs.find(o => o.c.fx.passive.some(x => x.flag === "noDefeatNextFight"));
+    if(save && !P.noDefeatNextFight) return save;                              // Reboot Optics: la nostra Unità resta
+    const punish = qs.find(o => o.c.fx.passive.some(x => x.flag === "punishNextLoss"));
+    if(punish && !P.punishNextLoss && pa > pt && worth(att) >= worth(tu)) return punish;   // Safety Override: cade anche l'attaccante
+    if(debuff && pa - dn === pt && worth(att) >= worth(tu)) return debuff;     // pareggio: cadono entrambe
+    return null;
+  }
+  if(pa < 1 || !P.gigs.length) return null;   // attacco all'area Gig
+  const take = 1 + Math.floor(pa / 10);
+  const less = has("stealLess"); if(less && !(att.stealLess > 0)) return less; // Take Control: un Gig in meno
+  if(debuff && (pa - dn < 1 || 1 + Math.floor(Math.max(0, pa - dn) / 10) < take)) return debuff;   // Floor It: niente furto o un Gig in meno
+  return null;
+}
+
 /* ------------------------------------------------------------ piano di gioco del turno
    Valore di una carta da giocare (Unità: potenza più bonus per abilità utili; Programmi e Gear
    solo se il motore sa applicarne l'effetto), e scelta dell'insieme di carte che rende di più
@@ -63,7 +91,13 @@ function cardValue(G, P, c){
   const t = c.card.type, pw = c.card.power ?? 0;
   if(t === "Unit") return pw + 1.5 + (hasKw(c, "Blocker") ? 1 : 0) + (hasKw(c, "Adrenaline") ? 1.5 : 0) + (c.fx.play.length ? 1.5 : 0) + (c.fx.spend && c.fx.spend.length ? 1 : 0);
   if(t === "Gear") return P.field.some(u => !u.spent || u.lag) ? pw + 2 : 0;
-  if(t === "Program") return 3 + (c.fx.play.length ? 1 : 0);
+  if(t === "Program"){
+    if(c.fx.quick){   // le Quick di difesa si tengono per la finestra di reazione (quickReaction); le altre si giocano come sempre
+      const ops = qops(c);
+      if(ops.every(o => o === "flag" || o === "stealLess") || ops.includes("debuff")) return 0;
+    }
+    return 3 + (c.fx.play.length ? 1 : 0);
+  }
   return 0;
 }
 function bestPlan(G, P, hand, budget){
@@ -111,7 +145,10 @@ export function botStep(G, pi){
     let best = null, bestScore = 0;
     for(const a of attacks){
       const pa = powerIn(G, P, a.unit, { attacking: true }); let score = 0;
-      if(a.target.kind === "unit"){ const pt = power(a.targetObj); if(pa > pt) score = 3 + pt; else if(pa === pt && (a.unit.card.cost ?? 0) < (a.targetObj.card.cost ?? 0)) score = 1; }
+      if(a.target.kind === "unit"){ const t = a.targetObj, pt = power(t);
+        // un'Unità che al prossimo turno può tornare a rubarci Gig vale di più (la si toglie di mezzo finché è spesa)
+        const threat = pt >= 1 && !t.fx.cantAttack && !t.fx.onlyUnits ? 2 + Math.floor(pt / 10) * 3 : 0;
+        if(pa > pt) score = 3 + pt + threat; else if(pa === pt && (a.unit.card.cost ?? 0) < (t.card.cost ?? 0)) score = 1; }
       else { score = 4 + (1 + Math.floor(pa / 10)) * 3 + (R.gigs.length >= 5 ? 4 : 0); }
       if(bestBlock >= pa) score -= 4; // probabile blocco perdente
       if(score > bestScore){ bestScore = score; best = a; }

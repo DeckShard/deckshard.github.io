@@ -10,7 +10,11 @@ export const DECK_MIN = 40, DECK_MAX = 50, MAX_COPIES = 3;
 
 let CUR = null;               // mazzo in modifica
 const LF = { q: "", kind: "all" };   // filtri dell'elenco mazzi
-const F = makeFilters("deck");
+/* filtri dell'elenco «Aggiungi carte»: uno per area (Costruito, Prerelease, Draft), così i filtri scelti per un draft
+   non si ritrovano nel deckbuilder dei mazzi costruiti; dentro la stessa area restano da un mazzo all'altro */
+const FS = { built: makeFilters("deck"), sealed: makeFilters("deck"), draft: makeFilters("deck") };
+const areaOf = d => !d || d.format !== "sealed" ? "built" : d.draft ? "draft" : "sealed";
+let F = FS.built;
 let browse = "cards";         // "legends" | "cards"
 let wired = false;
 
@@ -272,7 +276,7 @@ function deckRowHTML(d){
 /* ------------------------------------------------------------ editor */
 export function openDeck(id){
   CUR = S.decks.find(d => d.id === id) || null;
-  F.q = ""; F.owned = ""; F.ramOnly = false;   // i filtri del browser ripartono puliti a ogni mazzo
+  F = FS[areaOf(CUR)]; F.q = ""; F.owned = ""; F.ramOnly = false;   // filtri dell'area del mazzo; la ricerca riparte pulita a ogni mazzo
   if(CUR){ for(const e of CUR.cards) if(!e.pid || !DATA.byPrint.has(e.pid)) e.pid = DATA.byId.get(e.cid)?.def.id; }
   renderDeck();
 }
@@ -299,6 +303,7 @@ function save(){ if(CUR){ syncSealed(CUR); saveDeck(CUR); } }
 
 let filtOpen = false;
 function renderEditor(){
+  F = FS[areaOf(CUR)];   // i filtri dell'area del mazzo aperto (vale anche per i mazzi appena creati, importati o clonati)
   $("#deckList").hidden = true; const ed = $("#deckEdit"); ed.hidden = false;
   const d = CUR, lim = ramLimits(d), checks = validate(d), n = deckSize(d), miss = missing(d);
   const legsHTML = [0, 1, 2].map(i => {
@@ -365,6 +370,7 @@ function renderEditor(){
   renderBrowser(); updateStick();
 }
 function renderBrowser(){
+  F = FS[areaOf(CUR)];   // i filtri dell'area del mazzo aperto (vale anche per i mazzi appena creati, importati o clonati)
   const d = CUR, lim = ramLimits(d);
   let list = DATA.cards.filter(c => browse === "legends" ? c.type === "Legend" : c.type !== "Legend").filter(c => passes(c, F));
   if(d.format === "sealed") list = list.filter(c => poolCount(d, c.id) > 0);

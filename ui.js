@@ -4,7 +4,7 @@
 import { DATA, COLORS, COLOR_IT, TYPES, TYPE_IT, RARITY_IT, setName, imgUrl, thumbUrl,
          priceOf, cardPrice, eur, cardmarketUrl, rulesHTML, classificationsOf, setRank } from "./data.js";
 import { S, qtyOf, setQty, cardQty } from "./store.js";
-import { cardTextIt, itText } from "./cardtext.js";
+import { cardTextIt, itText, cardFaceHTML } from "./cardtext.js";
 
 export const $ = s => document.querySelector(s);
 export const $$ = s => [...document.querySelectorAll(s)];
@@ -313,11 +313,48 @@ export function closeSheet(){
 })();
 
 /* ------------------------------------------------------------ lente con zoom */
+/* testo italiano sulla carta ingrandita (Impostazioni → Lingua → «Testo delle carte: Italiano»): un riquadro con i colori
+   del riquadro stampato copre le righe inglesi (posizioni in cardbox.js); se la stampa non è nell'elenco, il testo va sotto
+   la carta. «Originale» in alto rimette il testo stampato. */
+let BOXES = null;
+async function lensText(lens, wrap, src){
+  lens.querySelectorAll(".ltx, .ltxcap, .ltog").forEach(e => e.remove());
+  const pid = decodeURIComponent((String(src).match(/img\/([^/?#]+)\.webp/) || [])[1] || ""), pr = DATA.byPrint.get(pid), card = pr && pr.card;
+  if(!cardTextIt() || !card || !card.text) return;
+  const it = itText(card.text); if(it == null) return;
+  if(!BOXES){ let js = {}, nw = {};
+    try{ js = (await import("./cardbox.js")).CARD_BOX; }catch(e){}
+    try{ const r = await fetch("./cardbox.json"); if(r.ok) nw = await r.json(); }catch(e){}   // le carte uscite dopo cardbox.js (workflow notturno)
+    BOXES = { ...nw, ...js }; }
+  if(!lens.classList.contains("on") || !wrap.isConnected) return;
+  const b = BOXES[pid], img = wrap.querySelector("img");
+  let el;
+  if(b){
+    const [t0, t1, c0, c1] = b, top = Math.max(.3, t0 - .009), bot = Math.min(.935, t1 + .012);
+    el = document.createElement("div"); el.className = c0 ? "ltx" : "ltx fa";   // senza colori: stampa ad arte piena, velo scuro (CSS)
+    el.style.cssText = `top:${(top * 100).toFixed(2)}%;height:${((bot - top) * 100).toFixed(2)}%` + (c0 ? `;background:linear-gradient(#${c0},#${c1})` : "");
+    el.innerHTML = `<div class="in">${cardFaceHTML(it)}</div>`; wrap.appendChild(el);
+    // la traduzione è spesso più lunga: il carattere scende finché il testo entra, poi il riquadro cresce verso l'alto
+    const fit = () => { if(!el.isConnected || !img.clientHeight) return; const inn = el.firstChild; let fs = 2.55, h = bot - top, tp = top;
+      const set = () => { inn.style.fontSize = (fs * img.clientHeight / 100).toFixed(2) + "px"; el.style.top = (tp * 100).toFixed(2) + "%"; el.style.height = (h * 100).toFixed(2) + "%";
+        // il riquadro della potenza (in basso a destra su Unità, Leggende e Gear) resta scoperto
+        if(card.type !== "Program"){ const yl = Math.max(0, Math.min(100, (.88 - tp) / h * 100)).toFixed(1); el.style.clipPath = `polygon(0 0,100% 0,100% ${yl}%,90.5% ${yl}%,90.5% 100%,0 100%)`; } };
+      set(); while(inn.scrollHeight > el.clientHeight + 1 && fs > 1.6){ fs -= .06; set(); }
+      while(inn.scrollHeight > el.clientHeight + 1 && tp > top - .025){ tp -= .005; h += .005; set(); } };   // al massimo poco sopra: titolo e classi restano visibili
+    if(img.complete && img.naturalWidth) requestAnimationFrame(fit); else img.addEventListener("load", () => requestAnimationFrame(fit), { once: true });
+  } else { el = document.createElement("div"); el.className = "ltxcap"; el.innerHTML = cardFaceHTML(it); lens.appendChild(el); }
+  const tog = document.createElement("button"); tog.className = "ltog"; tog.type = "button"; tog.textContent = "Originale"; tog.setAttribute("aria-pressed", "false");
+  tog.addEventListener("click", e => { e.stopPropagation(); const orig = tog.getAttribute("aria-pressed") !== "true"; tog.setAttribute("aria-pressed", String(orig)); tog.textContent = orig ? "Italiano" : "Originale"; el.hidden = orig; });
+  lens.appendChild(tog);
+}
 export function openLens(src){
   const lens = $("#lens"), img = $("#lens img");
-  img.src = src; img.style.transform = ""; lens.classList.add("on");
+  let wrap = img.parentElement.classList.contains("lcard") ? img.parentElement : null;
+  if(!wrap){ wrap = document.createElement("div"); wrap.className = "lcard"; img.replaceWith(wrap); wrap.appendChild(img); }
+  img.src = src; img.style.transform = ""; wrap.style.transform = ""; lens.classList.add("on");
+  lensText(lens, wrap, src);
   let scale = 1, tx = 0, ty = 0, pts = new Map(), last = null, startDist = 0, startScale = 1;
-  const apply = () => { img.style.transform = `translate(${tx}px,${ty}px) scale(${scale})`; };
+  const apply = () => { wrap.style.transform = `translate(${tx}px,${ty}px) scale(${scale})`; };
   const down = e => { pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); if(pts.size === 2){ const [a, b] = [...pts.values()]; startDist = Math.hypot(a.x - b.x, a.y - b.y); startScale = scale; } last = { x: e.clientX, y: e.clientY }; };
   const move = e => {
     if(!pts.has(e.pointerId)) return;
@@ -332,7 +369,7 @@ export function openLens(src){
   const wheel = e => { e.preventDefault(); scale = Math.min(5, Math.max(1, scale * (e.deltaY < 0 ? 1.15 : 0.87))); if(scale === 1){ tx = ty = 0; } apply(); };
   const dbl = () => { scale = scale > 1 ? 1 : 2.2; tx = ty = 0; apply(); };
   const close = e => { if(e.target === lens || e.target.classList.contains("hint")) hide(); };
-  const hide = () => { lens.classList.remove("on"); img.onpointerdown = img.onpointermove = img.onpointerup = img.onpointercancel = null; lens.onclick = null; img.onwheel = null; img.ondblclick = null; };
+  const hide = () => { lens.classList.remove("on"); lens.querySelectorAll(".ltx, .ltxcap, .ltog").forEach(e => e.remove()); img.onpointerdown = img.onpointermove = img.onpointerup = img.onpointercancel = null; lens.onclick = null; img.onwheel = null; img.ondblclick = null; };
   img.onpointerdown = down; img.onpointermove = move; img.onpointerup = up; img.onpointercancel = up; img.onwheel = wheel; img.ondblclick = dbl; lens.onclick = close;
   lens._hide = hide;
 }

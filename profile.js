@@ -143,8 +143,8 @@ export function renderSettings(){
       <h3>Lingua</h3>
       <div class="field"><label>Lingua dell'app<small>I nomi delle carte restano in inglese, come sono stampati.</small></label>
         <span class="seg" id="pfLang">${LANGS.map(([v, t]) => `<button data-v="${v}" aria-pressed="${(p.lang || "it") === v}">${t}</button>`).join("")}</span></div>
-      ${(p.lang || "it") === "it" ? `<div class="field"><label>Testo delle carte<small>Traduzione non ufficiale di DeckShard: il gioco esce solo in inglese e nei tornei vale il testo originale, che resta sempre a un tocco nella scheda della carta. Nomi e testi di colore restano in inglese.</small></label>
-        <span class="seg" id="pfCardText">${[["it", "Italiano"], ["en", "Originale"]].map(([v, t]) => `<button data-v="${v}" aria-pressed="${(S.settings.cardText === "en" ? "en" : "it") === v}">${t}</button>`).join("")}</span></div>` : ""}
+      ${(p.lang || "it") === "it" ? `<div class="field"><label>Testo delle carte<small>Italiano: traduzione non ufficiale di DeckShard. Nel Simulator il testo tradotto prende il posto di quello stampato sulle carte ingrandite; nella scheda della carta c'è sempre «Mostra l'originale». Il gioco esce solo in inglese e nei tornei vale il testo originale. Nomi e testi di colore restano in inglese.</small></label>
+        <span class="seg" id="pfCardText">${[["en", "Originale"], ["it", "Italiano"]].map(([v, t]) => `<button data-v="${v}" aria-pressed="${(S.settings.cardText === "it" ? "it" : "en") === v}">${t}</button>`).join("")}</span></div>` : ""}
     </div>
 
     <div class="card">

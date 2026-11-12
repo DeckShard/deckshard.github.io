@@ -298,3 +298,23 @@ export function setCardTextPref(fn){ pref = fn; }
 export const cardTextIt = () => pref();
 /* il testo da mostrare: italiano se scelto e disponibile, altrimenti l'originale */
 export function cardText(text){ if(!text || !pref()) return text; const t = itText(text); return t == null ? text : t; }
+/* un pezzo di frase citato dal motore (es. «draw 1.» da «The first time …, draw 1.»): se non è tradotto da solo,
+   si traducono le frasi intere della carta che lo contengono */
+export function cardTextFor(piece, full){
+  if(!piece || !pref()) return piece;
+  const t = itText(piece); if(t != null) return t;
+  if(!full) return piece;
+  const n = s => s.toLowerCase().replace(/\([^)]*\)/g, " ").replace(/[^a-z0-9]+/g, " ").trim(), want = n(piece).slice(0, 40);
+  const hits = String(full).split("\n").flatMap(l => l.split(" // ")).flatMap(ch => ch.split(SPLIT)).filter(s => want && n(s).includes(want));
+  const out = hits.map(s => sentence(s)); return hits.length && out.every(x => x != null) ? out.join(" ") : piece;
+}
+/* testo italiano con l'aspetto della carta stampata: parole chiave nei loro riquadri colorati, promemoria in corsivo */
+export function cardFaceHTML(text){
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const MAG = ["Quick", "Blocker"];
+  return String(text).split("\n").map(line => `<p>${esc(line)
+    .replace(/\([^)]*\)/g, m => `<i>${m}</i>`)
+    .replace(/\{Spend\}/g, '<b class="ck sp" title="Spend">⤶</b>')
+    .replace(/\{([^}]+)\}/g, (_, k) => `<b class="ck${MAG.includes(k) ? " mg" : ""}">${k.toUpperCase()}</b>`)
+    .replace(/ \/\/ /g, "<br>").replace(/☆ \(Street Cred\)|☆/g, m => `<b class="sc">★${m.length > 1 ? " (Street Cred)" : ""}</b>`)}</p>`).join("");
+}

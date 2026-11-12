@@ -2,9 +2,9 @@
    Rete prima, cache come ripiego: l'app si aggiorna da sola a ogni apertura
    online e continua a funzionare offline con l'ultima versione vista.
    Le immagini delle carte sono messe in cache man mano che le vedi.     */
-const CACHE = "ncd-v1";  // testo delle carte in italiano, scanner: 1.9.37
+const CACHE = "ncd-v1";  // testo italiano sulle carte ingrandite (anche Nova Rare e Iconic), IA, correzioni del Simulator e del Tutorial: 1.9.38
 const CORE = ["./", "./index.html", "./theme.css", "./sim.css", "./app.js", "./data.js", "./store.js", "./ui.js",
-  "./collection.js", "./deck.js", "./profile.js", "./sim.js", "./engine.js", "./bot.js", "./scanner.js", "./parser.js", "./rules.js", "./prerelease.js", "./draft.js", "./tutorial.js", "./i18n.js", "./cloud.js", "./social.js", "./online.js", "./home.js", "./cardtext.js", "./manifest.webmanifest", "./icon.svg", "./mark.svg", "./badge-96.png"];
+  "./collection.js", "./deck.js", "./profile.js", "./sim.js", "./engine.js", "./bot.js", "./scanner.js", "./parser.js", "./rules.js", "./prerelease.js", "./draft.js", "./tutorial.js", "./i18n.js", "./cloud.js", "./social.js", "./online.js", "./home.js", "./cardtext.js", "./cardbox.js", "./manifest.webmanifest", "./icon.svg", "./mark.svg", "./badge-96.png"];
 
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(CORE).catch(() => {}))); self.skipWaiting(); });
 self.addEventListener("activate", e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
