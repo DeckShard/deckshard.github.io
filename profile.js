@@ -141,8 +141,10 @@ export function renderSettings(){
 
     <div class="card">
       <h3>Lingua</h3>
-      <div class="field"><label>Lingua dell'app<small>Le carte restano nella lingua stampata (inglese).</small></label>
+      <div class="field"><label>Lingua dell'app<small>I nomi delle carte restano in inglese, come sono stampati.</small></label>
         <span class="seg" id="pfLang">${LANGS.map(([v, t]) => `<button data-v="${v}" aria-pressed="${(p.lang || "it") === v}">${t}</button>`).join("")}</span></div>
+      ${(p.lang || "it") === "it" ? `<div class="field"><label>Testo delle carte<small>Traduzione non ufficiale di DeckShard: il gioco esce solo in inglese e nei tornei vale il testo originale, che resta sempre a un tocco nella scheda della carta. Nomi e testi di colore restano in inglese.</small></label>
+        <span class="seg" id="pfCardText">${[["it", "Italiano"], ["en", "Originale"]].map(([v, t]) => `<button data-v="${v}" aria-pressed="${(S.settings.cardText === "en" ? "en" : "it") === v}">${t}</button>`).join("")}</span></div>` : ""}
     </div>
 
     <div class="card">
@@ -308,6 +310,7 @@ function wire(root){
     const am = e.target.closest("#pfAnimMine button"); if(am){ S.settings.animMine = am.dataset.v; S.save("settings"); rerender(); return; }
     const fu = e.target.closest("#pfFull button"); if(fu){ S.settings.fullscreen = fu.dataset.v === "1"; S.save("settings"); rerender(); return; }
     const sx = e.target.closest("#pfSfx button"); if(sx){ S.settings.sfx = sx.dataset.v === "1"; S.save("settings"); rerender(); return; }
+    const ct = e.target.closest("#pfCardText button"); if(ct){ S.settings.cardText = ct.dataset.v; S.save("settings"); rerender(); document.dispatchEvent(new CustomEvent("ncd:collection")); return; }
     const fx = e.target.closest("#pfFx button"); if(fx){ S.settings.fx = fx.dataset.v === "1"; S.save("settings"); rerender(); return; }
     const of = e.target.closest("#pfOppFeed button"); if(of){ S.settings.oppFeed = of.dataset.v === "1"; S.save("settings"); rerender(); return; }
     const ax = e.target.closest("#pfText button, #pfContrast button, #pfMotion button"); if(ax){

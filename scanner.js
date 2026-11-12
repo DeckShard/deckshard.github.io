@@ -35,37 +35,43 @@ function dice(a, b){
   return 2 * inter / (na + nb);
 }
 let INDEX = null;
+const TYPE_WORDS = new Set(["LEGEND", "UNIT", "PROGRAM", "GEAR"]);   // l'etichetta del tipo stampata sulla carta: non è un nome
+const wordsOf = s => new Set(s.split(" ").filter(w => w.length >= 3));
 function index(){
   if(INDEX) return INDEX;
   INDEX = DATA.cards.map(c => {
     const full = norm(c.dn), name = norm(c.name), sub = norm(c.sub);
     // senza i promemoria tra parentesi, uguali su molte carte
     const body = norm([c.cls.join(" "), String(c.text || "").replace(/\([^)]*\)/g, " "), c.flavor].filter(Boolean).join(" "));
-    return { c, full, name, sub, bFull: bigrams(full), bName: bigrams(name), bSub: bigrams(sub), bBody: bigrams(body) };
+    return { c, full, name, sub, bFull: bigrams(full), bName: bigrams(name), bSub: bigrams(sub), wBody: wordsOf(body), bBody: bigrams(body) };
   });
   return INDEX;
 }
-/* ritorna i candidati ordinati per punteggio: nome (righe OCR) + testo di regole */
+/* ritorna i candidati ordinati per punteggio: nome (righe OCR) + testo di regole.
+   Il testo conta a parole intere (le coppie di lettere si trovano per caso in qualsiasi lettura lunga), e pesa meno
+   se la carta ha poche parole proprie (Leggende fatte quasi solo di promemoria tra parentesi). */
 export function matchText(text){
-  const lines = text.split(/\n/).map(norm).filter(l => l.length >= 3);
+  const lines = text.split(/\n/).map(l => norm(l).split(" ").filter(w => !TYPE_WORDS.has(w)).join(" ")).filter(l => l.length >= 3);
   const cands = lines.slice();
   for(let i = 0; i + 1 < lines.length; i++) cands.push(lines[i] + " " + lines[i + 1]);   // nomi su due righe (Leggende)
-  const bAll = bigrams(norm(text));
+  const ocrWords = wordsOf(norm(text.replace(/\([^)]*\)/g, " "))), bAll = bigrams(norm(text));
   const out = [];
   for(const e of index()){
-    let best = 0;
+    let best = 0, subBest = 0;
     for(const l of cands){
       const bl = bigrams(l);
       let s = dice(bl, e.bFull);
-      if(e.sub) s = Math.max(s, (dice(bl, e.bName) + dice(bl, e.bSub)) / 2, dice(bl, e.bName) * 0.85);
+      if(e.sub){ const ds = dice(bl, e.bSub); s = Math.max(s, (dice(bl, e.bName) + ds) / 2, dice(bl, e.bName) * 0.85); if(e.sub.length >= 8) s = Math.max(s, ds * 0.9); if(ds > subBest) subBest = ds; }   // anche il solo sottotitolo identifica la carta
       else s = Math.max(s, dice(bl, e.bName));
-      if(l.includes(e.full) || (e.full.length >= 5 && e.full.includes(l) && l.length >= 6)) s = Math.max(s, 0.9);
+      const L = " " + l + " ";
+      if(L.includes(" " + e.full + " ") || (l.length >= 8 && l.includes(" ") && (" " + e.full + " ").includes(L))) s = Math.max(s, 0.9);   // a parole intere: «LEGEND» non è «… OF LEGENDS»
       if(s > best) best = s;
     }
-    let inter = 0; for(const [k, v] of e.bBody) if(bAll.has(k)) inter += Math.min(v, bAll.get(k));
-    let nb = 0; for(const v of e.bBody.values()) nb += v;
-    const body = nb >= 12 ? inter / nb : 0;          // copertura del testo della carta nell'OCR
-    const score = Math.max(best, body * 0.95, best * 0.6 + body * 0.5);
+    let hit = 0; for(const w of e.wBody) if(ocrWords.has(w)) hit++;
+    let inter = 0, nb = 0; for(const [k, v] of e.bBody){ nb += v; if(bAll.has(k)) inter += Math.min(v, bAll.get(k)); }
+    const nw = e.wBody.size, body = nw >= 3 ? Math.max(hit / nw, nb ? inter / nb * 0.9 : 0) * Math.min(1, nw / 6) : 0;   // parole intere, o lettere a coppie se l'OCR storpia
+    // a parità di nome (più carte dello stesso personaggio) decide quanto si legge del sottotitolo
+    const score = Math.max(best, body * 0.95, best * 0.6 + body * 0.5) + subBest * 0.12;
     out.push({ card: e.c, score, nameScore: best, bodyScore: body });
   }
   out.sort((a, b) => b.score - a.score);
@@ -137,14 +143,33 @@ const SHORT = [[/^welcometonightcityretail/, "Base"], [/^welcometonightcitybeta/
   [/^boxtoppersretail/, "Box topper"], [/^boxtoppersbeta/, "Box topper β"], [/demodeck$/, "Demo"], [/^edgerunner/, "Edgerunner"], [/^nightcitybrawl/, "Brawl"],
   [/^nightcityshowdown/, "Showdown"], [/^judge/, "Judge"], [/^PRM/, "Promo"]];
 export const edLabel = p => { const m = SHORT.find(([rx]) => rx.test(p.set)); return `${m ? m[1] : p.set} #${p.num}`; };
+/* firme dell'inquadratura con piccoli spostamenti e zoom (la carta non è mai perfetta nel riquadro) */
+function camBoxes(cam){
+  const boxes = []; for(const s of [0.94, 1, 1.06]) for(const dx of [-0.04, 0, 0.04]) for(const dy of [-0.04, 0, 0.04]){
+    const bw = cam.bw * s, bh = cam.bh * s; boxes.push([cam.bx + (cam.bw - bw) / 2 + dx * cam.bw, cam.by + (cam.bh - bh) / 2 + dy * cam.bh, bw, bh]); }
+  return boxes;
+}
+/* spareggio tra carte diverse con il testo quasi pari (stesso personaggio, nome letto male): vince l'illustrazione più simile */
+async function rerankByArt(hits, cam){
+  if(!cam || hits.length < 2 || hits[0].score - hits[1].score > 0.1 || hits[1].score < 0.5) return hits;
+  const near = hits.filter(h => h.score >= hits[0].score - 0.1).slice(0, 4);
+  const sigs = camBoxes(cam).map(b => zoneSig(cam.cv, b[0], b[1], b[2], b[3], ART));
+  for(const h of near){
+    const prints = h.card.prints.filter(p => p.img && p.lang === "en"), D = await Promise.all(prints.map(p => printDesc(p.id)));
+    h.art = Math.max(-1, ...D.filter(Boolean).map(d => Math.max(...sigs.map(c => corr(c, d.art)))));
+  }
+  const ranked = near.slice().sort((a, b) => b.art - a.art), win = ranked[0];
+  if(win === hits[0] || win.art < 0.45 || win.art - ranked[1].art < 0.08) return hits;   // l'arte non è abbastanza chiara: resta il testo
+  win.score = Math.max(win.score, hits[0].score);
+  return [win, ...hits.filter(h => h !== win)];
+}
 async function bestVariant(card, cam){
   const prints = card.prints.filter(p => p.img && p.lang === "en");
   const none = { pid: card.def.id, alt: false, score: 0, twins: [] };
   if(prints.length < 2 || !cam) return none;
   const D = await Promise.all(prints.map(p => printDesc(p.id))), G = artGroups(card, prints, D);
   // 1) illustrazione: miglior allineamento tra piccoli spostamenti e zoom
-  const boxes = []; for(const s of [0.94, 1, 1.06]) for(const dx of [-0.04, 0, 0.04]) for(const dy of [-0.04, 0, 0.04]){
-    const bw = cam.bw * s, bh = cam.bh * s; boxes.push([cam.bx + (cam.bw - bw) / 2 + dx * cam.bw, cam.by + (cam.bh - bh) / 2 + dy * cam.bh, bw, bh]); }
+  const boxes = camBoxes(cam);
   const sigs = boxes.map(b => zoneSig(cam.cv, b[0], b[1], b[2], b[3], ART));
   const sc = prints.map((p, i) => { if(!D[i]) return { s: -9, b: 0 }; let s = -9, bi = 0; sigs.forEach((c, k) => { const v = corr(c, D[i].art); if(v > s){ s = v; bi = k; } }); return { s, b: bi }; });
   const gs = new Map(); prints.forEach((p, i) => { if(!gs.has(G[i]) || sc[i].s > gs.get(G[i])) gs.set(G[i], sc[i].s); });
@@ -214,7 +239,7 @@ async function readImage(src, sw, sh, crop, st, quick){
     text = text + "\n" + text2; hits = matchText(text);
   }
   window.__lastOcr = text;
-  return hits;
+  return rerankByArt(hits, lastCamSig);
 }
 
 /* ------------------------------------------------------------ interfaccia */

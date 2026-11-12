@@ -6,6 +6,7 @@ import { S, saveDeck } from "./store.js";
 import { $, $$, esc, toast, openLens, openCard } from "./ui.js";
 import { createGame, mulligan, resolve, legalActions, doAction, applyMoveAs, moveOf, power, powerIn, ready, readyEddies, streetCred, canAttack, canPay, manual, rival, hasKw, hasSpend, costOf, goSoloCost, callCost } from "./engine.js";
 import { botDecide, botStep } from "./bot.js";
+import { cardText } from "./cardtext.js";
 import { starterDeck, isLegal, validate, deckSize, openDeck } from "./deck.js";
 import { prereleaseSetupHTML, wirePrerelease, verifySealed, sealedOpponents } from "./prerelease.js";
 import * as ON from "./online.js";
@@ -667,7 +668,7 @@ function rgChipShow(board, r, d, col, life){
   else if(r.x - gap - cw >= 6) pos = `left:${r.x - gap - cw}px;top:${Math.max(6, Math.min(H - 110, r.cy - 40))}px`;
   else { const left = Math.max(8, Math.min(W - cw - 8, r.cx - cw / 2)); pos = `left:${left}px;` + (r.cy > H / 2 ? `bottom:${H - r.y + 8}px` : `top:${r.y + r.h + 8}px`); }
   const c = rgEl("rgchip", `${pos};width:${cw}px;--c:${col}`,
-    `<div class="k">${esc(RG_TR[d.tr] || "Effetto")}</div><div class="n">${esc(d.dn)}</div>${d.x ? `<div class="x">${esc(d.x.length > 170 ? d.x.slice(0, 167) + "…" : d.x)}</div>` : ""}`);
+    `<div class="k">${esc(RG_TR[d.tr] || "Effetto")}</div><div class="n">${esc(d.dn)}</div>${d.x ? (x => `<div class="x">${esc(x.length > 170 ? x.slice(0, 167) + "…" : x)}</div>`)(cardText(d.x)) : ""}`);
   c.animate([{ opacity: 0, clipPath: "inset(0 100% 0 0)" }, { opacity: 1, clipPath: "inset(0 0 0 0)" }], { duration: 260, fill: "both" });
   rgChip = c; setTimeout(() => { if(rgChip === c) rgChip = null; rgFade(c, 260); }, life);
   sfx("chip");
@@ -1556,7 +1557,7 @@ function onBoardAsk(){
     const marks = [], extra = [];
     for(const [i, o] of p.options.entries()){ if(o.unit && o.unit.uid != null) marks.push({ i, uid: o.unit.uid, label: "Scegli" }); else if(!o.unit) extra.push({ i, label: o.label }); else return null; }
     if(!marks.length) return null;
-    const text = `${p.ctx && p.ctx.src ? `<b>${esc(p.ctx.src)}</b> · ` : ""}${esc(p.ctx && p.ctx.text ? p.ctx.text : "scegli il bersaglio")} <em>(tocca la carta)</em>`;
+    const text = `${p.ctx && p.ctx.src ? `<b>${esc(p.ctx.src)}</b> · ` : ""}${esc(p.ctx && p.ctx.text ? cardText(p.ctx.text) : "scegli il bersaglio")} <em>(tocca la carta)</em>`;
     return { kind: "target", title: "Scelta", marks, extra, text, srcPid: p.ctx && p.ctx.srcPid };
   }
   return null;
@@ -1589,7 +1590,7 @@ function askHTML(){
       <div class="side">Street Cred · <b>${P.id === me() ? "tu" : esc(P.name)} ${streetCred(P)}</b> · <b>${esc(R.name)} ${streetCred(R)}</b></div></div></div>`;
   }
   // da dove viene la richiesta (anche per un furto di Gig dovuto a un Gear o a un Programma, es. Gorilla Arms: il furto dell'attacco non ha fonte)
-  const srcLine = p.ctx && p.ctx.src && p.kind !== "die" && p.kind !== "block" ? `<div class="sub" style="margin:-4px 0 8px">${p.ctx.srcPid ? `<img src="${thumbUrl(p.ctx.srcPid)}" alt="" style="width:28px;vertical-align:middle;border-radius:2px;margin-right:6px">` : ""}<b>${esc(p.ctx.src)}</b>${p.ctx.text ? ` — ${esc(p.ctx.text)}` : ""}</div>` : "";
+  const srcLine = p.ctx && p.ctx.src && p.kind !== "die" && p.kind !== "block" ? `<div class="sub" style="margin:-4px 0 8px">${p.ctx.srcPid ? `<img src="${thumbUrl(p.ctx.srcPid)}" alt="" style="width:28px;vertical-align:middle;border-radius:2px;margin-right:6px">` : ""}<b>${esc(p.ctx.src)}</b>${p.ctx.text ? ` — ${esc(cardText(p.ctx.text))}` : ""}</div>` : "";
   return `<div id="simAsk"><div class="box"><h3>${p.ctx && p.ctx.pickFirst ? "Chi inizia?" : titles[p.kind] || "Scegli"}</h3>${srcLine}${ctx}<div class="opts">${p.options.map((o, i) => {
     const pid = o.unit?.pid || o.c?.pid || o.g?.pid, gig = o.gig && o.gig.sides ? o.gig : null;
     // un Gig da scegliere (rubare, scambiare, copiare) si mostra come dado con il valore; resta il prefisso del testo («tuo», «rivale», «come»)
@@ -1609,7 +1610,7 @@ function pickerHTML(p, P, title){
   const chosen = pickSel.i != null ? p.options[pickSel.i] : null;
   return `<div id="simAsk" class="picker"><div class="box">
     <div class="pkhead">${srcPrint ? `<div class="bc pksrc" data-zoom="${srcPrint.id}" title="Ingrandisci"><img src="${thumbUrl(srcPrint.id)}" alt=""></div>` : ""}
-      <div class="pkt"><h3>${title || "Scegli la carta"}</h3>${ctx.src ? `<div class="pkfx"><b>${esc(ctx.src)}</b>${srcCard && srcCard.text ? ` — ${esc(srcCard.text)}` : ctx.text ? ` — ${esc(ctx.text)}` : ""}</div>` : ""}
+      <div class="pkt"><h3>${title || "Scegli la carta"}</h3>${ctx.src ? `<div class="pkfx"><b>${esc(ctx.src)}</b>${srcCard && srcCard.text ? ` — ${esc(cardText(srcCard.text))}` : ctx.text ? ` — ${esc(cardText(ctx.text))}` : ""}</div>` : ""}
       ${info.length ? `<div class="pkinfo">${info.map(t => `<span>${esc(t)}</span>`).join(" ")}</div>` : ""}</div></div>
     <div class="pkrow">${cards.map(({ o, i }) => `<div class="pk${o.disabled ? " off" : ""}${pickSel.i === i ? " on" : ""}" ${o.disabled ? "" : `data-pick="${i}"`}>
         <img src="${thumbUrl(o.c.pid)}" data-full="${imgUrl(o.c.pid)}" alt="${esc(o.c.card.dn)}" draggable="false"><button class="zm" data-zoom="${o.c.pid}" aria-label="Ingrandisci">🔍</button>

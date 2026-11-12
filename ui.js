@@ -4,6 +4,7 @@
 import { DATA, COLORS, COLOR_IT, TYPES, TYPE_IT, RARITY_IT, setName, imgUrl, thumbUrl,
          priceOf, cardPrice, eur, cardmarketUrl, rulesHTML, classificationsOf, setRank } from "./data.js";
 import { S, qtyOf, setQty, cardQty } from "./store.js";
+import { cardTextIt, itText } from "./cardtext.js";
 
 export const $ = s => document.querySelector(s);
 export const $$ = s => [...document.querySelectorAll(s)];
@@ -159,7 +160,7 @@ export function filterClick(f, target){
 export function passes(c, f){
   if(f.q){
     const q = f.q.toLowerCase();
-    const hay = (c.dn + " " + c.text + " " + c.cls.join(" ")).toLowerCase();
+    const hay = (c.dn + " " + c.text + " " + (cardTextIt() ? (c.__it ??= itText(c.text) || "") : "") + " " + c.cls.join(" ")).toLowerCase();   // si cerca anche nel testo tradotto
     if(!hay.includes(q)) return false;
   }
   if(f.colors.size && !f.colors.has(c.color)) return false;
@@ -254,7 +255,8 @@ function renderSheet(opts){
       <a class="btn sm" href="https://cyberpunktcg.com/cards/${esc(c.slug)}?printing=${p.id}" target="_blank" rel="noopener noreferrer">Ufficiale ↗</a>
     </div>`}
 
-    <div class="rules">${rulesHTML(c.text) || "<i>Nessun testo.</i>"}${c.flavor ? `<div class="fl">${esc(c.flavor)}</div>` : ""}</div>
+    ${(() => { const it = cardTextIt() && c.text && itText(c.text) != null;   // traduzione: con l'originale a un tocco
+      return `<div class="rules" id="rulesBox">${rulesHTML(c.text) || "<i>Nessun testo.</i>"}${c.flavor ? `<div class="fl">${esc(c.flavor)}</div>` : ""}</div>${it ? `<div class="rulesSw"><small>Traduzione non ufficiale</small><button class="lnk" id="rulesOrig" aria-pressed="false">Mostra l'originale</button></div>` : ""}`; })()}
 
     ${(() => { const only = Array.isArray(opts.only) && opts.only.length ? opts.only : null, list = only ? c.prints.filter(x => only.includes(x.id)) : c.prints;
       return `<h3 style="margin-top:16px">${only ? `Stampe aperte nel kit (${only.length} ${only.length === 1 ? "copia" : "copie"})` : `Stampe (${c.prints.length})`}</h3>
@@ -277,6 +279,7 @@ function renderSheet(opts){
   $("#sheetPrev")?.addEventListener("click", () => sheetStep(-1)); $("#sheetNext")?.addEventListener("click", () => sheetStep(1));
   // la stella è la CARTA preferita (vale per tutte le sue stampe); «Artwork preferito» sceglie quale stampa mostrare: sono indipendenti
   $("#favStar")?.addEventListener("click", e => { e.stopPropagation(); const f = S.settings.favCards = S.settings.favCards || {}; if(f[c.id]) delete f[c.id]; else f[c.id] = true; S.save("settings"); renderSheet(opts); document.dispatchEvent(new CustomEvent("ncd:collection")); });
+  $("#rulesOrig")?.addEventListener("click", e => { const b = e.currentTarget, orig = b.getAttribute("aria-pressed") !== "true"; b.setAttribute("aria-pressed", String(orig)); b.textContent = orig ? "Mostra la traduzione" : "Mostra l'originale"; $("#rulesBox").innerHTML = (rulesHTML(c.text, orig) || "<i>Nessun testo.</i>") + (c.flavor ? `<div class="fl">${esc(c.flavor)}</div>` : ""); });
   $("#favBtn")?.addEventListener("click", () => { S.settings.favPrints = S.settings.favPrints || {}; if(S.settings.favPrints[c.id] === p.id) delete S.settings.favPrints[c.id]; else S.settings.favPrints[c.id] = p.id; S.save("settings"); renderSheet(opts); document.dispatchEvent(new CustomEvent("ncd:collection")); });
 }
 export function closeSheet(){

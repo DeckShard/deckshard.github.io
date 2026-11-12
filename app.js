@@ -11,17 +11,18 @@ import { setOnlineVersion, invitesForMe, activeTables, T as onlineT } from "./on
 import { renderRules } from "./rules.js";
 import { renderHome, wireHome } from "./home.js";
 import { renderChatTab, openChatWith } from "./social.js";
-import { initI18n } from "./i18n.js";
+import { initI18n, currentLang } from "./i18n.js";
+import { setCardTextPref } from "./cardtext.js";
+setCardTextPref(() => currentLang() === "it" && S.settings.cardText !== "en");   // testo delle carte in italiano (Impostazioni → Lingua)
 import { bootCloud, state as cloudState } from "./cloud.js";
 
-export const APP_VERSION = "1.9.36";
+export const APP_VERSION = "1.9.37";
 // tappetini del Simulator: id → nome (le immagini sono mat-<id>.svg e la miniatura mat-<id>-t.svg (immagini dentro un svg: jpg e webp non arrivano sul sito))
 export const PLAYMATS = [["skyline", "Night City"], ["corpo", "Torre corporativa"], ["badlands", "Badlands"], ["pacifica", "Lungomare"], ["wall", "Il Muro"]];
 /* novità mostrate alla prima apertura dopo un aggiornamento (solo l'ultima versione; chi installa da zero non le vede) */
-const NEWS = { v: "1.9.36", items: [
-  "<b>Simulator</b>: gli effetti delle carte ora si vedono. Quando una carta si attiva si accende e compare un riquadro con il momento (Play, Attacco, Programma, Fine turno…), il nome e il testo; un raggio la collega alle carte su cui agisce.",
-  "Ogni tipo di effetto ha la sua animazione: le Unità sconfitte vanno in frammenti nel Trash (anche tutte insieme), i Gear distrutti si staccano e la potenza dell'Unità scende, le carte scartate vengono triturate (quelle del rivale si scoprono prima), le carte mandate nel Trash dal mazzo si girano in fila, e poi spesa, potenza + e −, in fondo al mazzo, di nuovo pronta e recupero dal Trash.",
-  "Sulle carte restano i segnali degli effetti che durano: bloccata (non si prepara), non può attaccare, deve attaccare, condannata. La potenza in calo si vede in rosso. Con «Istantanea» o con le animazioni ridotte resta solo il registro."
+const NEWS = { v: "1.9.37", items: [
+  "<b>Testo delle carte in italiano</b>: nella scheda della carta, nel Draft e nel Simulator (finestre di scelta e riquadro degli effetti) il testo delle regole ora è tradotto. È una traduzione non ufficiale: l'originale inglese è sempre a un tocco con «Mostra l'originale», e in Impostazioni → Lingua puoi tornare al testo originale ovunque. La ricerca della Collection trova le carte anche con le parole italiane.",
+  "<b>Scanner</b>: riconosce meglio le Leggende (Goro Takemura e le altre carte dello stesso personaggio non si scambiano più, e la scritta «LEGEND» non fa più pensare ad Adam Smasher: Ender of Legends); quando il testo letto è quasi pari decide l'illustrazione. La riga sotto la fotocamera va a capo senza finire sotto i pulsanti."
 ] };
 // chi usava già l'app prima che esistesse seenVer: ha dati salvati (letti prima che l'avvio scriva qualcosa)
 const HAD_DATA = (() => { try{ return ["settings", "decks", "coll", "record", "recent"].some(k => localStorage.getItem("ncd:" + k) != null); }catch(e){ return false; } })();

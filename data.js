@@ -2,6 +2,7 @@
    servono alle sezioni. Le immagini stanno in ./img/<printing>.webp e
    ./img/t/<printing>.webp (miniature).                                   */
 
+import { cardText } from "./cardtext.js";
 export const DATA = { cards: [], sets: [], byId: new Map(), byPrint: new Map(),
                       prices: {}, pricesAt: null, generated: null, meta: null };
 
@@ -112,7 +113,8 @@ export function cardmarketUrl(c, pid){
 }
 
 /* testo delle regole: i marcatori {Blocker} ecc. diventano etichette */
-export function rulesHTML(text){
+export function rulesHTML(text, raw){
+  if(!raw) text = cardText(text);   // in italiano, se scelto (traduzione non ufficiale); raw: sempre l'originale
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   return esc(text).replace(/\{([^}]+)\}/g, (_, k) => {
     const trig = ["Play", "Call", "Attack", "Defeated", "Spend"].includes(k);
