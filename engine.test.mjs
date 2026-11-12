@@ -133,7 +133,7 @@ console.log(`bot vs bot: ${wins[0]}–${wins[1]}, turni medi ${(turnsTot / 60).t
   resolve(G, 0);
   ok(!G.pending && P.field.length === 1 && P.eddies.every(e => e.spent) && P.legends.filter(l => l.spent).length === 3, "pagato: 3 Eddies e 3 Leggende spese");
 }
-import { canPay, costOf, spendCost } from "./engine.js";
+import { canPay, costOf, spendCost, callCost, canAttack } from "./engine.js";
 
 /* --- Go Solo: la Leggenda può spendere sé stessa per il proprio costo */
 {
@@ -589,6 +589,106 @@ import { canPay, costOf, spendCost } from "./engine.js";
   const bi = G.pending ? G.pending.options.findIndex(o => o.kind === "block" && o.unit === jb) : -1;
   ok(bi >= 0, "Johnny con Riot Shield può bloccare");
   if(bi >= 0){ resolve(G, bi); while(G.pending) resolve(G, 0); ok(!jb.spent && !P.field.some(u => u.uid === 9303), "Johnny blocca, vince e torna pronto"); }
+}
+
+/* --- sconti, Chiamata gratis e «può attaccare Unità nel turno in cui è giocata» */
+{
+  const mk = (names, legends) => ({ name: "T", legends: legends.map(n => ({ cid: byName(n).id, pid: byName(n).def.id })), cards: names.map(n => ({ cid: byName(n).id, pid: byName(n).def.id, n: 1 })) });
+  const pool = ["Nocturne OP55 N1", "Octant", "Sandayu Oda: Hanako's Guardian", "Panam Palmer: Strength Through Family", "Field Operator"];
+  const d = mk([...pool, ...pool, ...pool, ...pool, ...pool, ...pool, ...pool, ...pool], ["V: Streetkid", "Lucyna Kushinada: Fresh Beginnings", "Goro Takemura: Hands Unclean"]);
+  const G = createGame([d, JSON.parse(JSON.stringify(d))], byId, { seed: 33, autoPay: [true, true] });
+  mulligan(G, 0, false); mulligan(G, 1, false); resolve(G, 0);
+  const P = G.players[G.active], R = G.players[1 - G.active];
+  const give = name => { let c = P.hand.find(x => x.card.dn === name) || P.deck.find(x => x.card.dn === name); if(!P.hand.includes(c)){ P.deck.splice(P.deck.indexOf(c), 1); P.hand.push(c); } return c; };
+  const cash = n => { P.eddies = Array.from({ length: n }, (_, i) => ({ uid: 9500 + i, card: { dn: "E" }, spent: false })); P.legends.forEach(l => { l.spent = true; }); };
+  // Nocturne: con il fixer vuoto costa 1 ed è giocabile con 1 solo Eddie
+  const no = give("Nocturne OP55 N1");
+  ok(costOf(G, P, no) === (no.card.cost ?? 0), `Nocturne con il fixer pieno: costo pieno (${costOf(G, P, no)})`);
+  P.fixer = []; cash(1);
+  ok(costOf(G, P, no) === 1 && legalActions(G, P.id).some(a => a.t === "play" && a.uid === no.uid), "Nocturne con il fixer vuoto: costa 1 ed è tra le mosse con 1 Eddie");
+  // Octant: -1 €$ per ogni Gig 8+
+  const oc = give("Octant"); P.gigs = [{ sides: 10, value: 9, uid: 1 }, { sides: 12, value: 8, uid: 2 }, { sides: 6, value: 3, uid: 3 }];
+  ok(costOf(G, P, oc) === Math.max(1, (oc.card.cost ?? 0) - 2), `Octant con due Gig 8+: ${costOf(G, P, oc)} €$`);
+  // Sandayu Oda: appena giocato può attaccare le Unità rivali (non l'area Gig)
+  cash(10); const sa = give("Sandayu Oda: Hanako's Guardian");
+  const foe = { uid: 9600, cid: "z", pid: null, card: { dn: "Foe", type: "Unit", power: 1, cost: 1, kw: [], text: "" }, fx: parseEffects(""), spent: true, lag: false, mod: 0, gear: [] };
+  R.field.push(foe); R.gigs = [{ sides: 6, value: 2, uid: 7 }];
+  doAction(G, P.id, { t: "play", uid: sa.uid }); while(G.pending) resolve(G, 0);
+  const saU = P.field.find(u => u.card.dn.startsWith("Sandayu"));
+  const acts = legalActions(G, P.id).filter(a => a.t === "attack" && a.uid === saU.uid);
+  ok(saU && !saU.lag && acts.some(a => a.target.kind === "unit") && !acts.some(a => a.target.kind === "gigs"), "Sandayu Oda attacca subito le Unità rivali, non l'area Gig");
+  // Panam Palmer (Unità): nel tuo turno la Chiamata è gratis
+  cash(10); const pa = give("Panam Palmer: Strength Through Family"); doAction(G, P.id, { t: "play", uid: pa.uid }); while(G.pending) resolve(G, 0);
+  cash(0); P.called = false; P.legends.forEach(l => { l.faceUp = false; l.spent = true; });
+  ok(callCost(G, P) === 0 && legalActions(G, P.id).some(a => a.t === "call"), "Panam Palmer: Chiamata gratis anche senza Eddies");
+  // Lucyna: «se controlli 2 o più Gig al minimo, pesca 2 invece»
+  const lu = parseEffects(byName("Lucyna Kushinada: Fresh Beginnings").text);
+  ok(lu.manual.length === 0 && lu.call.some(o => o.skipIf && o.skipIf.c === "minGigsCount") && lu.call.some(o => o.cond && o.cond.c === "minGigsCount" && o.n === 2), "Lucyna: pesca 1, oppure 2 con due Gig al minimo");
+}
+
+/* --- Leggenda giocata come Unità senza Go Solo (regole 4.5): Lag e stesso orientamento */
+{
+  const mk = (names, legends) => ({ name: "T", legends: legends.map(n => ({ cid: byName(n).id, pid: byName(n).def.id })), cards: names.map(n => ({ cid: byName(n).id, pid: byName(n).def.id, n: 1 })) });
+  const pool = ["Field Operator", "Octant", "Mantis Blades"];
+  const d = mk(Array(14).fill(pool).flat(), ["V: Streetkid", "Goro Takemura: Hands Unclean", "Lucyna Kushinada: Fresh Beginnings"]);
+  const G = createGame([d, JSON.parse(JSON.stringify(d))], byId, { seed: 44, autoPay: [true, true] });
+  mulligan(G, 0, false); mulligan(G, 1, false); resolve(G, 0);
+  const P = G.players[G.active];
+  const cash = n => { P.eddies = Array.from({ length: n }, (_, i) => ({ uid: 9700 + i, card: { dn: "E" }, spent: false })); };
+  P.legends.forEach(l => { l.faceUp = true; l.spent = true; });
+  const vi = P.legends.findIndex(l => l.card.dn === "V: Streetkid"), v = P.legends[vi], cost = v.card.cost;
+  v.spent = false; cash(cost);
+  ok(legalActions(G, P.id).some(a => a.t === "legendplay" && a.idx === vi), "la Leggenda con costo si può giocare come Unità");
+  doAction(G, P.id, { t: "legendplay", idx: vi }); while(G.pending) resolve(G, 0);
+  const u = P.field.find(x => x.isLegend && x.card.dn === "V: Streetkid");
+  ok(u && u.lag && !u.spent && !canAttack(G, P, u), "giocata normale pagata con gli Eddies: entra pronta ma con il Lag");
+  // una seconda Leggenda che deve pagare sé stessa entra spesa
+  const gi = P.legends.findIndex(l => l.card.dn === "Goro Takemura: Hands Unclean"), go = P.legends[gi];
+  go.spent = false; cash(go.card.cost - 1);
+  doAction(G, P.id, { t: "legendplay", idx: gi }); while(G.pending) resolve(G, 0);
+  const gu = P.field.find(x => x.isLegend && x.card.dn.startsWith("Goro"));
+  ok(gu && gu.lag && gu.spent, "se si spende da sola per pagare, entra spesa e con il Lag");
+  ok(!legalActions(G, P.id).some(a => a.t === "legendplay" && P.legends[a.idx].card.cost == null), "le Leggende senza costo non si giocano in campo");
+}
+// regia del tavolo: gli effetti lasciano nel registro chi li ha causati e su cosa agiscono (righe «fx», vuote e solo dati)
+{
+  const mk = (names, legends) => ({ name: "T", legends: legends.map(n => ({ cid: byName(n).id, pid: byName(n).def.id })), cards: names.map(n => ({ cid: byName(n).id, pid: byName(n).def.id, n: 1 })) });
+  const pool = ["Royce: Don't Call Me Simon", "Detonate", "Hacked Corpo", "Minotaur", "Floor It"];
+  const d = mk([...pool, ...pool, ...pool, ...pool, ...pool, ...pool, ...pool, ...pool], ["V: Streetkid", "Lucyna Kushinada: Fresh Beginnings", "Goro Takemura: Hands Unclean"]);
+  const G = createGame([d, JSON.parse(JSON.stringify(d))], byId, { seed: 41, autoPay: [true, true] });
+  mulligan(G, 0, false); mulligan(G, 1, false); resolve(G, 0);
+  const P = G.players[G.active], R = G.players[1 - G.active];
+  const give = name => { let c = P.hand.find(x => x.card.dn === name) || P.deck.find(x => x.card.dn === name); if(!P.hand.includes(c)){ P.deck.splice(P.deck.indexOf(c), 1); P.hand.push(c); } return c; };
+  const cash = n => { P.eddies = Array.from({ length: n }, (_, i) => ({ uid: 9700 + i, card: { dn: "E" }, spent: false })); P.legends.forEach(l => { l.spent = true; }); };
+  const fx = () => G.log.filter(e => e.kind === "fx").map(e => e.d);
+  const foe = (uid, power, gear) => ({ uid, cid: "z", pid: null, card: { dn: "Foe" + uid, type: "Unit", power, cost: 1, kw: [], text: "" }, fx: parseEffects(""), spent: false, lag: false, mod: 0, gear: gear || [] });
+  ok(G.log.every(e => e.kind !== "fx" || e.text === ""), "le righe della regia non hanno testo (il registro non le mostra)");
+  cash(10); R.field.push(foe(9801, 1)); const n0 = fx().length;
+  const ro = give("Royce: Don't Call Me Simon"); doAction(G, P.id, { t: "play", uid: ro.uid }); while(G.pending) resolve(G, 0);
+  const f1 = fx().slice(n0);
+  ok(f1.some(d => d.f === "src" && d.s === ro.uid && d.tr === "Play" && /Defeat a rival Unit/.test(d.x)) && f1.some(d => d.f === "defeat" && d.s === ro.uid && d.t[0] === 9801), "Royce: innesco (Play) e sconfitta con sorgente e bersaglio");
+  const gearC = { uid: 9811, cid: "g", pid: null, card: { dn: "G", type: "Gear", power: 1, cost: 1, kw: [], text: "" }, fx: parseEffects("") };
+  cash(10); R.field.push(foe(9810, 2, [gearC])); const n1 = fx().length;
+  const de = give("Detonate"); doAction(G, P.id, { t: "play", uid: de.uid }); while(G.pending) resolve(G, 0);
+  const f2 = fx().slice(n1);
+  ok(f2.some(d => d.f === "src" && d.s === de.uid && d.tr === "Program") && f2.some(d => d.f === "gear" && d.t === 9811 && d.h === 9810 && d.n === 1), "Detonate: Gear distrutto con l'Unità che lo portava e la potenza persa");
+  cash(10); const n2 = fx().length;
+  const hc = give("Hacked Corpo"); doAction(G, P.id, { t: "play", uid: hc.uid }); while(G.pending) resolve(G, 0);
+  const f3 = fx().slice(n2), mill = f3.find(d => d.f === "mill");
+  ok(mill && mill.p === P.id && mill.c.length === 3 && mill.c.every(c => P.trash.some(t => t.uid === c.uid) || P.hand.some(h => h.uid === c.uid)), "Hacked Corpo: le 3 carte dal mazzo al Trash, con nome e immagine");
+  // un effetto la cui condizione è falsa non si annuncia: Minotaur senza più ☆ del rivale non mostra il riquadro
+  cash(10); P.gigs = []; R.gigs = [{ sides: 6, value: 6, uid: 9901 }]; const n3 = fx().length;
+  const mi = give("Minotaur"); doAction(G, P.id, { t: "play", uid: mi.uid }); while(G.pending) resolve(G, 0);
+  ok(P.field.some(u => u.uid === mi.uid) && !fx().slice(n3).some(d => d.s === mi.uid), "Minotaur senza più ☆: nessun innesco annunciato");
+}
+// testo delle carte in italiano: ogni carta con testo deve avere tutte le frasi tradotte (una carta nuova con una frase
+// nuova resta in inglese finché la frase non entra in CARD_IT di cardtext.js: questo controllo la segnala)
+{
+  const { itText, CARD_IT } = await import("./cardtext.js");
+  const missing = data.cards.filter(c => c.text && itText(c.text) == null).map(c => c.dn);
+  ok(missing.length === 0, `testo italiano: carte senza traduzione completa: ${missing.join(", ") || "nessuna"}`);
+  ok(Object.values(CARD_IT).every(t => typeof t === "string" && t.trim()), "testo italiano: nessuna traduzione vuota");
+  ok(itText("{Play} Draw 1.") === "{Play} Pesca 1." && itText("{Quick} 1 €$, {Spend} Draw 2.") === "{Quick} 1 €$, {Spend} Pesca 2.", "testo italiano: icone e costi in testa alla frase restano come sono");
 }
 console.log(`\n${passes} controlli OK, ${fails} falliti`);
 process.exit(fails ? 1 : 0);

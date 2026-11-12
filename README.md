@@ -31,6 +31,11 @@ scanner.js                 scanner della collezione (OCR con Tesseract.js, caric
 engine.test.mjs            collaudo del motore (bot contro bot + regole puntuali)
 fuzz.test.mjs              300 partite con mazzi casuali: nessun effetto deve rompere il motore
 parser.js                  interprete del testo delle carte (effetti, eventi, condizioni)
+cardtext.js                testo delle carte in italiano (traduzione non ufficiale, frase per frase)
+prerelease.js              Prerelease (sealed): kit, mazzo, verifica del kit
+draft.js                   Draft contro l'IA (alpha): tavolo da 8, buste, pool, sideboard
+tutorial.js                tutorial a lezioni
+rules.js                   Regole in breve (italiano) e complete (testo ufficiale)
 ui.test.mjs                collaudo dell'interfaccia con Playwright
 .github/workflows/collect.yml   raccolta notturna + pubblicazione su GitHub Pages
 public/, data/img/         creati dal collector (il workflow li scrive nel repository)
@@ -118,7 +123,7 @@ Nelle Impostazioni si sceglie un aspetto: 15 scuri (Holophone, Samurai, Netrunne
 
 ## Lingua
 
-L'app è scritta in italiano; dalle Impostazioni si passa all'inglese. La traduzione (`i18n.js`) lavora sul DOM: ogni unità di testo (un elemento con solo testo e formattazione in linea, o un singolo nodo di testo) e gli attributi placeholder/title/aria-label vengono cercati nel dizionario, prima per corrispondenza esatta e poi per schema con segnaposto (`{1} pesca {2}.` → `{1} draws {2}.`); un MutationObserver traduce ciò che viene ridisegnato, `confirm`/`prompt` passano dal dizionario, e dopo «You» il verbo perde la -s. Le carte restano nella lingua stampata; le Regole complete sono già il testo ufficiale inglese. Per aggiungere una frase basta una riga nel dizionario in fondo a `i18n.js`.
+L'app è scritta in italiano; dalle Impostazioni si passa all'inglese. La traduzione (`i18n.js`) lavora sul DOM: ogni unità di testo (un elemento con solo testo e formattazione in linea, o un singolo nodo di testo) e gli attributi placeholder/title/aria-label vengono cercati nel dizionario, prima per corrispondenza esatta e poi per schema con segnaposto (`{1} pesca {2}.` → `{1} draws {2}.`); un MutationObserver traduce ciò che viene ridisegnato, `confirm`/`prompt` passano dal dizionario, e dopo «You» il verbo perde la -s. I nomi delle carte restano in inglese; il testo delle regole si può leggere in italiano (vedi «Testo delle carte in italiano»). Le Regole complete sono già il testo ufficiale inglese. Per aggiungere una frase basta una riga nel dizionario in fondo a `i18n.js`.
 
 ## Import delle liste
 
@@ -163,6 +168,28 @@ I prezzi Cardmarket delle carte con due versioni nello stesso set (base e Iconic
 ## Scanner della collezione
 
 Dalla Collection, «Scanner» apre la fotocamera. In modalità continua l'app legge di continuo l'inquadratura con Tesseract.js (scaricato dalla CDN la prima volta, ≈4 MB, poi resta in memoria), abbina nome e testo di regole alle 151 carte del catalogo e, quando la stessa carta viene riconosciuta in due letture consecutive con punteggio ≥ 70%, la mette nella **lista di scansione**; per contare un'altra copia della stessa carta basta allontanarla e riavvicinarla. La lista si rivede (quantità, stampa, rimozione) e si aggiunge alla collezione in blocco; resta salvata se si chiude l'app a metà. Restano «Scatta» (una lettura con i candidati) e «Da foto». Le varianti (Secret, Iconic, Nova Rare) vengono riconosciute confrontando l'illustrazione inquadrata con quelle di tutte le stampe della carta; a parità di arte (beta e retail) si propone la stampa predefinita, modificabile toccando la miniatura.
+
+Abbinamento (`matchText` in `scanner.js`): il nome si confronta riga per riga (coppie di lettere), il testo a **parole intere** (le coppie di lettere si trovano per caso in qualsiasi lettura lunga) con un peso ridotto per le carte che hanno poche parole proprie (Leggende fatte quasi solo di promemoria tra parentesi); l'etichetta del tipo stampata sulla carta («LEGEND», «UNIT»…) viene tolta prima del confronto, altrimenti «LEGEND» faceva vincere *Adam Smasher: Ender of Legends*; tra le carte dello stesso personaggio decide quanto si legge del sottotitolo e, se il testo resta quasi pari, l'illustrazione (`rerankByArt`). `window.__lastOcr` tiene l'ultima lettura per i collaudi.
+
+## Draft contro l'IA (alpha)
+
+Simulator → scheda «Prerelease e draft» → «Draft contro l'IA» (`draft.js`). Un tavolo da 8 (tu e 7 bot, con nome e avatar presi dall'arte di una Leggenda): un giro di Leggende (busta da 4: 3 Rare e uno slot Epic o Secret), poi 4 buste da 12 carte con il passaggio che alterna i lati. Il draft è deterministico: `{ set, seed, picks }` bastano a rigiocarlo identico (`replay`, con memoria dell'ultimo risultato), quindi il mazzo si verifica come quello del Prerelease (`verifySealed` accetta `d.draft`) e le buste dei bot non si salvano. I bot scelgono due colori e li tengono. Lo stato sta in `rawSet("draft")`; `D.side` sono gli indici del pool messi in sideboard.
+
+Interfaccia (overlay `#draft`): intestazione con passi, timer facoltativo, anello degli avatar e freccia del passaggio; griglia della busta; pannello laterale con anteprima, glossario delle parole chiave, Leggende prese, barre dei costi e «Vendibili N (%) · Sideboard N»; il pool è un foglio a tre altezze (chiuso, metà, intero) che si trascina, diviso per costo come in Arena, con la zona sideboard. Mouse: pressione di 500 ms o tasto destro per ingrandire; tocco: la carta si solleva dopo 300 ms («rilascia per ingrandire · trascina per prendere»); il trascinamento finisce sulle zone `[data-drop]`. L'ispettore (`#dIns`) ha immagine grande, lente, ‹ ›, Prendi / In sideboard. A fine draft `build()` propone il mazzo: pool meno sideboard, con le 3 Leggende migliori; poi si sfidano 3 bot del tavolo. Dei mazzi avversari si vede solo il nome, e durante il draft non si vedono le scelte altrui.
+
+## Deckbuilder: elenco unico
+
+Un solo elenco «Aggiungi carte» (`.dsec.out`): ogni riga ha −n+ e, nel Costruito, il pulsante ×3; una carta esce dall'elenco quando è al massimo (3 copie, o le copie rimaste nel pool nel sealed) e una riga in fondo dice quali carte sono già al massimo nel mazzo. Il mazzo è la sezione richiudibile «Deck» (`#deckSec`, aperta di base e ricordata in `S.settings.deckOpen`), divisa solo per tipo, con il riepilogo: numero di carte e un chip ✘ per **ogni** motivo per cui il mazzo non è in regola (o ✔ Legale). Sotto i 1000 px una barra appiccicata (`#deckStick`) tiene il riepilogo in vista. Nei mazzi sealed/draft non compare «mancano copie».
+
+## Regia degli effetti delle carte
+
+Dalla 1.9.36 ogni effetto si vede sul tavolo. Il motore scrive nel registro, oltre al testo, righe vuote di tipo `fx` con soli dati (`fxEv` in `engine.js`): `src` (la carta che agisce: `s` uid della carta che porta il testo, `h` uid dell'Unità che la ospita, `tr` il momento: Play, Attack, Program, endTurn…, `x` il testo dell'effetto) e poi gli effetti: `defeat` (`t` bersagli, `m` di massa), `gear` (`t` Gear, `h` ospite, `n` potenza persa), `discard` e `mill` (`p` giocatore, `c` carte con uid, stampa, nome, tipo), `spend` (`lock`), `mark` (`k`: lock, noatk, must, doom), `pow` (`n`), `bottom`, `ready`, `recover`. Il motore non le rilegge mai: non cambiano le regole né il rigioco online (i collaudi di determinismo confrontano solo i testi). `src` si annuncia solo quando un'operazione parte davvero (un effetto con la condizione falsa resta in silenzio).
+
+La plancia (`sim.js`, sezione «regia degli effetti») le trasforma in scene: **innesco** (cornice sulla carta e riquadro «momento · nome · testo» di fianco alla carta; se la carta non è in plancia, come un Programma, una copia accanto alle Unità), **raggio** verso il bersaglio, **impatto** della famiglia ed **esito**. `rgPlan` prepara i tempi e «prenota» le carte coinvolte (`claim`: le animazioni generiche non le toccano; `hold`: una carta spesa ruota quando arriva il raggio; `rows`: la fila si stringe a colpo finito; `hide`: la carta recuperata compare all'arrivo); `rgRun` prende il turno con `fxSlot`, in fila con vetrine, dadi e scontri: gli effetti scritti nel registro prima dello scontro si vedono prima, gli altri dopo. Famiglie e colori in `RGC`. I **segnali** restano sulla carta (`marksHTML`: bloccata, non può attaccare, deve attaccare, condannata) e la potenza in calo è rossa. La regia non dipende da «Grafiche avanzate»: basta che le animazioni siano attive («Istantanea» o animazioni ridotte lasciano solo registro e segnali). Il registro mostrato all'utente filtra le righe `fx`.
+
+## Testo delle carte in italiano
+
+`cardtext.js` contiene `CARD_IT`: una traduzione **non ufficiale** frase per frase (258 frasi coprono tutte le 151 carte). Le icone tra graffe ({Play}, {Blocker}, {Go Solo}…) e i costi in testa alla frase restano come sono; nomi delle carte, classi e testi di colore restano in inglese. Glossario: Unità, Leggenda, Programma, Gear, Gig, Eddie, Trash, Street Cred; friendly = alleata/alleato, rival = rivale; spesa/pronta, scoperta/coperta; sconfiggi, ruba, cerca (search), guarda (look at), metti in fondo al mazzo (bottom-deck), «Trash N» = metti nel Trash le prime N carte del tuo mazzo. Se anche una sola frase di una carta manca, la carta resta tutta in inglese: una carta nuova con frasi già note arriva tradotta da sola. `cardText(text)` restituisce l'italiano quando la lingua dell'app è l'italiano e Impostazioni → Lingua → «Testo delle carte» non è su «Originale» (`S.settings.cardText`); `rulesHTML(text, raw)` lo usa nella scheda carta (con «Mostra l'originale» e la scritta «Traduzione non ufficiale») e nel Draft; nel Simulator passa da lì il testo delle finestre di scelta e del riquadro degli effetti. La ricerca trova le carte anche con le parole italiane. Il motore legge sempre l'originale.
 
 ## Prossimi passi possibili
 

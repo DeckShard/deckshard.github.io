@@ -7,7 +7,10 @@ let fails = 0, passes = 0;
 const openingChoice = async () => { await page.waitForSelector("#simAsk"); for(let k = 0; k < 4 && !(await page.locator('[data-mull="keep"]').count()); k++){ if(await page.locator("#simAsk [data-react]").count()) await page.click("#simAsk [data-react]"); if(await page.locator("#simAsk [data-ask]").count()) await page.click("#simAsk [data-ask] >> nth=0"); await page.waitForTimeout(250); } };
 const ok = (c, m) => { if(c) passes++; else { fails++; console.log("  ✘", m); } };
 const errors = [];
-const browser = await chromium.launch({ executablePath: process.env.CHROME || "/opt/pw-browsers/chromium-1194/chrome-linux/chrome" });
+import { existsSync } from "node:fs"; import { fileURLToPath } from "node:url";
+const HERE = fileURLToPath(new URL(".", import.meta.url));   // cartella del progetto: le immagini per lo scanner stanno in data/img
+const CHROME = process.env.CHROME || ["/opt/pw-browsers/chromium-1194/chrome-linux/chrome"].find(existsSync);   // altrimenti il browser di Playwright
+const browser = await chromium.launch(CHROME ? { executablePath: CHROME } : {});
 const ctx = await browser.newContext({ viewport: { width: 412, height: 915 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
 const page = await ctx.newPage();
 page.on("pageerror", e => errors.push(String(e)));
@@ -91,7 +94,7 @@ const SCANS = [["7ffa8ba4-f187-4ba0-a719-fa8ebf45a03b", "Mantis Blades"], ["c7eb
 let scanOk = 0;
 for(const [pid, name] of SCANS){
   await page.evaluate(() => { document.querySelector("#scanMsg").textContent = ""; });
-  await page.setInputFiles("#scanFile", `/home/claude/nightcity-deck/data/img/${pid}.webp`);
+  await page.setInputFiles("#scanFile", `${HERE}data/img/${pid}.webp`);
   try{
     await page.waitForFunction(() => /in lista|Forse|Non ho|Errore/.test(document.querySelector("#scanMsg").textContent), null, { timeout: 120000 });
     const msg = await page.locator("#scanMsg").textContent();
@@ -102,7 +105,7 @@ for(const [pid, name] of SCANS){
 ok(scanOk >= 3, `OCR: ${scanOk}/${SCANS.length} carte riconosciute dall'immagine`);
 // variante: la stampa Iconic Legend di V: Streetkid deve finire in lista come tale, non come la base
 await page.evaluate(() => { document.querySelector("#scanMsg").textContent = ""; });
-await page.setInputFiles("#scanFile", "/home/claude/nightcity-deck/data/img/837d354a-a1c8-4df0-b4ac-4db43730187a.webp");
+await page.setInputFiles("#scanFile", `${HERE}data/img/837d354a-a1c8-4df0-b4ac-4db43730187a.webp`);
 try{
   await page.waitForFunction(() => /in lista|Forse|Non ho|Errore/.test(document.querySelector("#scanMsg").textContent), null, { timeout: 120000 });
   const list = await page.evaluate(() => JSON.parse(localStorage.getItem("ncd:scanlist") || "[]"));
@@ -137,9 +140,9 @@ await row.locator('[data-dq="1"]').click();
 ok((await row.locator(".qtyctl b").textContent()) === "2", "quantità 2");
 // cambio artwork dalla miniatura del browser
 // la carta aggiunta passa nella sezione «Nel mazzo» (chiusa all'inizio): la si apre
-ok(await page.locator("#deckRows .dsec.in:not([open])").count() === 1 && await page.locator("#deckRows .dsec.out").count() === 0, "elenco diviso: la carta trovata è in «Nel mazzo» (chiusa), «Non nel mazzo» vuota non compare");
-await page.click("#deckRows .dsec.in > summary");
-await page.click("#deckRows .dsec.in .row .thumb");
+ok(await page.locator("#deckRows .dsec.in").count() === 0 && (await page.locator("#deckRows .row .bstep b").textContent()) === "2", "elenco unico: la carta resta in «Aggiungi carte» con il contatore finché non sono 3");
+ok(await page.locator("#deckSec[open] > summary .n").count() === 1 && /carte/.test(await page.locator("#deckSec > summary").textContent()), "Deck richiudibile con il riepilogo");
+await page.click('#deckEdit .dlist .row:has-text("Mantis") .thumb');
 await page.waitForSelector("#sheet.on");
 ok(await page.locator("#pickBtn").count() === 1, "modale in modalità scelta stampa");
 await page.click("#sheetBox .pt:last-child"); await page.click("#pickBtn");
@@ -278,7 +281,7 @@ for(let k = 0; k < handN && !played; k++){
 }
 if(played){
   const payMode = /Paga \d+ €\$/.test(await page.locator(".bstrip .lg").textContent());
-  ok(payMode || await page.locator('[data-field] .bc, #simAsk').count() >= 1, payMode ? "pagamento sulla plancia: la barra chiede di toccare Eddies o Leggende" : "costo pari alle risorse: pagato da solo");
+  ok(payMode || await page.locator('[data-field] .bc, #simAsk').count() >= 1 || await page.locator('[data-handrow] .bc').count() < handN /* un Programma senza scelte va dritto nel Trash */, payMode ? "pagamento sulla plancia: la barra chiede di toccare Eddies o Leggende" : "costo pari alle risorse: pagato da solo");
   if(payMode) ok(await page.locator(".bz.mine .target").count() >= 1, "fonti di pagamento evidenziate");
   for(let k = 0; k < 6 && /Paga \d+ €\$/.test(await page.locator(".bstrip .lg").textContent()); k++){
     const ed = page.locator(".bz.mine [data-eddies].target"), lg = page.locator(".bz.mine [data-legend].target");
@@ -379,7 +382,7 @@ await page.waitForSelector("#deckEdit:not([hidden])");
 ok((await page.locator("#deckEdit .legal").textContent()).includes("sealed"), "editor in modalità sealed");
 // scegli 3 Leggende dal kit e aggiungi carte fino a 30
 await page.click('#deckBrowse [data-b="legends"]'); await page.waitForTimeout(300);
-for(let i = 0; i < 3; i++){ await page.click(`#deckRows .dsec.out .row >> nth=0`); await page.waitForTimeout(250); }
+for(let i = 0; i < 3; i++){ await page.click(`#deckRows .row:not(.indeck) >> nth=0`); await page.waitForTimeout(250); }
 ok((await page.locator("#deckEdit .lslot img").count()) === 3, "3 Leggende scelte dal kit");
 await page.click('#deckBrowse [data-b="cards"]'); await page.waitForTimeout(300);
 // al massimo 3 colori: si filtra l'elenco sui 3 colori più presenti nel kit
@@ -387,8 +390,7 @@ await page.click('#deckBrowse [data-b="cards"]'); await page.waitForTimeout(300)
   await page.click("#deckFilt"); for(const c of top3){ await page.click(`#deckFilters [data-fk="colors"][data-fv="${c}"]`); await page.waitForTimeout(100); } }
 let addedRows = 0;
 for(let k = 0; k < 90 && addedRows < 60; k++){
-  if(await page.locator("#deckRows .dsec.in:not([open]) > summary").count()) await page.click("#deckRows .dsec.in > summary");
-  const rows = page.locator("#deckRows details[open] .row"); const n = await rows.count(); if(!n) break;
+  const rows = page.locator("#deckRows .row"); const n = await rows.count(); if(!n) break;
   const i = k % n; await rows.nth(i).click(); await page.waitForTimeout(120); addedRows++;
   const size = (await page.locator("#deckEdit .chip:has-text('carte')").first().textContent());
   if(/^3[0-9] carte/.test(size)) break;
